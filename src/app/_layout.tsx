@@ -1,0 +1,48 @@
+import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
+import { useEffect } from 'react';
+import { useColorScheme } from 'react-native';
+
+import { AuthProvider, useAuth } from '@/providers/auth-provider';
+import { PlayerProvider } from '@/providers/player-provider';
+
+SplashScreen.preventAutoHideAsync();
+
+function RootNavigator() {
+  const { session, isLoading } = useAuth();
+
+  useEffect(() => {
+    if (!isLoading) {
+      SplashScreen.hideAsync();
+    }
+  }, [isLoading]);
+
+  if (isLoading) {
+    return null;
+  }
+
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Protected guard={!!session}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="compose" options={{ presentation: 'modal' }} />
+      </Stack.Protected>
+      <Stack.Protected guard={!session}>
+        <Stack.Screen name="(auth)" />
+      </Stack.Protected>
+    </Stack>
+  );
+}
+
+export default function RootLayout() {
+  const colorScheme = useColorScheme();
+  return (
+    <AuthProvider>
+      <PlayerProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <RootNavigator />
+        </ThemeProvider>
+      </PlayerProvider>
+    </AuthProvider>
+  );
+}
