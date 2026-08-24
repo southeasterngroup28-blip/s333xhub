@@ -37,6 +37,13 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="fanmail"
+        options={{
+          title: 'Fan Mail',
+          tabBarIcon: ({ color, size }) => <Ionicons name="mail" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="shop"
         options={{
           // Teaser tab: always dimmed, never navigates.

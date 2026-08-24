@@ -35,15 +35,16 @@ export default function Top8ManagerScreen() {
   }, [load]);
 
   useEffect(() => {
-    if (pickingSlot === null || query.trim().length < 1) {
+    if (pickingSlot === null) {
       setResults([]);
       return;
     }
+    // Show the full fan list immediately; each letter typed narrows it.
     const timer = setTimeout(() => {
-      searchProfiles(query.trim())
+      searchProfiles(query)
         .then(setResults)
         .catch(() => {});
-    }, 250);
+    }, 200);
     return () => clearTimeout(timer);
   }, [query, pickingSlot]);
 

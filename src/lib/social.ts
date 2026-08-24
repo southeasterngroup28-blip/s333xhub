@@ -156,14 +156,21 @@ export async function removeTopFan(position: number): Promise<void> {
   if (error) throw error;
 }
 
-/** Simple name search for the artist's Top 8 picker. */
+/**
+ * Fan search for the Top 8 picker: an empty query lists fans A→Z,
+ * and every typed letter narrows the list (Instagram-style).
+ */
 export async function searchProfiles(query: string): Promise<{ id: string; display_name: string }[]> {
-  const { data, error } = await supabase
+  let request = supabase
     .from('profiles')
     .select('id, display_name')
-    .ilike('display_name', `%${query}%`)
     .neq('role', 'artist')
-    .limit(10);
+    .order('display_name')
+    .limit(20);
+  if (query.trim()) {
+    request = request.ilike('display_name', `%${query.trim()}%`);
+  }
+  const { data, error } = await request;
   if (error) throw error;
   return (data as { id: string; display_name: string }[]) ?? [];
 }

@@ -121,7 +121,7 @@ export type NewPost = {
 };
 
 /** Reads a picked file into upload form: browser File directly, phone path via base64. */
-async function filePayload(item: { file?: Blob; uri?: string }): Promise<Blob | ArrayBuffer> {
+export async function filePayload(item: { file?: Blob; uri?: string }): Promise<Blob | ArrayBuffer> {
   if (item.file) return item.file;
   const { readAsStringAsync, EncodingType } = await import('expo-file-system/legacy');
   const base64 = await readAsStringAsync(item.uri!, { encoding: EncodingType.Base64 });
