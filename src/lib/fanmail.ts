@@ -4,6 +4,12 @@ import { supabase } from '@/lib/supabase';
 /** $10 per submission. The charge activates with the App Store build. */
 export const FAN_MAIL_PRICE_CENTS = 1000;
 
+/**
+ * Flips to true when RevenueCat goes live (step 7b, needs Apple).
+ * While false, submissions are hard-blocked — no payment, no send.
+ */
+export const FAN_MAIL_PAYMENTS_LIVE = false;
+
 export type FanMailKind = 'picture' | 'video' | 'audio';
 
 export type FanMailItem = {

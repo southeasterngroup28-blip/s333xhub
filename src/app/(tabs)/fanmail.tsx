@@ -20,6 +20,7 @@ import {
   PickVideoButton,
 } from '@/components/media-pickers';
 import {
+  FAN_MAIL_PAYMENTS_LIVE,
   FAN_MAIL_PRICE_CENTS,
   fanMailUrl,
   fetchAllFanMail,
@@ -77,6 +78,13 @@ export default function FanMailScreen() {
 
   async function handleSubmit() {
     if (!draft || sending) return;
+    // Hard paywall: no payment system yet means no submissions, period.
+    if (!FAN_MAIL_PAYMENTS_LIVE) {
+      setError(
+        'Payments open with the App Store version — Fan Mail submissions unlock then.'
+      );
+      return;
+    }
     setSending(true);
     setError(null);
     try {
@@ -164,8 +172,7 @@ export default function FanMailScreen() {
               comes through here.
             </Text>
             <Text style={styles.price}>
-              ${(FAN_MAIL_PRICE_CENTS / 100).toFixed(0)} per submission — the charge activates
-              with the App Store version.
+              ${(FAN_MAIL_PRICE_CENTS / 100).toFixed(0)} per submission.
             </Text>
 
             {draft ? (
@@ -245,7 +252,9 @@ export default function FanMailScreen() {
               {sending ? (
                 <ActivityIndicator color="#0b0c0e" />
               ) : (
-                <Text style={styles.sendText}>Send to the artist</Text>
+                <Text style={styles.sendText}>
+                  Pay ${(FAN_MAIL_PRICE_CENTS / 100).toFixed(0)} · Send to the artist
+                </Text>
               )}
             </Pressable>
           </View>
