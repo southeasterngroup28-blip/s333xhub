@@ -65,7 +65,7 @@ export async function fetchChatList(myUserId: string): Promise<ChatListItem[]> {
   const items = rows.map((r) => ({
     channelId: r.channel_id,
     type: r.channel!.type,
-    title: r.channel!.type === 'group' ? 'Community' : names[r.channel_id] ?? 'DM',
+    title: r.channel!.type === 'group' ? 'S333XHUB' : names[r.channel_id] ?? 'DM',
     mutedAt: r.muted_at,
     leftAt: r.left_at,
   }));
