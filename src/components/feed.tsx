@@ -89,9 +89,7 @@ export function Feed() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.topBar}>
-        <Text style={styles.title}>
-          S333XHUB<Text style={styles.titleMark}> *</Text>
-        </Text>
+        <Text style={styles.title}>S333XHUB</Text>
         <View style={styles.topActions}>
           {isArtist ? (
             <Pressable onPress={() => router.push('/reports')} hitSlop={12}>

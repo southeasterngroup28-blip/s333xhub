@@ -40,9 +40,7 @@ export default function SignInScreen() {
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.container}>
-        <Text style={styles.title}>
-          S333XHUB<Text style={styles.titleMark}> *</Text>
-        </Text>
+        <Text style={styles.title}>S333XHUB</Text>
         <Text style={styles.subtitle}>Sign in</Text>
 
         <TextInput
