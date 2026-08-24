@@ -1,16 +1,37 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { deleteMyAccount, fetchBlockedUsers, unblockUser } from '@/lib/moderation';
+import {
+  DEFAULT_PREFS,
+  fetchNotificationPrefs,
+  setNotificationPref,
+  type NotificationPrefs,
+} from '@/lib/notifications';
 import { useAuth } from '@/providers/auth-provider';
+
+const PREF_LABELS: { key: keyof NotificationPrefs; label: string; hint: string }[] = [
+  { key: 'new_posts', label: 'New posts', hint: 'When the artist drops something new' },
+  { key: 'group_chat', label: 'Community chat', hint: 'Messages in the group chat' },
+  { key: 'dms', label: 'Direct messages', hint: 'When you get a DM' },
+];
 
 export default function SettingsScreen() {
   const { session, profile, signOut } = useAuth();
   const router = useRouter();
   const [blocked, setBlocked] = useState<{ id: string; name: string }[]>([]);
+  const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
   const [confirmDelete, setConfirmDelete] = useState(0); // 0 = idle, 1 = first confirm shown
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +42,22 @@ export default function SettingsScreen() {
     fetchBlockedUsers()
       .then(setBlocked)
       .catch(() => {});
+    fetchNotificationPrefs()
+      .then(setPrefs)
+      .catch(() => {});
   }, []);
+
+  async function togglePref(key: keyof NotificationPrefs, value: boolean) {
+    const previous = prefs;
+    const next = { ...prefs, [key]: value };
+    setPrefs(next);
+    try {
+      await setNotificationPref(key, value, previous);
+    } catch (e) {
+      setPrefs(previous); // revert on failure
+      setError((e as { message?: string })?.message ?? 'Could not save that setting.');
+    }
+  }
 
   async function handleUnblock(id: string) {
     try {
@@ -64,6 +100,27 @@ export default function SettingsScreen() {
           <Text style={styles.name}>{profile?.display_name ?? '…'}</Text>
           <Text style={styles.email}>{session?.user.email}</Text>
           {isArtist ? <Text style={styles.artistTag}>Artist account</Text> : null}
+        </View>
+
+        <Text style={styles.sectionLabel}>NOTIFICATIONS</Text>
+        <View style={styles.card}>
+          {PREF_LABELS.map((row) => (
+            <View key={row.key} style={styles.prefRow}>
+              <View style={styles.prefText}>
+                <Text style={styles.prefLabel}>{row.label}</Text>
+                <Text style={styles.prefHint}>{row.hint}</Text>
+              </View>
+              <Switch
+                value={prefs[row.key]}
+                onValueChange={(value) => togglePref(row.key, value)}
+                trackColor={{ false: '#333', true: '#fbbf24' }}
+                thumbColor="#fff"
+              />
+            </View>
+          ))}
+          <Text style={styles.prefNote}>
+            Notifications start arriving with the App Store version of the app.
+          </Text>
         </View>
 
         <Text style={styles.sectionLabel}>BLOCKED USERS</Text>
@@ -153,6 +210,16 @@ const styles = StyleSheet.create({
   email: { color: '#888', fontSize: 14, marginTop: 2 },
   artistTag: { color: '#fbbf24', fontSize: 12, fontWeight: '700', marginTop: 6 },
   muted: { color: '#555' },
+  prefRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  prefText: { flex: 1, paddingRight: 12 },
+  prefLabel: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  prefHint: { color: '#777', fontSize: 12, marginTop: 1 },
+  prefNote: { color: '#555', fontSize: 12, marginTop: 10 },
   blockedRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
