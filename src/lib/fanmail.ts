@@ -38,13 +38,24 @@ export async function submitFanMail(
     .upload(path, await filePayload(item), { contentType: item.mimeType });
   if (uploadError) throw uploadError;
 
-  const { error } = await supabase.from('fan_mail').insert({
-    user_id: me,
-    kind,
-    storage_path: path,
-    note: note.trim() || null,
-  });
+  const { data: row, error } = await supabase
+    .from('fan_mail')
+    .insert({
+      user_id: me,
+      kind,
+      storage_path: path,
+      note: note.trim() || null,
+    })
+    .select('id')
+    .single();
   if (error) throw error;
+
+  // Deliver to the artist's private inbox. Nothing displays in-app; if the
+  // email function isn't deployed yet this fails silently and the row +
+  // file still exist for a manual re-send.
+  await supabase.functions
+    .invoke('fanmail-email', { body: { fan_mail_id: row.id } })
+    .catch(() => {});
 }
 
 /** My own submissions (fans) — newest first. */
@@ -60,28 +71,3 @@ export async function fetchMyFanMail(): Promise<FanMailItem[]> {
   return (data as unknown as FanMailItem[]) ?? [];
 }
 
-/** All submissions (artist inbox) — newest first. */
-export async function fetchAllFanMail(): Promise<FanMailItem[]> {
-  const { data, error } = await supabase
-    .from('fan_mail')
-    .select('id, user_id, kind, storage_path, note, paid, created_at, reviewed_at, sender:profiles!fan_mail_user_id_fkey(display_name)')
-    .order('created_at', { ascending: false })
-    .limit(100);
-  if (error) throw error;
-  return (data as unknown as FanMailItem[]) ?? [];
-}
-
-export async function markFanMailReviewed(id: string): Promise<void> {
-  const { error } = await supabase
-    .from('fan_mail')
-    .update({ reviewed_at: new Date().toISOString() })
-    .eq('id', id);
-  if (error) throw error;
-}
-
-/** A one-hour viewing link for a submission's file. */
-export async function fanMailUrl(storagePath: string): Promise<string> {
-  const { data, error } = await supabase.storage.from('fan-mail').createSignedUrl(storagePath, 3600);
-  if (error) throw error;
-  return data.signedUrl;
-}

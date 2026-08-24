@@ -2,8 +2,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
-  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -22,10 +20,7 @@ import {
 import {
   FAN_MAIL_PAYMENTS_LIVE,
   FAN_MAIL_PRICE_CENTS,
-  fanMailUrl,
-  fetchAllFanMail,
   fetchMyFanMail,
-  markFanMailReviewed,
   submitFanMail,
   type FanMailItem,
   type FanMailKind,
@@ -60,8 +55,12 @@ export default function FanMailScreen() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (isArtist) {
+      setLoading(false);
+      return;
+    }
     try {
-      setItems(isArtist ? await fetchAllFanMail() : await fetchMyFanMail());
+      setItems(await fetchMyFanMail());
       setError(null);
     } catch (e) {
       setError((e as { message?: string })?.message ?? 'Could not load fan mail.');
@@ -101,23 +100,6 @@ export default function FanMailScreen() {
     }
   }
 
-  async function handleOpen(item: FanMailItem) {
-    try {
-      const url = await fanMailUrl(item.storage_path);
-      Linking.openURL(url);
-      if (isArtist && !item.reviewed_at) {
-        await markFanMailReviewed(item.id);
-        setItems((prev) =>
-          prev.map((it) =>
-            it.id === item.id ? { ...it, reviewed_at: new Date().toISOString() } : it
-          )
-        );
-      }
-    } catch (e) {
-      setError((e as { message?: string })?.message ?? 'Could not open the file.');
-    }
-  }
-
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.topBar}>
@@ -128,48 +110,28 @@ export default function FanMailScreen() {
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {isArtist ? (
-        loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator color="#fff" />
+        <View style={styles.list}>
+          <View style={styles.card}>
+            <View style={styles.row}>
+              <View style={styles.kindIcon}>
+                <Ionicons name="mail" size={17} color="#c3cdd6" />
+              </View>
+              <View style={styles.meta}>
+                <Text style={styles.sender}>Fan mail goes straight to your email</Text>
+                <Text style={styles.sub}>
+                  Submissions never display in the app — each one lands in your private
+                  inbox with the fan's name, their note, and a download link.
+                </Text>
+              </View>
+            </View>
           </View>
-        ) : (
-          <FlatList
-            data={items}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.list}
-            renderItem={({ item }) => (
-              <View style={styles.card}>
-                <View style={styles.row}>
-                  <View style={styles.kindIcon}>
-                    <Ionicons name={KIND_ICON[item.kind]} size={17} color="#c3cdd6" />
-                  </View>
-                  <View style={styles.meta}>
-                    <Text style={styles.sender}>{item.sender?.display_name ?? 'Unknown fan'}</Text>
-                    <Text style={styles.sub}>
-                      {item.kind} · {timeAgo(item.created_at)}
-                      {item.reviewed_at ? ' · seen' : ''}
-                    </Text>
-                  </View>
-                  <Pressable style={styles.openPill} onPress={() => handleOpen(item)}>
-                    <Text style={styles.openPillText}>Open</Text>
-                  </Pressable>
-                </View>
-                {item.note ? <Text style={styles.noteText}>“{item.note}”</Text> : null}
-              </View>
-            )}
-            ListEmptyComponent={
-              <View style={styles.center}>
-                <Text style={styles.muted}>No fan mail yet.</Text>
-              </View>
-            }
-          />
-        )
+        </View>
       ) : (
         <ScrollView contentContainerStyle={styles.list}>
           <View style={styles.card}>
             <Text style={styles.pitch}>
-              Send the artist your pictures, videos, beats, or music. He sees everything that
-              comes through here.
+              Send the artist your pictures, videos, beats, or music — it goes straight to
+              him, privately.
             </Text>
             <Text style={styles.price}>
               ${(FAN_MAIL_PRICE_CENTS / 100).toFixed(0)} per submission.
@@ -270,9 +232,7 @@ export default function FanMailScreen() {
                     </View>
                     <View style={styles.meta}>
                       <Text style={styles.sender}>{item.kind}</Text>
-                      <Text style={styles.sub}>
-                        {timeAgo(item.created_at)} · {item.reviewed_at ? 'seen by the artist ✓' : 'sent'}
-                      </Text>
+                      <Text style={styles.sub}>{timeAgo(item.created_at)} · sent ✓</Text>
                     </View>
                   </View>
                 </View>
