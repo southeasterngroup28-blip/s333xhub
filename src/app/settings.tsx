@@ -15,7 +15,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SUPPORT_EMAIL } from '@/lib/legal-content';
 import { deleteMyAccount, fetchBlockedUsers, unblockUser } from '@/lib/moderation';
-import { setMyStatus } from '@/lib/social';
 import {
   DEFAULT_PREFS,
   fetchNotificationPrefs,
@@ -38,22 +37,6 @@ export default function SettingsScreen() {
   const [confirmDelete, setConfirmDelete] = useState(0); // 0 = idle, 1 = first confirm shown
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mood, setMood] = useState('');
-  const [moodSaved, setMoodSaved] = useState(false);
-
-  useEffect(() => {
-    setMood(profile?.status ?? '');
-  }, [profile?.status]);
-
-  async function saveMood() {
-    try {
-      await setMyStatus(mood);
-      setMoodSaved(true);
-      setTimeout(() => setMoodSaved(false), 2000);
-    } catch (e) {
-      setError((e as { message?: string })?.message ?? 'Could not save your mood.');
-    }
-  }
 
   const isArtist = profile?.role === 'artist';
 
@@ -119,19 +102,6 @@ export default function SettingsScreen() {
           <Text style={styles.name}>{profile?.display_name ?? '…'}</Text>
           <Text style={styles.email}>{session?.user.email}</Text>
           {isArtist ? <Text style={styles.artistTag}>Artist account</Text> : null}
-          <View style={styles.moodRow}>
-            <TextInput
-              style={styles.moodInput}
-              placeholder="Set a mood… (shown next to your name)"
-              placeholderTextColor="#55585f"
-              value={mood}
-              onChangeText={setMood}
-              maxLength={60}
-            />
-            <Pressable style={styles.moodSave} onPress={saveMood} hitSlop={6}>
-              <Text style={styles.moodSaveText}>{moodSaved ? '✓' : 'Save'}</Text>
-            </Pressable>
-          </View>
         </View>
 
         <Text style={styles.sectionLabel}>NOTIFICATIONS</Text>
@@ -254,23 +224,6 @@ const styles = StyleSheet.create({
   name: { color: '#fff', fontSize: 17, fontWeight: '700' },
   email: { color: '#888', fontSize: 14, marginTop: 2 },
   artistTag: { color: '#c3cdd6', fontSize: 12, fontWeight: '700', marginTop: 6 },
-  moodRow: { flexDirection: 'row', gap: 8, marginTop: 12, alignItems: 'center' },
-  moodInput: {
-    flex: 1,
-    backgroundColor: '#0f1114',
-    color: '#fff',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 13.5,
-  },
-  moodSave: {
-    backgroundColor: '#1e2126',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-  },
-  moodSaveText: { color: '#c3cdd6', fontWeight: '700', fontSize: 13 },
   muted: { color: '#555' },
   prefRow: {
     flexDirection: 'row',

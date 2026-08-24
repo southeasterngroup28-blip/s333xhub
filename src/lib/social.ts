@@ -243,13 +243,3 @@ export async function createPollForPost(
   if (optionsError) throw optionsError;
 }
 
-// ---------------- Mood ----------------
-
-export async function setMyStatus(status: string): Promise<void> {
-  const me = (await supabase.auth.getUser()).data.user!.id;
-  const { error } = await supabase
-    .from('profiles')
-    .update({ status: status.trim() || null })
-    .eq('id', me);
-  if (error) throw error;
-}

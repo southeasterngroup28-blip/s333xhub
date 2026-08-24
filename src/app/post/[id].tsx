@@ -165,11 +165,6 @@ export default function CommentsScreen() {
                       {isArtistComment ? (
                         <Text style={styles.artistCross}>†</Text>
                       ) : null}
-                      {item.author?.status ? (
-                        <Text style={styles.mood} numberOfLines={1}>
-                          · {item.author.status}
-                        </Text>
-                      ) : null}
                       {item.pinned ? <Text style={styles.pin}>PINNED</Text> : null}
                     </View>
                     <Text style={styles.body}>{item.body}</Text>
