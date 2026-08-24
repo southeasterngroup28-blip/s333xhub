@@ -53,8 +53,9 @@ export async function submitFanMail(
   // Deliver to the artist's private inbox. Nothing displays in-app; if the
   // email function isn't deployed yet this fails silently and the row +
   // file still exist for a manual re-send.
+  // Deployed under the dashboard's default slug "swift-function".
   await supabase.functions
-    .invoke('fanmail-email', { body: { fan_mail_id: row.id } })
+    .invoke('swift-function', { body: { fan_mail_id: row.id } })
     .catch(() => {});
 }
 
