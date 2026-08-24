@@ -124,9 +124,9 @@ export default function SignUpScreen() {
             disabled={!canSubmit}
             onPress={handleSignUp}>
             {submitting ? (
-              <ActivityIndicator color="#000" />
+              <ActivityIndicator color="#2fd0e2" />
             ) : (
-              <Text style={styles.buttonText}>Sign up</Text>
+              <Text style={styles.buttonText}>SIGN UP</Text>
             )}
           </Pressable>
 
@@ -153,11 +153,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 4,
   },
-  subtitle: { color: '#888', fontSize: 16, textAlign: 'center', marginBottom: 32 },
+  subtitle: {
+    color: '#9a9ba3',
+    fontSize: 12,
+    letterSpacing: 3,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    marginBottom: 32,
+  },
   input: {
-    backgroundColor: '#161618',
+    backgroundColor: '#0d0e11',
     color: '#fff',
-    borderRadius: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1e2026',
     padding: 16,
     fontSize: 16,
     marginBottom: 12,
@@ -173,21 +182,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkboxChecked: { backgroundColor: '#3fd8ea', borderColor: '#3fd8ea' },
-  checkmark: { color: '#000', fontWeight: '800' },
+  checkboxChecked: { backgroundColor: 'transparent', borderColor: '#2fd0e2' },
+  checkmark: { color: '#2fd0e2', fontWeight: '800' },
   termsText: { color: '#aaa', flex: 1 },
   termsLink: { color: '#fff', textDecorationLine: 'underline' },
   error: { color: '#ff6b6b', marginBottom: 12, textAlign: 'center' },
   button: {
-    backgroundColor: '#3fd8ea',
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: '#2fd0e2',
+    borderRadius: 10,
+    padding: 15,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 10,
+    shadowColor: '#2fd0e2',
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
   },
-  buttonDisabled: { opacity: 0.6 },
-  buttonText: { color: '#000', fontSize: 16, fontWeight: '700' },
+  buttonDisabled: { opacity: 0.4 },
+  buttonText: {
+    color: '#2fd0e2',
+    fontSize: 15,
+    fontFamily: 'Anton_400Regular',
+    letterSpacing: 4,
+  },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
   footerText: { color: '#888' },
-  footerLink: { color: '#3fd8ea', fontWeight: '600' },
+  footerLink: { color: '#2fd0e2', fontWeight: '600' },
 });

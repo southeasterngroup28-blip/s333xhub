@@ -63,7 +63,7 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, unlocked, onDeleted 
           {/* Project symbol, Twitter-checkmark style. Placeholder icons until
               the artist picks the real ones — swap the `name` values below. */}
           {post.project === 's333xgod' ? (
-            <Ionicons name="flame" size={15} color="#3fd8ea" />
+            <Ionicons name="flame" size={15} color="#2fd0e2" />
           ) : (
             <Ionicons name="disc" size={15} color="#ffffff" />
           )}
@@ -122,7 +122,7 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, unlocked, onDeleted 
 
       {locked ? (
         <View style={styles.lockedBox}>
-          <Ionicons name="lock-closed" size={22} color="#3fd8ea" />
+          <Ionicons name="lock-closed" size={22} color="#2fd0e2" />
           <View style={styles.lockedMeta}>
             {post.title ? <Text style={styles.lockedTitle}>{post.title}</Text> : null}
             <Pressable style={styles.unlockButton} onPress={() => setUnlockNotice(true)}>
@@ -192,8 +192,10 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, unlocked, onDeleted 
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#111113',
-    borderRadius: 16,
+    backgroundColor: '#0d0e11',
+    borderWidth: 1,
+    borderColor: '#1e2026',
+    borderRadius: 12,
     padding: 16,
     marginHorizontal: 16,
     marginBottom: 12,
@@ -218,25 +220,25 @@ const styles = StyleSheet.create({
   reportedNote: { color: '#4fc07a', fontSize: 13, marginBottom: 8 },
   actionError: { color: '#f87171', fontSize: 13, marginBottom: 8 },
   authorRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  author: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  time: { color: '#666', fontSize: 13 },
-  body: { color: '#ddd', fontSize: 15, lineHeight: 22, marginBottom: 4 },
-  image: { borderRadius: 12, marginTop: 8, backgroundColor: '#1a1a1c' },
+  author: { color: '#fff', fontWeight: '700', fontSize: 14, letterSpacing: 0.3 },
+  time: { color: '#5a5b63', fontSize: 12 },
+  body: { color: '#d8d9dd', fontSize: 15, lineHeight: 22, marginBottom: 4 },
+  image: { borderRadius: 8, marginTop: 8, backgroundColor: '#14151a' },
   lockedBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#101418',
-    borderRadius: 12,
+    backgroundColor: '#081b1f',
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#1899b3',
+    borderColor: '#12798e',
     padding: 14,
     marginTop: 8,
   },
   lockedMeta: { flex: 1 },
-  unlockedTag: { color: '#3fd8ea', fontSize: 12, fontWeight: '700', marginBottom: 6 },
+  unlockedTag: { color: '#2fd0e2', fontSize: 12, fontWeight: '700', marginBottom: 6 },
   unlockButton: {
-    backgroundColor: '#3fd8ea',
+    backgroundColor: '#2fd0e2',
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -245,6 +247,6 @@ const styles = StyleSheet.create({
   },
   unlockButtonText: { color: '#000', fontSize: 14, fontWeight: '800' },
   lockedTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  lockedText: { color: '#3fd8ea', fontSize: 14, fontWeight: '700', marginTop: 2 },
+  lockedText: { color: '#2fd0e2', fontSize: 14, fontWeight: '700', marginTop: 2 },
   lockedHint: { color: '#666', fontSize: 12, marginTop: 2 },
 });

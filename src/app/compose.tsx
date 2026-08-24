@@ -240,7 +240,7 @@ export default function ComposeScreen() {
             <Ionicons
               name={locked ? 'lock-closed' : 'lock-open-outline'}
               size={20}
-              color={locked ? '#3fd8ea' : '#888'}
+              color={locked ? '#2fd0e2' : '#888'}
             />
             <View style={styles.lockMeta}>
               <Text style={styles.lockTitle}>{locked ? 'Locked post' : 'Free post'}</Text>
@@ -302,7 +302,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#161618',
   },
-  projectChipActive: { backgroundColor: '#3fd8ea' },
+  projectChipActive: { backgroundColor: '#2fd0e2' },
   projectChipText: { color: '#aaa', fontSize: 13, fontWeight: '700', letterSpacing: 1 },
   projectChipTextActive: { color: '#000' },
   input: {
@@ -367,7 +367,7 @@ const styles = StyleSheet.create({
     padding: 3,
     justifyContent: 'center',
   },
-  lockToggleOn: { backgroundColor: '#3fd8ea' },
+  lockToggleOn: { backgroundColor: '#2fd0e2' },
   lockKnob: {
     width: 22,
     height: 22,
@@ -382,7 +382,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#0d0d0f',
   },
-  priceChipActive: { backgroundColor: '#3fd8ea' },
+  priceChipActive: { backgroundColor: '#2fd0e2' },
   priceText: { color: '#aaa', fontSize: 14, fontWeight: '700' },
   priceTextActive: { color: '#000' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },

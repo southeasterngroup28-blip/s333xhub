@@ -9,10 +9,14 @@ export const BRAND = {
   text: '#ffffff',
   dim: '#8a8a92',
   faint: '#55555c',
-  /** THE color — the VHS cyan from the Highs & Lows era. */
-  cyan: '#3fd8ea',
-  /** Darker cyan for subtle borders/glows. */
-  cyanDeep: '#1899b3',
+  /** THE color — the VHS cyan from the Highs & Lows era. Used as line,
+      text, and glow on black; solid fills are reserved for ONE call-to-
+      action per screen. */
+  cyan: '#2fd0e2',
+  /** Darker cyan for hairline borders. */
+  cyanDeep: '#12798e',
+  /** Cyan-tinted dark surface for "mine"/selected states. */
+  cyanInk: '#0e3540',
   danger: '#f87171',
   ok: '#4fc07a',
   /** Display font for wordmarks and headers (loaded in the root layout). */

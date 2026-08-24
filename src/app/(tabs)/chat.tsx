@@ -108,10 +108,10 @@ export default function ChatListScreen() {
             !isArtist && !hasDm ? (
               <Pressable style={styles.dmButton} onPress={openArtistDm} disabled={openingDm}>
                 {openingDm ? (
-                  <ActivityIndicator color="#000" />
+                  <ActivityIndicator color="#2fd0e2" />
                 ) : (
                   <>
-                    <Ionicons name="chatbubble-ellipses" size={18} color="#000" />
+                    <Ionicons name="chatbubble-ellipses" size={18} color="#2fd0e2" />
                     <Text style={styles.dmButtonText}>Message the artist</Text>
                   </>
                 )}
@@ -163,11 +163,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#3fd8ea',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: '#2fd0e2',
     marginHorizontal: 16,
     marginTop: 20,
     paddingVertical: 12,
     borderRadius: 24,
+    shadowColor: '#2fd0e2',
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
   },
-  dmButtonText: { color: '#000', fontWeight: '700', fontSize: 15 },
+  dmButtonText: { color: '#2fd0e2', fontWeight: '700', fontSize: 15 },
 });

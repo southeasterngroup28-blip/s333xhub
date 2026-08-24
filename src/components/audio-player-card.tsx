@@ -39,7 +39,7 @@ export function AudioPlayerCard({ postId, title, url }: Props) {
     <View style={styles.card}>
       <View style={styles.row}>
         <Pressable style={styles.playButton} onPress={handlePress} hitSlop={8}>
-          <Ionicons name={isPlaying ? 'pause' : 'play'} size={22} color="#000" style={!isPlaying && styles.playNudge} />
+          <Ionicons name={isPlaying ? 'pause' : 'play'} size={22} color="#2fd0e2" style={!isPlaying && styles.playNudge} />
         </Pressable>
         <View style={styles.meta}>
           <Text style={styles.trackTitle} numberOfLines={1}>
@@ -70,8 +70,10 @@ export function AudioPlayerCard({ postId, title, url }: Props) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#1a1a1e',
-    borderRadius: 12,
+    backgroundColor: '#0b1215',
+    borderWidth: 1,
+    borderColor: '#173a42',
+    borderRadius: 10,
     padding: 14,
     marginTop: 8,
   },
@@ -80,7 +82,9 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#3fd8ea',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: '#2fd0e2',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -90,5 +94,5 @@ const styles = StyleSheet.create({
   time: { color: '#777', fontSize: 12, marginTop: 2 },
   barTouch: { paddingVertical: 10, marginTop: 4 },
   barTrack: { height: 4, borderRadius: 2, backgroundColor: '#26262c' },
-  barFill: { height: 4, borderRadius: 2, backgroundColor: '#3fd8ea' },
+  barFill: { height: 4, borderRadius: 2, backgroundColor: '#2fd0e2' },
 });

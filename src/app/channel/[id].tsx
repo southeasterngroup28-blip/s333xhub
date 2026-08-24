@@ -235,7 +235,7 @@ export default function ChannelScreen() {
             <Ionicons
               name={info?.mutedAt ? 'notifications-off' : 'notifications-outline'}
               size={20}
-              color={info?.mutedAt ? '#3fd8ea' : '#999'}
+              color={info?.mutedAt ? '#2fd0e2' : '#999'}
             />
           </Pressable>
           {isGroup ? (
@@ -452,15 +452,17 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   bubbleMine: {
-    backgroundColor: '#3fd8ea',
+    backgroundColor: '#0e3540',
+    borderWidth: 1,
+    borderColor: '#12798e',
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 4,
   },
-  senderName: { color: '#3fd8ea', fontSize: 12, fontWeight: '700', marginBottom: 2 },
+  senderName: { color: '#2fd0e2', fontSize: 12, fontWeight: '700', marginBottom: 2 },
   bubbleText: { color: '#fff', fontSize: 15, lineHeight: 20 },
-  bubbleTextMine: { color: '#000' },
+  bubbleTextMine: { color: '#e6feff' },
   bubbleTime: { color: '#555', fontSize: 10, marginTop: 4, alignSelf: 'flex-end' },
-  bubbleTimeMine: { color: '#0d5a68' },
+  bubbleTimeMine: { color: '#5db6c4' },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -485,7 +487,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#3fd8ea',
+    backgroundColor: '#2fd0e2',
     alignItems: 'center',
     justifyContent: 'center',
   },
