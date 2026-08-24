@@ -6,8 +6,7 @@
 export const APP_NAME = 'S333XHUB';
 export const SUPPORT_EMAIL = 'southeasterngroup28@gmail.com';
 export const EFFECTIVE_DATE = 'August 23, 2026';
-/** Set this to the operator's home state before launch (e.g. 'Florida'). */
-export const GOVERNING_STATE = '[YOUR STATE]';
+export const GOVERNING_STATE = 'Florida';
 
 export type LegalSection = { heading: string; body: string };
 
