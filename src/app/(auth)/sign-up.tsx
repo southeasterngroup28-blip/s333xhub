@@ -180,8 +180,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkboxChecked: { backgroundColor: 'transparent', borderColor: '#37c8d8' },
-  checkmark: { color: '#37c8d8', fontWeight: '800' },
+  checkboxChecked: { backgroundColor: 'transparent', borderColor: '#c3cdd6' },
+  checkmark: { color: '#c3cdd6', fontWeight: '800' },
   termsText: { color: '#aaa', flex: 1 },
   termsLink: { color: '#fff', textDecorationLine: 'underline' },
   error: { color: '#ff6b6b', marginBottom: 12, textAlign: 'center' },
@@ -201,5 +201,5 @@ const styles = StyleSheet.create({
   buttonText: { color: '#0b0c0e', fontSize: 15, fontWeight: '700' },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
   footerText: { color: '#888' },
-  footerLink: { color: '#37c8d8', fontWeight: '600' },
+  footerLink: { color: '#c3cdd6', fontWeight: '600' },
 });

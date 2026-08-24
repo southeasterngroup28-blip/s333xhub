@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
   wrap: { marginTop: 12 },
   art: {
     borderRadius: 12,
-    backgroundColor: '#0e181d',
+    backgroundColor: '#171b20',
     minHeight: 110,
     justifyContent: 'flex-end',
     overflow: 'hidden',
@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
     width: 180,
     height: 140,
     borderRadius: 90,
-    backgroundColor: 'rgba(55, 200, 216, 0.14)',
+    backgroundColor: 'rgba(195, 205, 214, 0.14)',
   },
   artRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 },
   play: {
@@ -113,8 +113,8 @@ const styles = StyleSheet.create({
   playNudge: { marginLeft: 2 },
   titleWrap: { flex: 1 },
   trackTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  time: { color: '#9fb6bb', fontSize: 12, marginTop: 2 },
+  time: { color: '#99a1a9', fontSize: 12, marginTop: 2 },
   barTouch: { paddingVertical: 10 },
   barTrack: { height: 3, borderRadius: 2, backgroundColor: '#23262b' },
-  barFill: { height: 3, borderRadius: 2, backgroundColor: '#37c8d8' },
+  barFill: { height: 3, borderRadius: 2, backgroundColor: '#c3cdd6' },
 });

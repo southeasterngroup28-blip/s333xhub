@@ -131,7 +131,7 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, unlocked, onDeleted 
       {locked ? (
         <View style={styles.lockCard}>
           <View style={styles.lockIcon}>
-            <Ionicons name="lock-closed" size={17} color="#37c8d8" />
+            <Ionicons name="lock-closed" size={17} color="#c3cdd6" />
           </View>
           <View style={styles.lockMeta}>
             <Text style={styles.lockTitle}>{post.title ?? 'Exclusive drop'}</Text>
@@ -229,7 +229,7 @@ const styles = StyleSheet.create({
   sub: { color: '#6d7076', fontSize: 11.5, marginTop: 1 },
   cross: { fontSize: 15, fontWeight: '700', lineHeight: 17 },
   crossMazze: { color: '#c9cbd0' },
-  crossGod: { color: '#37c8d8', transform: [{ rotate: '180deg' }] },
+  crossGod: { color: '#c3cdd6', transform: [{ rotate: '180deg' }] },
   body: { color: '#cbcdd1', fontSize: 14, lineHeight: 22 },
   image: { borderRadius: 12, marginTop: 12, backgroundColor: '#1a1d22' },
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 },
@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
   reportedNote: { color: '#4fc07a', fontSize: 13, marginBottom: 8 },
   actionError: { color: '#f87171', fontSize: 13, marginBottom: 8 },
   unlockedTag: {
-    color: '#37c8d8',
+    color: '#c3cdd6',
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.5,
@@ -255,9 +255,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#10181b',
+    backgroundColor: '#14171b',
     borderWidth: 1,
-    borderColor: '#1c2b30',
+    borderColor: '#262a30',
     borderRadius: 16,
     padding: 14,
     marginTop: 10,
@@ -266,7 +266,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: 'rgba(55, 200, 216, 0.1)',
+    backgroundColor: 'rgba(195, 205, 214, 0.1)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -274,10 +274,10 @@ const styles = StyleSheet.create({
   lockTitle: { color: '#fff', fontWeight: '600', fontSize: 14 },
   lockSub: { color: '#6d7076', fontSize: 12, marginTop: 2 },
   unlockPill: {
-    backgroundColor: '#37c8d8',
+    backgroundColor: '#c3cdd6',
     borderRadius: 999,
     paddingHorizontal: 16,
     paddingVertical: 9,
   },
-  unlockPillText: { color: '#06272c', fontWeight: '700', fontSize: 13 },
+  unlockPillText: { color: '#14161a', fontWeight: '700', fontSize: 13 },
 });

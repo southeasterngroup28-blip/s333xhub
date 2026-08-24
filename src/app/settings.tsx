@@ -114,7 +114,7 @@ export default function SettingsScreen() {
               <Switch
                 value={prefs[row.key]}
                 onValueChange={(value) => togglePref(row.key, value)}
-                trackColor={{ false: '#333', true: '#37c8d8' }}
+                trackColor={{ false: '#333', true: '#c3cdd6' }}
                 thumbColor="#fff"
               />
             </View>
@@ -222,7 +222,7 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#131519', borderRadius: 12, padding: 16 },
   name: { color: '#fff', fontSize: 17, fontWeight: '700' },
   email: { color: '#888', fontSize: 14, marginTop: 2 },
-  artistTag: { color: '#37c8d8', fontSize: 12, fontWeight: '700', marginTop: 6 },
+  artistTag: { color: '#c3cdd6', fontSize: 12, fontWeight: '700', marginTop: 6 },
   muted: { color: '#555' },
   prefRow: {
     flexDirection: 'row',
@@ -249,7 +249,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   blockedName: { color: '#fff', fontSize: 15 },
-  unblock: { color: '#37c8d8', fontWeight: '600' },
+  unblock: { color: '#c3cdd6', fontWeight: '600' },
   error: { color: '#f87171', marginTop: 16 },
   signOut: { marginTop: 28, alignItems: 'center', padding: 12 },
   signOutText: { color: '#888', fontSize: 15 },

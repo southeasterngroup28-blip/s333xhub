@@ -15,7 +15,7 @@ export const BRAND = {
   /** THE color — the VHS cyan from the Highs & Lows era. Used as line,
       text, and glow on black; solid fills are reserved for ONE call-to-
       action per screen. */
-  cyan: '#37c8d8',
+  cyan: '#c3cdd6',
   /** Darker cyan for hairline borders. */
   cyanDeep: '#12798e',
   /** Cyan-tinted dark surface for "mine"/selected states. */

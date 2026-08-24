@@ -235,7 +235,7 @@ export default function ChannelScreen() {
             <Ionicons
               name={info?.mutedAt ? 'notifications-off' : 'notifications-outline'}
               size={20}
-              color={info?.mutedAt ? '#37c8d8' : '#999'}
+              color={info?.mutedAt ? '#c3cdd6' : '#999'}
             />
           </Pressable>
           {isGroup ? (
@@ -452,15 +452,15 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   bubbleMine: {
-    backgroundColor: '#1d3b42',
+    backgroundColor: '#2a2f36',
     borderBottomLeftRadius: 18,
     borderBottomRightRadius: 5,
   },
-  senderName: { color: '#37c8d8', fontSize: 12, fontWeight: '700', marginBottom: 2 },
+  senderName: { color: '#c3cdd6', fontSize: 12, fontWeight: '700', marginBottom: 2 },
   bubbleText: { color: '#fff', fontSize: 15, lineHeight: 20 },
   bubbleTextMine: { color: '#e6feff' },
   bubbleTime: { color: '#555', fontSize: 10, marginTop: 4, alignSelf: 'flex-end' },
-  bubbleTimeMine: { color: '#5db6c4' },
+  bubbleTimeMine: { color: '#8f99a3' },
   composer: {
     flexDirection: 'row',
     alignItems: 'flex-end',

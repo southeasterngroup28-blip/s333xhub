@@ -240,7 +240,7 @@ export default function ComposeScreen() {
             <Ionicons
               name={locked ? 'lock-closed' : 'lock-open-outline'}
               size={20}
-              color={locked ? '#37c8d8' : '#888'}
+              color={locked ? '#c3cdd6' : '#888'}
             />
             <View style={styles.lockMeta}>
               <Text style={styles.lockTitle}>{locked ? 'Locked post' : 'Free post'}</Text>
@@ -367,7 +367,7 @@ const styles = StyleSheet.create({
     padding: 3,
     justifyContent: 'center',
   },
-  lockToggleOn: { backgroundColor: '#37c8d8' },
+  lockToggleOn: { backgroundColor: '#c3cdd6' },
   lockKnob: {
     width: 22,
     height: 22,
@@ -382,7 +382,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#0d0d0f',
   },
-  priceChipActive: { backgroundColor: '#37c8d8' },
+  priceChipActive: { backgroundColor: '#c3cdd6' },
   priceText: { color: '#aaa', fontSize: 14, fontWeight: '700' },
   priceTextActive: { color: '#000' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },

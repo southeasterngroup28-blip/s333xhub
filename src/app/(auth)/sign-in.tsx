@@ -131,5 +131,5 @@ const styles = StyleSheet.create({
   buttonText: { color: '#0b0c0e', fontSize: 15, fontWeight: '700' },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
   footerText: { color: '#888' },
-  footerLink: { color: '#37c8d8', fontWeight: '600' },
+  footerLink: { color: '#c3cdd6', fontWeight: '600' },
 });
