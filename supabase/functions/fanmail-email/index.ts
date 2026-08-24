@@ -7,10 +7,19 @@
 //   FANMAIL_TO_EMAIL — the private inbox that receives submissions
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
+// Browsers send a CORS "preflight" request before the real one; answer it.
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
 Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
   try {
     const { fan_mail_id } = await req.json();
-    if (!fan_mail_id) return new Response('missing fan_mail_id', { status: 400 });
+    if (!fan_mail_id) return new Response('missing fan_mail_id', { status: 400, headers: corsHeaders });
 
     // Who is calling? Must be a signed-in user.
     const anonClient = createClient(
@@ -19,7 +28,7 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } } }
     );
     const { data: userData } = await anonClient.auth.getUser();
-    if (!userData?.user) return new Response('unauthorized', { status: 401 });
+    if (!userData?.user) return new Response('unauthorized', { status: 401, headers: corsHeaders });
 
     // Trusted client for reading the row and signing the file link.
     const admin = createClient(
@@ -34,7 +43,7 @@ Deno.serve(async (req) => {
       .single();
     // Only the submission's own sender can trigger its email.
     if (!row || row.user_id !== userData.user.id) {
-      return new Response('not found', { status: 404 });
+      return new Response('not found', { status: 404, headers: corsHeaders });
     }
 
     const { data: profile } = await admin
@@ -68,10 +77,13 @@ Deno.serve(async (req) => {
       }),
     });
     if (!response.ok) {
-      return new Response(`email failed: ${await response.text()}`, { status: 502 });
+      return new Response(`email failed: ${await response.text()}`, {
+        status: 502,
+        headers: corsHeaders,
+      });
     }
-    return new Response('ok');
+    return new Response('ok', { headers: corsHeaders });
   } catch (error) {
-    return new Response(String(error), { status: 500 });
+    return new Response(String(error), { status: 500, headers: corsHeaders });
   }
 });
