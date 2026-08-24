@@ -40,7 +40,9 @@ export default function SignInScreen() {
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.container}>
-        <Text style={styles.title}>S333XHUB</Text>
+        <Text style={styles.title}>
+          S333XHUB<Text style={styles.titleMark}> *</Text>
+        </Text>
         <Text style={styles.subtitle}>Sign in</Text>
 
         <TextInput
@@ -92,12 +94,16 @@ const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', padding: 24 },
   title: {
     color: '#fff',
-    fontSize: 32,
-    fontWeight: '800',
-    letterSpacing: 2,
+    fontSize: 40,
+    fontFamily: 'Anton_400Regular',
+    letterSpacing: 3,
     textAlign: 'center',
     marginBottom: 4,
+    textShadowColor: '#3fd8ea',
+    textShadowRadius: 18,
+    textShadowOffset: { width: 0, height: 0 },
   },
+  titleMark: { color: '#3fd8ea' },
   subtitle: { color: '#888', fontSize: 16, textAlign: 'center', marginBottom: 32 },
   input: {
     backgroundColor: '#161618',
@@ -109,7 +115,7 @@ const styles = StyleSheet.create({
   },
   error: { color: '#ff6b6b', marginBottom: 12, textAlign: 'center' },
   button: {
-    backgroundColor: '#fff',
+    backgroundColor: '#3fd8ea',
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
@@ -119,5 +125,5 @@ const styles = StyleSheet.create({
   buttonText: { color: '#000', fontSize: 16, fontWeight: '700' },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
   footerText: { color: '#888' },
-  footerLink: { color: '#fff', fontWeight: '600' },
+  footerLink: { color: '#3fd8ea', fontWeight: '600' },
 });

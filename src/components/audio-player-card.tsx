@@ -80,7 +80,7 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#fff',
+    backgroundColor: '#3fd8ea',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -89,6 +89,6 @@ const styles = StyleSheet.create({
   trackTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
   time: { color: '#777', fontSize: 12, marginTop: 2 },
   barTouch: { paddingVertical: 10, marginTop: 4 },
-  barTrack: { height: 4, borderRadius: 2, backgroundColor: '#333' },
-  barFill: { height: 4, borderRadius: 2, backgroundColor: '#fff' },
+  barTrack: { height: 4, borderRadius: 2, backgroundColor: '#26262c' },
+  barFill: { height: 4, borderRadius: 2, backgroundColor: '#3fd8ea' },
 });

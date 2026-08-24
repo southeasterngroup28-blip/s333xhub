@@ -133,7 +133,7 @@ export default function ChatListScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#000' },
   topBar: { paddingHorizontal: 16, paddingVertical: 12 },
-  title: { color: '#fff', fontSize: 22, fontWeight: '800', letterSpacing: 2 },
+  title: { color: '#fff', fontSize: 24, fontFamily: 'Anton_400Regular', letterSpacing: 2 },
   list: { paddingBottom: 32, flexGrow: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
   empty: { color: '#555' },
@@ -163,7 +163,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#fff',
+    backgroundColor: '#3fd8ea',
     marginHorizontal: 16,
     marginTop: 20,
     paddingVertical: 12,

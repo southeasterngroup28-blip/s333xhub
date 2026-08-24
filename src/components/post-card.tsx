@@ -63,9 +63,9 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, unlocked, onDeleted 
           {/* Project symbol, Twitter-checkmark style. Placeholder icons until
               the artist picks the real ones — swap the `name` values below. */}
           {post.project === 's333xgod' ? (
-            <Ionicons name="flame" size={15} color="#ef4444" />
+            <Ionicons name="flame" size={15} color="#3fd8ea" />
           ) : (
-            <Ionicons name="disc" size={15} color="#3b82f6" />
+            <Ionicons name="disc" size={15} color="#ffffff" />
           )}
         </View>
         <Text style={styles.time}>{timeAgo(post.created_at)}</Text>
@@ -122,7 +122,7 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, unlocked, onDeleted 
 
       {locked ? (
         <View style={styles.lockedBox}>
-          <Ionicons name="lock-closed" size={22} color="#fbbf24" />
+          <Ionicons name="lock-closed" size={22} color="#3fd8ea" />
           <View style={styles.lockedMeta}>
             {post.title ? <Text style={styles.lockedTitle}>{post.title}</Text> : null}
             <Pressable style={styles.unlockButton} onPress={() => setUnlockNotice(true)}>
@@ -226,17 +226,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#1a1a1e',
+    backgroundColor: '#101418',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#2a2a20',
+    borderColor: '#1899b3',
     padding: 14,
     marginTop: 8,
   },
   lockedMeta: { flex: 1 },
-  unlockedTag: { color: '#fbbf24', fontSize: 12, fontWeight: '700', marginBottom: 6 },
+  unlockedTag: { color: '#3fd8ea', fontSize: 12, fontWeight: '700', marginBottom: 6 },
   unlockButton: {
-    backgroundColor: '#fbbf24',
+    backgroundColor: '#3fd8ea',
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -245,6 +245,6 @@ const styles = StyleSheet.create({
   },
   unlockButtonText: { color: '#000', fontSize: 14, fontWeight: '800' },
   lockedTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  lockedText: { color: '#fbbf24', fontSize: 14, fontWeight: '700', marginTop: 2 },
+  lockedText: { color: '#3fd8ea', fontSize: 14, fontWeight: '700', marginTop: 2 },
   lockedHint: { color: '#666', fontSize: 12, marginTop: 2 },
 });

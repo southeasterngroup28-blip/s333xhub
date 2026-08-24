@@ -1,3 +1,4 @@
+import { Anton_400Regular, useFonts } from '@expo-google-fonts/anton';
 import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
@@ -10,14 +11,17 @@ SplashScreen.preventAutoHideAsync();
 
 function RootNavigator() {
   const { session, isLoading } = useAuth();
+  const [fontsLoaded] = useFonts({ Anton_400Regular });
+
+  const ready = !isLoading && fontsLoaded;
 
   useEffect(() => {
-    if (!isLoading) {
+    if (ready) {
       SplashScreen.hideAsync();
     }
-  }, [isLoading]);
+  }, [ready]);
 
-  if (isLoading) {
+  if (!ready) {
     return null;
   }
 

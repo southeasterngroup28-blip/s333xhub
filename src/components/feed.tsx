@@ -89,7 +89,9 @@ export function Feed() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.topBar}>
-        <Text style={styles.title}>S333XHUB</Text>
+        <Text style={styles.title}>
+          S333XHUB<Text style={styles.titleMark}> *</Text>
+        </Text>
         <View style={styles.topActions}>
           {isArtist ? (
             <Pressable onPress={() => router.push('/reports')} hitSlop={12}>
@@ -162,7 +164,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  title: { color: '#fff', fontSize: 22, fontWeight: '800', letterSpacing: 2 },
+  title: {
+    color: '#fff',
+    fontSize: 24,
+    fontFamily: 'Anton_400Regular',
+    letterSpacing: 2,
+  },
+  titleMark: { color: '#3fd8ea' },
   topActions: { flexDirection: 'row', gap: 18, alignItems: 'center' },
   feedError: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 8, fontSize: 13 },
   list: { paddingBottom: 96, flexGrow: 1 },
@@ -175,8 +183,12 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#fff',
+    backgroundColor: '#3fd8ea',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#3fd8ea',
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
   },
 });

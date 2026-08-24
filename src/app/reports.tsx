@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
   list: { padding: 16, flexGrow: 1 },
   card: { backgroundColor: '#131315', borderRadius: 12, padding: 14, marginBottom: 10 },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  type: { color: '#fbbf24', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  type: { color: '#3fd8ea', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
   when: { color: '#555', fontSize: 12 },
   reason: { color: '#ccc', fontSize: 14 },
   preview: { color: '#777', fontSize: 13, marginTop: 6, fontStyle: 'italic' },
