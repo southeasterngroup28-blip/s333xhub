@@ -33,6 +33,8 @@ function RootNavigator() {
         <Stack.Screen name="channel/[id]" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="reports" />
+        <Stack.Screen name="post/[id]" />
+        <Stack.Screen name="top8" />
       </Stack.Protected>
       <Stack.Protected guard={!session}>
         <Stack.Screen name="(auth)" />

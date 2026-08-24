@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 
-export type ReportTargetType = 'post' | 'message' | 'user';
+export type ReportTargetType = 'post' | 'message' | 'user' | 'comment';
 
 export type Report = {
   id: string;
@@ -109,6 +109,17 @@ export async function fetchReportTargetPreview(report: Report): Promise<string> 
         .maybeSingle();
       if (!data) return '(post no longer exists)';
       return data.title || data.body || `(${data.kind} post)`;
+    }
+    if (report.target_type === 'comment') {
+      const { data } = await supabase
+        .from('post_comments')
+        .select('body, deleted_at, author:profiles!post_comments_user_id_fkey(display_name)')
+        .eq('id', report.target_id)
+        .maybeSingle();
+      if (!data) return '(comment no longer exists)';
+      const author = (data as unknown as { author: { display_name: string } | null }).author
+        ?.display_name;
+      return `${author ?? 'Unknown'} commented: ${data.body}${data.deleted_at ? ' (already deleted)' : ''}`;
     }
     if (report.target_type === 'message') {
       const { data } = await supabase

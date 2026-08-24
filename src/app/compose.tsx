@@ -46,6 +46,9 @@ export default function ComposeScreen() {
   const [trackTitle, setTrackTitle] = useState('');
   const [locked, setLocked] = useState(false);
   const [priceCents, setPriceCents] = useState<number>(PRICE_OPTIONS[0]);
+  const [pollMode, setPollMode] = useState(false);
+  const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
+  const [pollHours, setPollHours] = useState<number | null>(24);
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -91,14 +94,17 @@ export default function ComposeScreen() {
     setError(null);
     setPosting(true);
     try {
+      const filledOptions = pollOptions.map((o) => o.trim()).filter(Boolean);
       await createPost({
         project,
         body,
-        images,
-        audio,
-        video,
+        images: pollMode ? [] : images,
+        audio: pollMode ? null : audio,
+        video: pollMode ? null : video,
         title: trackTitle,
         priceCents: locked ? priceCents : null,
+        pollOptions: pollMode ? filledOptions : null,
+        pollEndsAt: pollMode && pollHours ? new Date(Date.now() + pollHours * 3600000) : null,
       });
       goToFeed();
     } catch (e) {
@@ -112,9 +118,11 @@ export default function ComposeScreen() {
 
   const canPost =
     !posting &&
-    (audio
-      ? trackTitle.trim().length > 0
-      : !!video || body.trim().length > 0 || images.length > 0);
+    (pollMode
+      ? body.trim().length > 0 && pollOptions.map((o) => o.trim()).filter(Boolean).length >= 2
+      : audio
+        ? trackTitle.trim().length > 0
+        : !!video || body.trim().length > 0 || images.length > 0);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -149,13 +157,56 @@ export default function ComposeScreen() {
 
         <TextInput
           style={styles.input}
-          placeholder="Say something…"
+          placeholder={pollMode ? 'Ask the question…' : 'Say something…'}
           placeholderTextColor="#555"
           multiline
           value={body}
           onChangeText={setBody}
           autoFocus={Platform.OS !== 'web'}
         />
+
+        {pollMode ? (
+          <View style={styles.pollBox}>
+            {pollOptions.map((option, index) => (
+              <TextInput
+                key={index}
+                style={styles.pollInput}
+                placeholder={`Option ${index + 1}`}
+                placeholderTextColor="#55585f"
+                value={option}
+                maxLength={80}
+                onChangeText={(text) =>
+                  setPollOptions((prev) => prev.map((o, i) => (i === index ? text : o)))
+                }
+              />
+            ))}
+            {pollOptions.length < 4 ? (
+              <Pressable
+                onPress={() => setPollOptions((prev) => [...prev, ''])}
+                style={styles.pollAdd}>
+                <Text style={styles.pollAddText}>+ Add option</Text>
+              </Pressable>
+            ) : null}
+            <View style={styles.pollDurationRow}>
+              {[
+                { label: '24h', hours: 24 },
+                { label: '3 days', hours: 72 },
+                { label: '7 days', hours: 168 },
+                { label: 'No end', hours: null },
+              ].map((choice) => (
+                <Pressable
+                  key={choice.label}
+                  style={[styles.durChip, pollHours === choice.hours && styles.durChipActive]}
+                  onPress={() => setPollHours(choice.hours)}>
+                  <Text
+                    style={[styles.durText, pollHours === choice.hours && styles.durTextActive]}>
+                    {choice.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ) : null}
 
         {images.length > 0 ? (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.thumbRow}>
@@ -210,6 +261,17 @@ export default function ComposeScreen() {
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
+        <Pressable
+          style={[styles.pollToggle, pollMode && styles.pollToggleOn]}
+          onPress={() => setPollMode(!pollMode)}
+          disabled={posting || !!audio || !!video || images.length > 0}>
+          <Ionicons name="stats-chart" size={16} color={pollMode ? '#0b0c0e' : '#9a9ba3'} />
+          <Text style={[styles.pollToggleText, pollMode && styles.pollToggleTextOn]}>
+            {pollMode ? 'Poll post — tap to cancel' : 'Make this a poll'}
+          </Text>
+        </Pressable>
+
+        {pollMode ? null : (
         <View style={styles.attachRow}>
           <PickPhotosButton
             label={images.length === 0 ? 'Photos' : `Photos (${images.length}/${MAX_IMAGES})`}
@@ -231,6 +293,7 @@ export default function ComposeScreen() {
             onError={setError}
           />
         </View>
+        )}
 
         <View style={styles.lockBox}>
           <Pressable
@@ -388,4 +451,38 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   empty: { color: '#555' },
   error: { color: '#ff6b6b', marginTop: 12 },
+  pollToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#131519',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 20,
+    alignSelf: 'flex-start',
+  },
+  pollToggleOn: { backgroundColor: '#c3cdd6' },
+  pollToggleText: { color: '#9a9ba3', fontSize: 14, fontWeight: '600' },
+  pollToggleTextOn: { color: '#0b0c0e' },
+  pollBox: { marginTop: 8 },
+  pollInput: {
+    backgroundColor: '#131519',
+    color: '#fff',
+    borderRadius: 10,
+    padding: 13,
+    fontSize: 14,
+    marginBottom: 8,
+  },
+  pollAdd: { paddingVertical: 6 },
+  pollAddText: { color: '#8f99a3', fontSize: 13, fontWeight: '600' },
+  pollDurationRow: { flexDirection: 'row', gap: 8, marginTop: 8, flexWrap: 'wrap' },
+  durChip: {
+    backgroundColor: '#131519',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  durChipActive: { backgroundColor: '#c3cdd6' },
+  durText: { color: '#9a9ba3', fontSize: 12.5, fontWeight: '600' },
+  durTextActive: { color: '#0b0c0e' },
 });

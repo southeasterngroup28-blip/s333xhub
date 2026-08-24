@@ -14,7 +14,7 @@ export type PostMedia = {
 export type Post = {
   id: string;
   project: Project;
-  kind: 'text' | 'photo' | 'audio' | 'video';
+  kind: 'text' | 'photo' | 'audio' | 'video' | 'poll';
   body: string | null;
   title: string | null;
   is_locked: boolean;
@@ -115,6 +115,9 @@ export type NewPost = {
   images?: PickedImage[];
   audio?: PickedAudio | null;
   video?: PickedVideo | null;
+  /** 2–4 labels makes this a poll post; the body is the question. */
+  pollOptions?: string[] | null;
+  pollEndsAt?: Date | null;
 };
 
 /** Reads a picked file into upload form: browser File directly, phone path via base64. */
@@ -130,6 +133,7 @@ export async function createPost(input: NewPost): Promise<void> {
   const { project, body, title, priceCents, video } = input;
   const images = input.images ?? [];
   const audio = input.audio ?? null;
+  const pollOptions = input.pollOptions ?? null;
 
   if (video && video.durationSeconds > VIDEO_MAX_SECONDS) {
     throw new Error(`Videos are capped at ${VIDEO_MAX_SECONDS} seconds.`);
@@ -140,7 +144,15 @@ export async function createPost(input: NewPost): Promise<void> {
     .insert({
       author_id: (await supabase.auth.getUser()).data.user!.id,
       project,
-      kind: video ? 'video' : audio ? 'audio' : images.length > 0 ? 'photo' : 'text',
+      kind: pollOptions
+        ? 'poll'
+        : video
+          ? 'video'
+          : audio
+            ? 'audio'
+            : images.length > 0
+              ? 'photo'
+              : 'text',
       body: body.trim() || null,
       title: title?.trim() || null,
       is_locked: !!priceCents,
@@ -149,6 +161,11 @@ export async function createPost(input: NewPost): Promise<void> {
     .select('id')
     .single();
   if (postError) throw postError;
+
+  if (pollOptions) {
+    const { createPollForPost } = await import('@/lib/social');
+    await createPollForPost(post.id, pollOptions, input.pollEndsAt ?? null);
+  }
 
   if (audio) {
     const extension = audio.name.includes('.') ? audio.name.split('.').pop()! : 'mp3';

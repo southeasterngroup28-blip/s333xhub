@@ -13,6 +13,7 @@ import {
   type Report,
 } from '@/lib/moderation';
 import { timeAgo } from '@/lib/posts';
+import { deleteComment } from '@/lib/social';
 import { useAuth } from '@/providers/auth-provider';
 
 type ReportRow = Report & { preview: string };
@@ -58,6 +59,8 @@ export default function ReportsScreen() {
         await deletePost(report.target_id);
       } else if (report.target_type === 'message') {
         await deleteMessage(report.target_id);
+      } else if (report.target_type === 'comment') {
+        await deleteComment(report.target_id);
       }
       await resolveReport(report.id);
       setRows((prev) => prev.filter((r) => r.id !== report.id));

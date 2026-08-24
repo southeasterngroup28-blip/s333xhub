@@ -1,12 +1,20 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
-import { useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { AudioPlayerCard } from '@/components/audio-player-card';
 import { VideoPlayerCard } from '@/components/video-player-card';
 import { deletePost, fileReport, REPORT_REASONS } from '@/lib/moderation';
 import { timeAgo, type Post } from '@/lib/posts';
+import {
+  REACTION_EMOJIS,
+  toggleReaction,
+  votePoll,
+  type PollState,
+  type ReactionSummary,
+} from '@/lib/social';
 
 type Props = {
   post: Post;
@@ -16,17 +24,107 @@ type Props = {
   viewerIsArtist: boolean;
   /** True when this viewer has purchased this post. */
   unlocked?: boolean;
+  /** Reaction counts + my reactions, resolved by the feed. */
+  reactions?: ReactionSummary;
+  /** How many comments this post has. */
+  commentCount?: number;
+  /** Poll options + votes when this is a poll post. */
+  poll?: PollState;
   /** Called after the artist deletes this post, so the feed can refresh. */
   onDeleted?: () => void;
 };
 
+function formatEndsIn(endsAt: string | null): string {
+  if (!endsAt) return '';
+  const ms = new Date(endsAt).getTime() - Date.now();
+  if (ms <= 0) return 'ended';
+  const hours = Math.round(ms / 3600000);
+  if (hours < 1) return 'ends soon';
+  if (hours < 48) return `ends in ${hours}h`;
+  return `ends in ${Math.round(hours / 24)}d`;
+}
+
 type MenuState = 'closed' | 'confirm-delete' | 'report' | 'reported';
 
-export function PostCard({ post, mediaUrls, viewerIsArtist, unlocked, onDeleted }: Props) {
+export function PostCard({
+  post,
+  mediaUrls,
+  viewerIsArtist,
+  unlocked,
+  reactions,
+  commentCount,
+  poll,
+  onDeleted,
+}: Props) {
   const { width: windowWidth } = useWindowDimensions();
+  const router = useRouter();
   const [menu, setMenu] = useState<MenuState>('closed');
   const [actionError, setActionError] = useState<string | null>(null);
   const [unlockNotice, setUnlockNotice] = useState(false);
+
+  // Local optimistic copies of reaction and poll state (synced from props).
+  const [myReactions, setMyReactions] = useState<Set<string>>(new Set());
+  const [reactionCounts, setReactionCounts] = useState<Record<string, number>>({});
+  const [pollState, setPollState] = useState<PollState | undefined>(undefined);
+
+  useEffect(() => {
+    setMyReactions(new Set(reactions?.mine ?? []));
+    setReactionCounts({ ...(reactions?.counts ?? {}) });
+  }, [post.id, reactions]);
+
+  useEffect(() => {
+    setPollState(poll ? { ...poll, options: poll.options.map((o) => ({ ...o })) } : undefined);
+  }, [post.id, poll]);
+
+  async function handleReaction(emoji: (typeof REACTION_EMOJIS)[number]) {
+    const isOn = myReactions.has(emoji);
+    // Optimistic flip; revert on failure.
+    setMyReactions((prev) => {
+      const next = new Set(prev);
+      if (isOn) next.delete(emoji);
+      else next.add(emoji);
+      return next;
+    });
+    setReactionCounts((prev) => ({ ...prev, [emoji]: Math.max(0, (prev[emoji] ?? 0) + (isOn ? -1 : 1)) }));
+    try {
+      await toggleReaction(post.id, emoji, isOn);
+    } catch {
+      setMyReactions((prev) => {
+        const next = new Set(prev);
+        if (isOn) next.add(emoji);
+        else next.delete(emoji);
+        return next;
+      });
+      setReactionCounts((prev) => ({ ...prev, [emoji]: Math.max(0, (prev[emoji] ?? 0) + (isOn ? 1 : -1)) }));
+    }
+  }
+
+  async function handleVote(optionId: string) {
+    if (!pollState) return;
+    const open = !pollState.ends_at || new Date(pollState.ends_at).getTime() > Date.now();
+    if (!open || pollState.myOptionId === optionId) return;
+    const previous = pollState;
+    setPollState({
+      ...pollState,
+      totalVotes: pollState.myOptionId ? pollState.totalVotes : pollState.totalVotes + 1,
+      myOptionId: optionId,
+      options: pollState.options.map((o) => ({
+        ...o,
+        votes:
+          o.id === optionId
+            ? o.votes + 1
+            : o.id === pollState.myOptionId
+              ? Math.max(0, o.votes - 1)
+              : o.votes,
+      })),
+    });
+    try {
+      await votePoll(post.id, optionId);
+    } catch (e) {
+      setPollState(previous);
+      setActionError((e as { message?: string })?.message ?? 'Vote failed.');
+    }
+  }
 
   /** Locked from THIS viewer's perspective. */
   const locked = post.is_locked && !viewerIsArtist && !unlocked;
@@ -128,6 +226,32 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, unlocked, onDeleted 
 
       {post.body ? <Text style={styles.body}>{post.body}</Text> : null}
 
+      {post.kind === 'poll' && pollState ? (
+        <View style={styles.poll}>
+          {pollState.options.map((option) => {
+            const pct =
+              pollState.totalVotes > 0 ? Math.round((option.votes / pollState.totalVotes) * 100) : 0;
+            const isMine = pollState.myOptionId === option.id;
+            return (
+              <Pressable key={option.id} style={styles.pollBar} onPress={() => handleVote(option.id)}>
+                <View style={[styles.pollFill, { width: `${pct}%` }]} />
+                <View style={styles.pollRow}>
+                  <Text style={[styles.pollLabel, isMine && styles.pollLabelMine]}>
+                    {isMine ? '● ' : ''}
+                    {option.label}
+                  </Text>
+                  <Text style={styles.pollPct}>{pct}%</Text>
+                </View>
+              </Pressable>
+            );
+          })}
+          <Text style={styles.pollMeta}>
+            {pollState.totalVotes} vote{pollState.totalVotes === 1 ? '' : 's'}
+            {pollState.ends_at ? ` · ${formatEndsIn(pollState.ends_at)}` : ''}
+          </Text>
+        </View>
+      ) : null}
+
       {locked ? (
         <View style={styles.lockCard}>
           <View style={styles.lockIcon}>
@@ -196,6 +320,32 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, unlocked, onDeleted 
               />
             );
           })}
+
+      <View style={styles.socialRow}>
+        {REACTION_EMOJIS.map((emoji) => {
+          const count = reactionCounts[emoji] ?? 0;
+          const mine = myReactions.has(emoji);
+          return (
+            <Pressable
+              key={emoji}
+              style={[styles.react, mine && styles.reactOn]}
+              onPress={() => handleReaction(emoji)}
+              hitSlop={4}>
+              <Text style={styles.reactEmoji}>{emoji}</Text>
+              {count > 0 ? <Text style={styles.reactCount}>{count}</Text> : null}
+            </Pressable>
+          );
+        })}
+        <Pressable
+          style={styles.commentsChip}
+          onPress={() => router.push(`/post/${post.id}` as never)}
+          hitSlop={4}>
+          <Ionicons name="chatbubble-outline" size={13} color="#9a9ba3" />
+          <Text style={styles.commentsText}>
+            {commentCount && commentCount > 0 ? commentCount : 'Comment'}
+          </Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -280,4 +430,50 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   unlockPillText: { color: '#14161a', fontWeight: '700', fontSize: 13 },
+  socialRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 12, flexWrap: 'wrap' },
+  react: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#1a1d22',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  reactOn: {
+    backgroundColor: '#2a2f36',
+    borderWidth: 1,
+    borderColor: '#c3cdd6',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  reactEmoji: { fontSize: 13, color: '#e8e9eb' },
+  reactCount: { fontSize: 11, color: '#8f99a3', fontWeight: '600' },
+  commentsChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginLeft: 'auto',
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+  },
+  commentsText: { fontSize: 12, color: '#9a9ba3', fontWeight: '600' },
+  poll: { marginTop: 10 },
+  pollBar: {
+    backgroundColor: '#1a1d22',
+    borderRadius: 10,
+    marginBottom: 7,
+    overflow: 'hidden',
+  },
+  pollFill: { position: 'absolute', top: 0, bottom: 0, left: 0, backgroundColor: '#2a2f36' },
+  pollRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  pollLabel: { color: '#cbcdd1', fontSize: 13 },
+  pollLabelMine: { color: '#e8f0f4', fontWeight: '700' },
+  pollPct: { color: '#8f99a3', fontSize: 12, fontWeight: '600' },
+  pollMeta: { color: '#6d7076', fontSize: 11.5, marginTop: 2 },
 });

@@ -22,7 +22,7 @@ export type Message = {
   body: string;
   created_at: string;
   deleted_at: string | null;
-  sender: { display_name: string } | null;
+  sender: { display_name: string; status: string | null } | null;
 };
 
 export const MESSAGE_PAGE_SIZE = 50;
@@ -86,7 +86,7 @@ export async function fetchChatList(myUserId: string): Promise<ChatListItem[]> {
 export async function fetchMessages(channelId: string, before?: string): Promise<Message[]> {
   let query = supabase
     .from('messages')
-    .select('id, channel_id, sender_id, body, created_at, deleted_at, sender:profiles(display_name)')
+    .select('id, channel_id, sender_id, body, created_at, deleted_at, sender:profiles(display_name, status)')
     .eq('channel_id', channelId)
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
@@ -103,7 +103,7 @@ export async function fetchMessages(channelId: string, before?: string): Promise
 export async function fetchMessage(id: string): Promise<Message | null> {
   const { data, error } = await supabase
     .from('messages')
-    .select('id, channel_id, sender_id, body, created_at, deleted_at, sender:profiles(display_name)')
+    .select('id, channel_id, sender_id, body, created_at, deleted_at, sender:profiles(display_name, status)')
     .eq('id', id)
     .maybeSingle();
   if (error) throw error;
@@ -120,7 +120,7 @@ export async function sendMessage(channelId: string, body: string): Promise<Mess
       sender_id: (await supabase.auth.getUser()).data.user!.id,
       body: cleaned,
     })
-    .select('id, channel_id, sender_id, body, created_at, deleted_at, sender:profiles(display_name)')
+    .select('id, channel_id, sender_id, body, created_at, deleted_at, sender:profiles(display_name, status)')
     .single();
   if (error) throw error;
   return data as unknown as Message;

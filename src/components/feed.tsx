@@ -13,8 +13,17 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PostCard } from '@/components/post-card';
+import { Top8Card } from '@/components/top8-card';
 import { fetchPosts, PAGE_SIZE, signedUrlsFor, type Post } from '@/lib/posts';
 import { fetchMyPurchasedPostIds } from '@/lib/purchases';
+import {
+  fetchPolls,
+  fetchSocialSummary,
+  fetchTopFans,
+  type PollState,
+  type SocialSummary,
+  type TopFan,
+} from '@/lib/social';
 import { useAuth } from '@/providers/auth-provider';
 
 export function Feed() {
@@ -23,6 +32,9 @@ export function Feed() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
   const [feedError, setFeedError] = useState<string | null>(null);
+  const [social, setSocial] = useState<SocialSummary>({ reactions: {}, commentCounts: {} });
+  const [polls, setPolls] = useState<Record<string, PollState>>({});
+  const [topFans, setTopFans] = useState<TopFan[]>([]);
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -56,6 +68,18 @@ export function Feed() {
       setPosts(fresh);
       setFeedError(null);
       setEndReached(fresh.length < PAGE_SIZE);
+
+      const ids = fresh.map((p) => p.id);
+      const pollIds = fresh.filter((p) => p.kind === 'poll').map((p) => p.id);
+      const [summary, pollStates, top] = await Promise.all([
+        fetchSocialSummary(ids).catch(() => ({ reactions: {}, commentCounts: {} })),
+        fetchPolls(pollIds).catch(() => ({})),
+        fetchTopFans().catch(() => []),
+      ]);
+      setSocial(summary);
+      setPolls(pollStates);
+      setTopFans(top);
+
       await resolveMedia(fresh, purchased);
     } catch (e) {
       // Surface feed failures instead of silently showing an empty feed.
@@ -80,6 +104,19 @@ export function Feed() {
       const older = await fetchPosts('all', posts[posts.length - 1].created_at);
       setPosts((prev) => [...prev, ...older]);
       setEndReached(older.length < PAGE_SIZE);
+
+      const ids = older.map((p) => p.id);
+      const pollIds = older.filter((p) => p.kind === 'poll').map((p) => p.id);
+      const [summary, pollStates] = await Promise.all([
+        fetchSocialSummary(ids).catch(() => ({ reactions: {}, commentCounts: {} })),
+        fetchPolls(pollIds).catch(() => ({})),
+      ]);
+      setSocial((prev) => ({
+        reactions: { ...prev.reactions, ...summary.reactions },
+        commentCounts: { ...prev.commentCounts, ...summary.commentCounts },
+      }));
+      setPolls((prev) => ({ ...prev, ...pollStates }));
+
       await resolveMedia(older, purchasedIds);
     } finally {
       loadingMore.current = false;
@@ -118,6 +155,9 @@ export function Feed() {
               mediaUrls={mediaUrls}
               viewerIsArtist={isArtist}
               unlocked={purchasedIds.has(item.id)}
+              reactions={social.reactions[item.id]}
+              commentCount={social.commentCounts[item.id]}
+              poll={polls[item.id]}
               onDeleted={loadFresh}
             />
           )}
@@ -134,6 +174,7 @@ export function Feed() {
           }
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
+          ListHeaderComponent={<Top8Card fans={topFans} viewerIsArtist={isArtist} />}
           ListEmptyComponent={
             <View style={styles.center}>
               <Text style={styles.empty}>No posts yet.</Text>

@@ -287,6 +287,9 @@ export default function ChannelScreen() {
                     {!mine ? (
                       <Text style={styles.senderName}>
                         {item.sender?.display_name ?? 'Deleted user'}
+                        {item.sender?.status ? (
+                          <Text style={styles.senderMood}> · {item.sender.status}</Text>
+                        ) : null}
                       </Text>
                     ) : null}
                     <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>
@@ -457,6 +460,7 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 5,
   },
   senderName: { color: '#c3cdd6', fontSize: 12, fontWeight: '700', marginBottom: 2 },
+  senderMood: { color: '#8f99a3', fontSize: 11, fontWeight: '400', fontStyle: 'italic' },
   bubbleText: { color: '#fff', fontSize: 15, lineHeight: 20 },
   bubbleTextMine: { color: '#e6feff' },
   bubbleTime: { color: '#555', fontSize: 10, marginTop: 4, alignSelf: 'flex-end' },
