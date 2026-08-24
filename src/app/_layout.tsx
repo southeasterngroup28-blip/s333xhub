@@ -33,6 +33,9 @@ function RootNavigator() {
       <Stack.Protected guard={!session}>
         <Stack.Screen name="(auth)" />
       </Stack.Protected>
+      {/* Legal pages are readable signed-in or out (the signup checkbox links here). */}
+      <Stack.Screen name="legal/terms" />
+      <Stack.Screen name="legal/privacy" />
     </Stack>
   );
 }

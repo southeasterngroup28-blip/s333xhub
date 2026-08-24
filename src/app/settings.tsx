@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { SUPPORT_EMAIL } from '@/lib/legal-content';
 import { deleteMyAccount, fetchBlockedUsers, unblockUser } from '@/lib/moderation';
 import {
   DEFAULT_PREFS,
@@ -139,6 +140,19 @@ export default function SettingsScreen() {
           )}
         </View>
 
+        <Text style={styles.sectionLabel}>ABOUT</Text>
+        <View style={styles.card}>
+          <Pressable style={styles.aboutRow} onPress={() => router.push('/legal/terms')}>
+            <Text style={styles.aboutLink}>Terms of Service</Text>
+            <Ionicons name="chevron-forward" size={16} color="#444" />
+          </Pressable>
+          <Pressable style={styles.aboutRow} onPress={() => router.push('/legal/privacy')}>
+            <Text style={styles.aboutLink}>Privacy Policy</Text>
+            <Ionicons name="chevron-forward" size={16} color="#444" />
+          </Pressable>
+          <Text style={styles.supportNote}>Support: {SUPPORT_EMAIL}</Text>
+        </View>
+
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <Pressable style={styles.signOut} onPress={signOut}>
@@ -220,6 +234,14 @@ const styles = StyleSheet.create({
   prefLabel: { color: '#fff', fontSize: 15, fontWeight: '600' },
   prefHint: { color: '#777', fontSize: 12, marginTop: 1 },
   prefNote: { color: '#555', fontSize: 12, marginTop: 10 },
+  aboutRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+  },
+  aboutLink: { color: '#fff', fontSize: 15 },
+  supportNote: { color: '#555', fontSize: 12, marginTop: 8 },
   blockedRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

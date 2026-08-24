@@ -106,7 +106,14 @@ export default function SignUpScreen() {
               {acceptedTerms ? <Text style={styles.checkmark}>✓</Text> : null}
             </View>
             <Text style={styles.termsText}>
-              I agree to the Terms of Service and Privacy Policy
+              I agree to the{' '}
+              <Link href="/legal/terms">
+                <Text style={styles.termsLink}>Terms of Service</Text>
+              </Link>{' '}
+              and{' '}
+              <Link href="/legal/privacy">
+                <Text style={styles.termsLink}>Privacy Policy</Text>
+              </Link>
             </Text>
           </Pressable>
 
@@ -168,6 +175,7 @@ const styles = StyleSheet.create({
   checkboxChecked: { backgroundColor: '#fff', borderColor: '#fff' },
   checkmark: { color: '#000', fontWeight: '800' },
   termsText: { color: '#aaa', flex: 1 },
+  termsLink: { color: '#fff', textDecorationLine: 'underline' },
   error: { color: '#ff6b6b', marginBottom: 12, textAlign: 'center' },
   button: {
     backgroundColor: '#fff',
