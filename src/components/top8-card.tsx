@@ -9,17 +9,17 @@ type Props = {
   viewerIsArtist: boolean;
 };
 
-/** The MySpace classic: the artist's hand-picked Top 8, atop the feed. */
+/** The MySpace classic, distilled: the artist's hand-picked Top 3, atop the feed. */
 export function Top8Card({ fans, viewerIsArtist }: Props) {
   const router = useRouter();
   if (fans.length === 0 && !viewerIsArtist) return null;
 
-  const slots = Array.from({ length: 8 }, (_, i) => fans.find((f) => f.position === i + 1) ?? null);
+  const slots = Array.from({ length: 3 }, (_, i) => fans.find((f) => f.position === i + 1) ?? null);
 
   return (
     <View style={styles.card}>
       <View style={styles.head}>
-        <Text style={styles.title}>TOP 8</Text>
+        <Text style={styles.title}>TOP 3</Text>
         <Text style={styles.sub}>picked by the artist</Text>
         {viewerIsArtist ? (
           <Pressable onPress={() => router.push('/top8')} hitSlop={10} style={styles.edit}>
@@ -63,7 +63,7 @@ const styles = StyleSheet.create({
   sub: { color: '#6d7076', fontSize: 11 },
   edit: { marginLeft: 'auto' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 12 },
-  slot: { width: '22%', flexGrow: 1, alignItems: 'center' },
+  slot: { width: '30%', flexGrow: 1, alignItems: 'center' },
   avatar: {
     width: '100%',
     aspectRatio: 1,

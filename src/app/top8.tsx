@@ -87,19 +87,19 @@ export default function Top8ManagerScreen() {
           hitSlop={12}>
           <Ionicons name="chevron-back" size={24} color="#fff" />
         </Pressable>
-        <Text style={styles.headerTitle}>Top 8</Text>
+        <Text style={styles.headerTitle}>Top 3</Text>
         <View style={{ width: 24 }} />
       </View>
 
       <Text style={styles.hint}>
-        Your hand-picked fans, shown to everyone at the top of the feed. Change it weekly —
-        it keeps them fighting for a spot.
+        Your three hand-picked fans, shown to everyone at the top of the feed. Change it
+        weekly — three spots keeps them fighting for it.
       </Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <ScrollView contentContainerStyle={styles.list}>
-        {Array.from({ length: 8 }, (_, i) => i + 1).map((position) => {
+        {Array.from({ length: 3 }, (_, i) => i + 1).map((position) => {
           const fan = fans.find((f) => f.position === position);
           return (
             <View key={position} style={styles.slotRow}>
