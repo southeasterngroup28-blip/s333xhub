@@ -33,7 +33,7 @@ export const PAGE_SIZE = 20;
 export async function fetchPosts(filter: Project | 'all', before?: string): Promise<Post[]> {
   let query = supabase
     .from('posts')
-    .select('id, project, kind, body, title, is_locked, price_cents, created_at, author:profiles(display_name), post_media(id, storage_path, media_type, width, height, position)')
+    .select('id, project, kind, body, title, is_locked, price_cents, created_at, author:profiles!posts_author_id_fkey(display_name), post_media(id, storage_path, media_type, width, height, position)')
     .order('created_at', { ascending: false })
     .limit(PAGE_SIZE);
 

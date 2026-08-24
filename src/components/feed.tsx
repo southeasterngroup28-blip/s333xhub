@@ -22,6 +22,7 @@ export function Feed() {
   const router = useRouter();
   const [posts, setPosts] = useState<Post[]>([]);
   const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
+  const [feedError, setFeedError] = useState<string | null>(null);
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -53,8 +54,12 @@ export function Feed() {
       setPurchasedIds(purchased);
       const fresh = await fetchPosts('all');
       setPosts(fresh);
+      setFeedError(null);
       setEndReached(fresh.length < PAGE_SIZE);
       await resolveMedia(fresh, purchased);
+    } catch (e) {
+      // Surface feed failures instead of silently showing an empty feed.
+      setFeedError((e as { message?: string })?.message ?? 'Could not load the feed.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -96,6 +101,8 @@ export function Feed() {
           </Pressable>
         </View>
       </View>
+
+      {feedError ? <Text style={styles.feedError}>{feedError}</Text> : null}
 
       {loading ? (
         <View style={styles.center}>
@@ -157,6 +164,7 @@ const styles = StyleSheet.create({
   },
   title: { color: '#fff', fontSize: 22, fontWeight: '800', letterSpacing: 2 },
   topActions: { flexDirection: 'row', gap: 18, alignItems: 'center' },
+  feedError: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 8, fontSize: 13 },
   list: { paddingBottom: 96, flexGrow: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
   empty: { color: '#555' },
