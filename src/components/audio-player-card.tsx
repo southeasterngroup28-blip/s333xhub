@@ -36,18 +36,28 @@ export function AudioPlayerCard({ postId, title, url }: Props) {
   }
 
   return (
-    <View style={styles.card}>
-      <View style={styles.row}>
-        <Pressable style={styles.playButton} onPress={handlePress} hitSlop={8}>
-          <Ionicons name={isPlaying ? 'pause' : 'play'} size={22} color="#2fd0e2" style={!isPlaying && styles.playNudge} />
-        </Pressable>
-        <View style={styles.meta}>
-          <Text style={styles.trackTitle} numberOfLines={1}>
-            {title}
-          </Text>
-          <Text style={styles.time}>
-            {isCurrent ? `${formatTime(position)} / ${formatTime(duration)}` : 'Tap to play'}
-          </Text>
+    <View style={styles.wrap}>
+      {/* Art panel: deep teal ground with the white play control, the way
+          a cover would sit. Real cover art can drop in here later. */}
+      <View style={styles.art}>
+        <View style={styles.artGlow} />
+        <View style={styles.artRow}>
+          <Pressable style={styles.play} onPress={handlePress} hitSlop={8}>
+            <Ionicons
+              name={isPlaying ? 'pause' : 'play'}
+              size={20}
+              color="#0b0c0e"
+              style={!isPlaying && styles.playNudge}
+            />
+          </Pressable>
+          <View style={styles.titleWrap}>
+            <Text style={styles.trackTitle} numberOfLines={1}>
+              {title}
+            </Text>
+            <Text style={styles.time}>
+              {isCurrent ? `${formatTime(position)} / ${formatTime(duration)}` : 'Tap to play'}
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -69,30 +79,42 @@ export function AudioPlayerCard({ postId, title, url }: Props) {
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#0b1215',
-    borderWidth: 1,
-    borderColor: '#173a42',
-    borderRadius: 10,
-    padding: 14,
-    marginTop: 8,
+  wrap: { marginTop: 12 },
+  art: {
+    borderRadius: 12,
+    backgroundColor: '#0e181d',
+    minHeight: 110,
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
   },
-  row: { flexDirection: 'row', alignItems: 'center' },
-  playButton: {
+  artGlow: {
+    position: 'absolute',
+    top: -40,
+    right: -20,
+    width: 180,
+    height: 140,
+    borderRadius: 90,
+    backgroundColor: 'rgba(55, 200, 216, 0.14)',
+  },
+  artRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 },
+  play: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: '#2fd0e2',
+    backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 5,
   },
   playNudge: { marginLeft: 2 },
-  meta: { flex: 1, marginLeft: 12 },
+  titleWrap: { flex: 1 },
   trackTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  time: { color: '#777', fontSize: 12, marginTop: 2 },
-  barTouch: { paddingVertical: 10, marginTop: 4 },
-  barTrack: { height: 4, borderRadius: 2, backgroundColor: '#26262c' },
-  barFill: { height: 4, borderRadius: 2, backgroundColor: '#2fd0e2' },
+  time: { color: '#9fb6bb', fontSize: 12, marginTop: 2 },
+  barTouch: { paddingVertical: 10 },
+  barTrack: { height: 3, borderRadius: 2, backgroundColor: '#23262b' },
+  barFill: { height: 3, borderRadius: 2, backgroundColor: '#37c8d8' },
 });

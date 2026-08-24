@@ -240,7 +240,7 @@ export default function ComposeScreen() {
             <Ionicons
               name={locked ? 'lock-closed' : 'lock-open-outline'}
               size={20}
-              color={locked ? '#2fd0e2' : '#888'}
+              color={locked ? '#37c8d8' : '#888'}
             />
             <View style={styles.lockMeta}>
               <Text style={styles.lockTitle}>{locked ? 'Locked post' : 'Free post'}</Text>
@@ -282,7 +282,7 @@ export default function ComposeScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#000' },
+  safe: { flex: 1, backgroundColor: '#0b0c0e' },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -300,9 +300,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 16,
-    backgroundColor: '#161618',
+    backgroundColor: '#131519',
   },
-  projectChipActive: { backgroundColor: '#2fd0e2' },
+  projectChipActive: { backgroundColor: '#ffffff' },
   projectChipText: { color: '#aaa', fontSize: 13, fontWeight: '700', letterSpacing: 1 },
   projectChipTextActive: { color: '#000' },
   input: {
@@ -327,13 +327,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#161618',
+    backgroundColor: '#131519',
     borderRadius: 12,
     padding: 14,
   },
   attachText: { color: '#fff', fontSize: 15 },
   audioBox: {
-    backgroundColor: '#161618',
+    backgroundColor: '#131519',
     borderRadius: 12,
     padding: 14,
     marginTop: 16,
@@ -350,7 +350,7 @@ const styles = StyleSheet.create({
   },
   uploadingNote: { color: '#888', marginTop: 16, fontSize: 13 },
   lockBox: {
-    backgroundColor: '#161618',
+    backgroundColor: '#131519',
     borderRadius: 12,
     padding: 14,
     marginTop: 16,
@@ -367,14 +367,14 @@ const styles = StyleSheet.create({
     padding: 3,
     justifyContent: 'center',
   },
-  lockToggleOn: { backgroundColor: '#2fd0e2' },
+  lockToggleOn: { backgroundColor: '#37c8d8' },
   lockKnob: {
     width: 22,
     height: 22,
     borderRadius: 11,
     backgroundColor: '#888',
   },
-  lockKnobOn: { backgroundColor: '#000', alignSelf: 'flex-end' },
+  lockKnobOn: { backgroundColor: '#0b0c0e', alignSelf: 'flex-end' },
   priceRow: { flexDirection: 'row', gap: 8, marginTop: 14, flexWrap: 'wrap' },
   priceChip: {
     paddingHorizontal: 14,
@@ -382,7 +382,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#0d0d0f',
   },
-  priceChipActive: { backgroundColor: '#2fd0e2' },
+  priceChipActive: { backgroundColor: '#37c8d8' },
   priceText: { color: '#aaa', fontSize: 14, fontWeight: '700' },
   priceTextActive: { color: '#000' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },

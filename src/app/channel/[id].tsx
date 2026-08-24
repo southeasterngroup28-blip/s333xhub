@@ -235,7 +235,7 @@ export default function ChannelScreen() {
             <Ionicons
               name={info?.mutedAt ? 'notifications-off' : 'notifications-outline'}
               size={20}
-              color={info?.mutedAt ? '#2fd0e2' : '#999'}
+              color={info?.mutedAt ? '#37c8d8' : '#999'}
             />
           </Pressable>
           {isGroup ? (
@@ -387,7 +387,7 @@ export default function ChannelScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#000' },
+  safe: { flex: 1, backgroundColor: '#0b0c0e' },
   flex: { flex: 1 },
   header: {
     flexDirection: 'row',
@@ -445,20 +445,18 @@ const styles = StyleSheet.create({
   bubbleRowMine: { justifyContent: 'flex-end' },
   bubble: {
     maxWidth: '80%',
-    backgroundColor: '#1a1a1a',
-    borderRadius: 16,
-    borderBottomLeftRadius: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    backgroundColor: '#1a1d22',
+    borderRadius: 18,
+    borderBottomLeftRadius: 5,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
   },
   bubbleMine: {
-    backgroundColor: '#0e3540',
-    borderWidth: 1,
-    borderColor: '#12798e',
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 4,
+    backgroundColor: '#1d3b42',
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 5,
   },
-  senderName: { color: '#2fd0e2', fontSize: 12, fontWeight: '700', marginBottom: 2 },
+  senderName: { color: '#37c8d8', fontSize: 12, fontWeight: '700', marginBottom: 2 },
   bubbleText: { color: '#fff', fontSize: 15, lineHeight: 20 },
   bubbleTextMine: { color: '#e6feff' },
   bubbleTime: { color: '#555', fontSize: 10, marginTop: 4, alignSelf: 'flex-end' },
@@ -475,7 +473,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     color: '#fff',
-    backgroundColor: '#141414',
+    backgroundColor: '#131519',
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingTop: 10,
@@ -487,7 +485,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#2fd0e2',
+    backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
   },

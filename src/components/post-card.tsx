@@ -31,6 +31,12 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, unlocked, onDeleted 
   /** Locked from THIS viewer's perspective. */
   const locked = post.is_locked && !viewerIsArtist && !unlocked;
 
+  // Card width minus the card's horizontal padding.
+  const imageWidth = Math.min(windowWidth, 800) - 32 - 32;
+
+  const media = [...post.post_media].sort((a, b) => a.position - b.position);
+  const authorName = post.author?.display_name ?? 'Unknown';
+
   async function handleDelete() {
     setMenu('closed');
     try {
@@ -50,25 +56,20 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, unlocked, onDeleted 
       setActionError((e as { message?: string })?.message ?? 'Could not send the report.');
     }
   }
-  // Card width minus the card's horizontal padding.
-  const imageWidth = Math.min(windowWidth, 800) - 32;
-
-  const media = [...post.post_media].sort((a, b) => a.position - b.position);
 
   return (
     <View style={styles.card}>
       <View style={styles.header}>
-        <View style={styles.authorRow}>
-          <Text style={styles.author}>{post.author?.display_name ?? 'Unknown'}</Text>
-          {/* Project symbol, Twitter-checkmark style. Placeholder icons until
-              the artist picks the real ones — swap the `name` values below. */}
-          {post.project === 's333xgod' ? (
-            <Ionicons name="flame" size={15} color="#2fd0e2" />
-          ) : (
-            <Ionicons name="disc" size={15} color="#ffffff" />
-          )}
+        <View style={styles.avatar}>
+          <Text style={styles.avatarLetter}>{authorName.slice(0, 1).toUpperCase()}</Text>
         </View>
-        <Text style={styles.time}>{timeAgo(post.created_at)}</Text>
+        <View style={styles.who}>
+          <Text style={styles.author}>{authorName}</Text>
+          <Text style={styles.sub}>{timeAgo(post.created_at)}</Text>
+        </View>
+        <View style={styles.chip}>
+          <Text style={styles.chipText}>{post.project === 's333xgod' ? 'S333XGOD' : 'MAZZE'}</Text>
+        </View>
         <Pressable
           hitSlop={10}
           onPress={() =>
@@ -76,8 +77,8 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, unlocked, onDeleted 
           }>
           <Ionicons
             name={viewerIsArtist ? 'trash-outline' : 'flag-outline'}
-            size={16}
-            color="#555"
+            size={15}
+            color="#4a4d53"
           />
         </Pressable>
       </View>
@@ -110,49 +111,51 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, unlocked, onDeleted 
 
       {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
 
-      {post.body ? <Text style={styles.body}>{post.body}</Text> : null}
-
       {post.is_locked && (viewerIsArtist || unlocked) ? (
         <Text style={styles.unlockedTag}>
           {viewerIsArtist
-            ? `🔒 Locked post · $${((post.price_cents ?? 0) / 100).toFixed(2)}`
-            : '✓ Unlocked'}
+            ? `Locked post · $${((post.price_cents ?? 0) / 100).toFixed(2)}`
+            : 'Unlocked'}
         </Text>
       ) : null}
 
+      {post.body ? <Text style={styles.body}>{post.body}</Text> : null}
+
       {locked ? (
-        <View style={styles.lockedBox}>
-          <Ionicons name="lock-closed" size={22} color="#2fd0e2" />
-          <View style={styles.lockedMeta}>
-            {post.title ? <Text style={styles.lockedTitle}>{post.title}</Text> : null}
-            <Pressable style={styles.unlockButton} onPress={() => setUnlockNotice(true)}>
-              <Text style={styles.unlockButtonText}>
-                Unlock for ${((post.price_cents ?? 0) / 100).toFixed(2)}
-              </Text>
-            </Pressable>
-            {unlockNotice ? (
-              <Text style={styles.lockedHint}>
-                Purchases arrive with the App Store version — coming soon.
-              </Text>
-            ) : null}
+        <View style={styles.lockCard}>
+          <View style={styles.lockIcon}>
+            <Ionicons name="lock-closed" size={17} color="#37c8d8" />
           </View>
+          <View style={styles.lockMeta}>
+            <Text style={styles.lockTitle}>{post.title ?? 'Exclusive drop'}</Text>
+            <Text style={styles.lockSub}>
+              {unlockNotice ? 'Purchases arrive with the App Store version' : 'One-time unlock'}
+            </Text>
+          </View>
+          <Pressable style={styles.unlockPill} onPress={() => setUnlockNotice(true)}>
+            <Text style={styles.unlockPillText}>
+              ${((post.price_cents ?? 0) / 100).toFixed(2)}
+            </Text>
+          </Pressable>
         </View>
       ) : null}
 
-      {locked ? null : post.kind === 'audio'
-        ? media.map((item) => {
-            const url = mediaUrls[item.storage_path];
-            if (!url) return null;
-            return (
-              <AudioPlayerCard
-                key={item.id}
-                postId={post.id}
-                title={post.title ?? 'Untitled track'}
-                url={url}
-              />
-            );
-          })
-        : null}
+      {locked
+        ? null
+        : post.kind === 'audio'
+          ? media.map((item) => {
+              const url = mediaUrls[item.storage_path];
+              if (!url) return null;
+              return (
+                <AudioPlayerCard
+                  key={item.id}
+                  postId={post.id}
+                  title={post.title ?? 'Untitled track'}
+                  url={url}
+                />
+              );
+            })
+          : null}
 
       {post.kind === 'video' && !locked
         ? media.map((item) => {
@@ -173,45 +176,63 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, unlocked, onDeleted 
       {locked || post.kind === 'audio' || post.kind === 'video'
         ? null
         : media.map((item) => {
-        const url = mediaUrls[item.storage_path];
-        if (!url) return null;
-        const aspect = item.width && item.height ? item.width / item.height : 1;
-        return (
-          <Image
-            key={item.id}
-            source={{ uri: url }}
-            style={[styles.image, { width: imageWidth, height: imageWidth / aspect }]}
-            contentFit="cover"
-            transition={150}
-          />
-        );
-      })}
+            const url = mediaUrls[item.storage_path];
+            if (!url) return null;
+            const aspect = item.width && item.height ? item.width / item.height : 1;
+            return (
+              <Image
+                key={item.id}
+                source={{ uri: url }}
+                style={[styles.image, { width: imageWidth, height: imageWidth / aspect }]}
+                contentFit="cover"
+                transition={150}
+              />
+            );
+          })}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#0d0e11',
-    borderWidth: 1,
-    borderColor: '#1e2026',
-    borderRadius: 12,
+    backgroundColor: '#131519',
+    borderRadius: 16,
     padding: 16,
-    marginHorizontal: 16,
-    marginBottom: 12,
+    marginHorizontal: 14,
+    marginBottom: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  header: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  avatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#1e2126',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 8,
+    justifyContent: 'center',
   },
-  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 },
-  menuLabel: { color: '#999', fontSize: 13, flexShrink: 1 },
+  avatarLetter: { color: '#9a9ba3', fontWeight: '700', fontSize: 14 },
+  who: { flex: 1 },
+  author: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  sub: { color: '#6d7076', fontSize: 11.5, marginTop: 1 },
+  chip: {
+    backgroundColor: 'rgba(55, 200, 216, 0.09)',
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  chipText: { color: '#37c8d8', fontSize: 10, fontWeight: '600', letterSpacing: 1 },
+  body: { color: '#cbcdd1', fontSize: 14, lineHeight: 22 },
+  image: { borderRadius: 12, marginTop: 12, backgroundColor: '#1a1d22' },
+  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 },
+  menuLabel: { color: '#9a9ba3', fontSize: 13, flexShrink: 1 },
   menuChip: {
-    backgroundColor: '#222226',
-    borderRadius: 14,
+    backgroundColor: '#1e2126',
+    borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
@@ -219,34 +240,40 @@ const styles = StyleSheet.create({
   menuDanger: { color: '#f87171', fontSize: 13, fontWeight: '600' },
   reportedNote: { color: '#4fc07a', fontSize: 13, marginBottom: 8 },
   actionError: { color: '#f87171', fontSize: 13, marginBottom: 8 },
-  authorRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  author: { color: '#fff', fontWeight: '700', fontSize: 14, letterSpacing: 0.3 },
-  time: { color: '#5a5b63', fontSize: 12 },
-  body: { color: '#d8d9dd', fontSize: 15, lineHeight: 22, marginBottom: 4 },
-  image: { borderRadius: 8, marginTop: 8, backgroundColor: '#14151a' },
-  lockedBox: {
+  unlockedTag: {
+    color: '#37c8d8',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  lockCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#081b1f',
-    borderRadius: 10,
+    backgroundColor: '#10181b',
     borderWidth: 1,
-    borderColor: '#12798e',
+    borderColor: '#1c2b30',
+    borderRadius: 16,
     padding: 14,
-    marginTop: 8,
+    marginTop: 10,
   },
-  lockedMeta: { flex: 1 },
-  unlockedTag: { color: '#2fd0e2', fontSize: 12, fontWeight: '700', marginBottom: 6 },
-  unlockButton: {
-    backgroundColor: '#2fd0e2',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    alignSelf: 'flex-start',
-    marginTop: 4,
+  lockIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(55, 200, 216, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  unlockButtonText: { color: '#000', fontSize: 14, fontWeight: '800' },
-  lockedTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  lockedText: { color: '#2fd0e2', fontSize: 14, fontWeight: '700', marginTop: 2 },
-  lockedHint: { color: '#666', fontSize: 12, marginTop: 2 },
+  lockMeta: { flex: 1 },
+  lockTitle: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  lockSub: { color: '#6d7076', fontSize: 12, marginTop: 2 },
+  unlockPill: {
+    backgroundColor: '#37c8d8',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+  },
+  unlockPillText: { color: '#06272c', fontWeight: '700', fontSize: 13 },
 });

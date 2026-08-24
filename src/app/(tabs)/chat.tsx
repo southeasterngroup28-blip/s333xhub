@@ -108,10 +108,10 @@ export default function ChatListScreen() {
             !isArtist && !hasDm ? (
               <Pressable style={styles.dmButton} onPress={openArtistDm} disabled={openingDm}>
                 {openingDm ? (
-                  <ActivityIndicator color="#2fd0e2" />
+                  <ActivityIndicator color="#0b0c0e" />
                 ) : (
                   <>
-                    <Ionicons name="chatbubble-ellipses" size={18} color="#2fd0e2" />
+                    <Ionicons name="chatbubble-ellipses" size={18} color="#0b0c0e" />
                     <Text style={styles.dmButtonText}>Message the artist</Text>
                   </>
                 )}
@@ -131,9 +131,9 @@ export default function ChatListScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#000' },
+  safe: { flex: 1, backgroundColor: '#0b0c0e' },
   topBar: { paddingHorizontal: 16, paddingVertical: 12 },
-  title: { color: '#fff', fontSize: 24, fontFamily: 'Anton_400Regular', letterSpacing: 2 },
+  title: { color: '#f4f5f6', fontSize: 22, fontFamily: 'Anton_400Regular', letterSpacing: 3 },
   list: { paddingBottom: 32, flexGrow: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
   empty: { color: '#555' },
@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#1a1d22',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -163,17 +163,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: '#2fd0e2',
+    backgroundColor: '#ffffff',
     marginHorizontal: 16,
     marginTop: 20,
-    paddingVertical: 12,
-    borderRadius: 24,
-    shadowColor: '#2fd0e2',
-    shadowOpacity: 0.3,
+    paddingVertical: 13,
+    borderRadius: 999,
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
     shadowRadius: 12,
-    shadowOffset: { width: 0, height: 0 },
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 5,
   },
-  dmButtonText: { color: '#2fd0e2', fontWeight: '700', fontSize: 15 },
+  dmButtonText: { color: '#0b0c0e', fontWeight: '700', fontSize: 15 },
 });

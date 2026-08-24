@@ -124,9 +124,9 @@ export default function SignUpScreen() {
             disabled={!canSubmit}
             onPress={handleSignUp}>
             {submitting ? (
-              <ActivityIndicator color="#2fd0e2" />
+              <ActivityIndicator color="#0b0c0e" />
             ) : (
-              <Text style={styles.buttonText}>SIGN UP</Text>
+              <Text style={styles.buttonText}>Create account</Text>
             )}
           </Pressable>
 
@@ -143,7 +143,7 @@ export default function SignUpScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#000' },
+  safe: { flex: 1, backgroundColor: '#0b0c0e' },
   container: { flexGrow: 1, justifyContent: 'center', padding: 24 },
   title: {
     color: '#fff',
@@ -162,11 +162,9 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   input: {
-    backgroundColor: '#0d0e11',
+    backgroundColor: '#131519',
     color: '#fff',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#1e2026',
+    borderRadius: 14,
     padding: 16,
     fontSize: 16,
     marginBottom: 12,
@@ -182,32 +180,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkboxChecked: { backgroundColor: 'transparent', borderColor: '#2fd0e2' },
-  checkmark: { color: '#2fd0e2', fontWeight: '800' },
+  checkboxChecked: { backgroundColor: 'transparent', borderColor: '#37c8d8' },
+  checkmark: { color: '#37c8d8', fontWeight: '800' },
   termsText: { color: '#aaa', flex: 1 },
   termsLink: { color: '#fff', textDecorationLine: 'underline' },
   error: { color: '#ff6b6b', marginBottom: 12, textAlign: 'center' },
   button: {
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: '#2fd0e2',
-    borderRadius: 10,
-    padding: 15,
+    backgroundColor: '#ffffff',
+    borderRadius: 999,
+    padding: 16,
     alignItems: 'center',
     marginTop: 10,
-    shadowColor: '#2fd0e2',
-    shadowOpacity: 0.35,
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
     shadowRadius: 14,
-    shadowOffset: { width: 0, height: 0 },
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 5,
   },
   buttonDisabled: { opacity: 0.4 },
-  buttonText: {
-    color: '#2fd0e2',
-    fontSize: 15,
-    fontFamily: 'Anton_400Regular',
-    letterSpacing: 4,
-  },
+  buttonText: { color: '#0b0c0e', fontSize: 15, fontWeight: '700' },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
   footerText: { color: '#888' },
-  footerLink: { color: '#2fd0e2', fontWeight: '600' },
+  footerLink: { color: '#37c8d8', fontWeight: '600' },
 });

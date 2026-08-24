@@ -39,7 +39,7 @@ export function LegalScreen({ title, sections }: Props) {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#000' },
+  safe: { flex: 1, backgroundColor: '#0b0c0e' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

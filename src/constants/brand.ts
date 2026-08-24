@@ -1,6 +1,9 @@
 // S333XGOD / Mazze visual identity, derived from the artist's Instagram:
 // black ground, VHS-cyan accent, condensed block display type (Anton),
 // lo-fi analog energy, the * as a brand mark.
+// Direction C — "Midnight Premium": layered charcoal cards with soft
+// depth on near-black; white is the primary action color; cyan appears
+// only as a whisper (chips, progress, tiny icons).
 export const BRAND = {
   bg: '#000000',
   surface: '#101013',
@@ -12,7 +15,7 @@ export const BRAND = {
   /** THE color — the VHS cyan from the Highs & Lows era. Used as line,
       text, and glow on black; solid fills are reserved for ONE call-to-
       action per screen. */
-  cyan: '#2fd0e2',
+  cyan: '#37c8d8',
   /** Darker cyan for hairline borders. */
   cyanDeep: '#12798e',
   /** Cyan-tinted dark surface for "mine"/selected states. */

@@ -146,7 +146,7 @@ export function Feed() {
         <Pressable
           style={styles.fab}
           onPress={() => router.push('/compose')}>
-          <Ionicons name="add" size={30} color="#2fd0e2" />
+          <Ionicons name="add" size={30} color="#0b0c0e" />
         </Pressable>
       ) : null}
     </SafeAreaView>
@@ -154,23 +154,20 @@ export function Feed() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#000' },
+  safe: { flex: 1, backgroundColor: '#0b0c0e' },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#1e2026',
   },
   title: {
-    color: '#fff',
-    fontSize: 24,
+    color: '#f4f5f6',
+    fontSize: 22,
     fontFamily: 'Anton_400Regular',
-    letterSpacing: 2,
+    letterSpacing: 3,
   },
-  titleMark: { color: '#2fd0e2' },
   topActions: { flexDirection: 'row', gap: 18, alignItems: 'center' },
   feedError: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 8, fontSize: 13 },
   list: { paddingBottom: 96, flexGrow: 1 },
@@ -183,14 +180,13 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: '#081b1f',
-    borderWidth: 1.5,
-    borderColor: '#2fd0e2',
+    backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#2fd0e2',
-    shadowOpacity: 0.45,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 0 },
+    shadowColor: '#000',
+    shadowOpacity: 0.55,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 8,
   },
 });
