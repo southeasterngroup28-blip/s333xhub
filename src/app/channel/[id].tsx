@@ -27,15 +27,24 @@ import {
   type ChatListItem,
   type Message,
 } from '@/lib/chat';
+import {
+  blockUser,
+  deleteMessage,
+  fetchBlockedIds,
+  fileReport,
+  REPORT_REASONS,
+  unblockUser,
+} from '@/lib/moderation';
 import { timeAgo } from '@/lib/posts';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/auth-provider';
 
 export default function ChannelScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
   const router = useRouter();
   const myUserId = session?.user.id;
+  const isArtist = profile?.role === 'artist';
 
   const [info, setInfo] = useState<ChatListItem | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -45,6 +54,11 @@ export default function ChannelScreen() {
   const [sending, setSending] = useState(false);
   const [endReached, setEndReached] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
+  const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
+  /** The message currently long-pressed, with the moderation bar open. */
+  const [actionTarget, setActionTarget] = useState<Message | null>(null);
+  const [reporting, setReporting] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const loadingMore = useRef(false);
 
   // New messages arrive via realtime AND from our own send — dedupe by id.
@@ -66,6 +80,11 @@ export default function ChannelScreen() {
         setMessages(history);
         setEndReached(history.length < MESSAGE_PAGE_SIZE);
         markRead(id, myUserId).catch(() => {});
+        fetchBlockedIds()
+          .then((ids) => {
+            if (!cancelled) setBlockedIds(ids);
+          })
+          .catch(() => {});
       } catch (e) {
         if (!cancelled) setError((e as { message?: string })?.message ?? 'Could not load the chat.');
       } finally {
@@ -134,7 +153,63 @@ export default function ChannelScreen() {
     }
   }
 
+  function flashNotice(text: string) {
+    setNotice(text);
+    setTimeout(() => setNotice(null), 2500);
+  }
+
+  async function handleReport(reason: string) {
+    if (!actionTarget) return;
+    setReporting(false);
+    const target = actionTarget;
+    setActionTarget(null);
+    try {
+      await fileReport('message', target.id, reason);
+      flashNotice('Reported. The artist reviews reports within 24 hours.');
+    } catch (e) {
+      setError((e as { message?: string })?.message ?? 'Could not send the report.');
+    }
+  }
+
+  async function handleBlockToggle() {
+    if (!actionTarget) return;
+    const target = actionTarget;
+    setActionTarget(null);
+    const isBlocked = blockedIds.has(target.sender_id);
+    try {
+      if (isBlocked) {
+        await unblockUser(target.sender_id);
+        setBlockedIds((prev) => {
+          const next = new Set(prev);
+          next.delete(target.sender_id);
+          return next;
+        });
+        flashNotice('Unblocked.');
+      } else {
+        await blockUser(target.sender_id);
+        setBlockedIds((prev) => new Set(prev).add(target.sender_id));
+        flashNotice('Blocked. Their messages are hidden from you.');
+      }
+    } catch (e) {
+      setError((e as { message?: string })?.message ?? 'Could not update the block.');
+    }
+  }
+
+  async function handleDeleteMessage() {
+    if (!actionTarget) return;
+    const target = actionTarget;
+    setActionTarget(null);
+    try {
+      await deleteMessage(target.id);
+      setMessages((prev) => prev.filter((m) => m.id !== target.id));
+      flashNotice('Message deleted.');
+    } catch (e) {
+      setError((e as { message?: string })?.message ?? 'Could not delete the message.');
+    }
+  }
+
   const isGroup = info?.type === 'group';
+  const visibleMessages = messages.filter((m) => !blockedIds.has(m.sender_id));
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -185,13 +260,20 @@ export default function ChannelScreen() {
         ) : (
           <FlatList
             inverted
-            data={messages}
+            data={visibleMessages}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => {
               const mine = item.sender_id === myUserId;
               return (
                 <View style={[styles.bubbleRow, mine && styles.bubbleRowMine]}>
-                  <View style={[styles.bubble, mine && styles.bubbleMine]}>
+                  <Pressable
+                    style={[styles.bubble, mine && styles.bubbleMine]}
+                    onLongPress={() => {
+                      // Fans get actions on other people's messages;
+                      // the artist also gets delete on anything.
+                      if (!mine || isArtist) setActionTarget(item);
+                    }}
+                    delayLongPress={300}>
                     {!mine ? (
                       <Text style={styles.senderName}>
                         {item.sender?.display_name ?? 'Deleted user'}
@@ -203,7 +285,7 @@ export default function ChannelScreen() {
                     <Text style={[styles.bubbleTime, mine && styles.bubbleTimeMine]}>
                       {timeAgo(item.created_at)}
                     </Text>
-                  </View>
+                  </Pressable>
                 </View>
               );
             }}
@@ -219,6 +301,54 @@ export default function ChannelScreen() {
             }
           />
         )}
+
+        {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+
+        {actionTarget ? (
+          <View style={styles.actionBar}>
+            <Text style={styles.actionTitle} numberOfLines={1}>
+              {actionTarget.sender?.display_name ?? 'Message'}: “{actionTarget.body}”
+            </Text>
+            {reporting ? (
+              <View style={styles.actionRow}>
+                {REPORT_REASONS.map((reason) => (
+                  <Pressable key={reason} style={styles.actionChip} onPress={() => handleReport(reason)}>
+                    <Text style={styles.actionChipText}>{reason}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.actionRow}>
+                {actionTarget.sender_id !== myUserId ? (
+                  <>
+                    <Pressable style={styles.actionChip} onPress={() => setReporting(true)}>
+                      <Text style={styles.actionChipText}>Report</Text>
+                    </Pressable>
+                    <Pressable style={styles.actionChip} onPress={handleBlockToggle}>
+                      <Text style={styles.actionChipText}>
+                        {blockedIds.has(actionTarget.sender_id) ? 'Unblock' : 'Block'}
+                      </Text>
+                    </Pressable>
+                  </>
+                ) : null}
+                {isArtist ? (
+                  <Pressable style={styles.actionChip} onPress={handleDeleteMessage}>
+                    <Text style={styles.actionChipDanger}>Delete</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            )}
+            <Pressable
+              onPress={() => {
+                setActionTarget(null);
+                setReporting(false);
+              }}
+              hitSlop={8}
+              style={styles.actionClose}>
+              <Ionicons name="close" size={18} color="#888" />
+            </Pressable>
+          </View>
+        ) : null}
 
         <View style={styles.composer}>
           <TextInput
@@ -272,6 +402,25 @@ const styles = StyleSheet.create({
   confirmYes: { color: '#f87171', fontWeight: '700' },
   confirmNo: { color: '#999' },
   error: { color: '#f87171', paddingHorizontal: 16, paddingVertical: 6 },
+  notice: { color: '#4fc07a', paddingHorizontal: 16, paddingVertical: 6, fontSize: 13 },
+  actionBar: {
+    backgroundColor: '#181818',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#2a2a2a',
+  },
+  actionTitle: { color: '#888', fontSize: 12, marginBottom: 8, paddingRight: 24 },
+  actionRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  actionChip: {
+    backgroundColor: '#2a2a2a',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  actionChipText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  actionChipDanger: { color: '#f87171', fontSize: 13, fontWeight: '600' },
+  actionClose: { position: 'absolute', top: 10, right: 12 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   centerInverted: {
     flex: 1,

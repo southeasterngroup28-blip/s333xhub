@@ -1,9 +1,11 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
-import { StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { AudioPlayerCard } from '@/components/audio-player-card';
 import { VideoPlayerCard } from '@/components/video-player-card';
+import { deletePost, fileReport, REPORT_REASONS } from '@/lib/moderation';
 import { timeAgo, type Post } from '@/lib/posts';
 
 type Props = {
@@ -12,10 +14,36 @@ type Props = {
   mediaUrls: Record<string, string>;
   /** The artist always sees their own locked content. */
   viewerIsArtist: boolean;
+  /** Called after the artist deletes this post, so the feed can refresh. */
+  onDeleted?: () => void;
 };
 
-export function PostCard({ post, mediaUrls, viewerIsArtist }: Props) {
+type MenuState = 'closed' | 'confirm-delete' | 'report' | 'reported';
+
+export function PostCard({ post, mediaUrls, viewerIsArtist, onDeleted }: Props) {
   const { width: windowWidth } = useWindowDimensions();
+  const [menu, setMenu] = useState<MenuState>('closed');
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  async function handleDelete() {
+    setMenu('closed');
+    try {
+      await deletePost(post.id);
+      onDeleted?.();
+    } catch (e) {
+      setActionError((e as { message?: string })?.message ?? 'Could not delete the post.');
+    }
+  }
+
+  async function handleReport(reason: string) {
+    setMenu('reported');
+    try {
+      await fileReport('post', post.id, reason);
+    } catch (e) {
+      setMenu('closed');
+      setActionError((e as { message?: string })?.message ?? 'Could not send the report.');
+    }
+  }
   // Card width minus the card's horizontal padding.
   const imageWidth = Math.min(windowWidth, 800) - 32;
 
@@ -35,7 +63,46 @@ export function PostCard({ post, mediaUrls, viewerIsArtist }: Props) {
           )}
         </View>
         <Text style={styles.time}>{timeAgo(post.created_at)}</Text>
+        <Pressable
+          hitSlop={10}
+          onPress={() =>
+            setMenu(menu === 'closed' ? (viewerIsArtist ? 'confirm-delete' : 'report') : 'closed')
+          }>
+          <Ionicons
+            name={viewerIsArtist ? 'trash-outline' : 'flag-outline'}
+            size={16}
+            color="#555"
+          />
+        </Pressable>
       </View>
+
+      {menu === 'confirm-delete' ? (
+        <View style={styles.menuRow}>
+          <Text style={styles.menuLabel}>Delete this post for everyone?</Text>
+          <Pressable style={styles.menuChip} onPress={handleDelete}>
+            <Text style={styles.menuDanger}>Delete</Text>
+          </Pressable>
+          <Pressable style={styles.menuChip} onPress={() => setMenu('closed')}>
+            <Text style={styles.menuText}>Cancel</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {menu === 'report' ? (
+        <View style={styles.menuRow}>
+          {REPORT_REASONS.map((reason) => (
+            <Pressable key={reason} style={styles.menuChip} onPress={() => handleReport(reason)}>
+              <Text style={styles.menuText}>{reason}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+
+      {menu === 'reported' ? (
+        <Text style={styles.reportedNote}>Reported — reviewed within 24 hours.</Text>
+      ) : null}
+
+      {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
 
       {post.body ? <Text style={styles.body}>{post.body}</Text> : null}
 
@@ -111,7 +178,25 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 12,
   },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
+  },
+  menuRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 },
+  menuLabel: { color: '#999', fontSize: 13, flexShrink: 1 },
+  menuChip: {
+    backgroundColor: '#222226',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  menuText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  menuDanger: { color: '#f87171', fontSize: 13, fontWeight: '600' },
+  reportedNote: { color: '#4fc07a', fontSize: 13, marginBottom: 8 },
+  actionError: { color: '#f87171', fontSize: 13, marginBottom: 8 },
   authorRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   author: { color: '#fff', fontWeight: '700', fontSize: 15 },
   time: { color: '#666', fontSize: 13 },

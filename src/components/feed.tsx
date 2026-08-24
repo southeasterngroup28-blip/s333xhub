@@ -17,7 +17,7 @@ import { fetchPosts, PAGE_SIZE, signedUrlsFor, type Post } from '@/lib/posts';
 import { useAuth } from '@/providers/auth-provider';
 
 export function Feed() {
-  const { profile, signOut } = useAuth();
+  const { profile } = useAuth();
   const router = useRouter();
   const [posts, setPosts] = useState<Post[]>([]);
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
@@ -77,9 +77,16 @@ export function Feed() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.topBar}>
         <Text style={styles.title}>S333XHUB</Text>
-        <Pressable onPress={signOut} hitSlop={12}>
-          <Ionicons name="log-out-outline" size={22} color="#666" />
-        </Pressable>
+        <View style={styles.topActions}>
+          {isArtist ? (
+            <Pressable onPress={() => router.push('/reports')} hitSlop={12}>
+              <Ionicons name="flag-outline" size={21} color="#666" />
+            </Pressable>
+          ) : null}
+          <Pressable onPress={() => router.push('/settings')} hitSlop={12}>
+            <Ionicons name="settings-outline" size={21} color="#666" />
+          </Pressable>
+        </View>
       </View>
 
       {loading ? (
@@ -91,7 +98,12 @@ export function Feed() {
           data={posts}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => (
-            <PostCard post={item} mediaUrls={mediaUrls} viewerIsArtist={isArtist} />
+            <PostCard
+              post={item}
+              mediaUrls={mediaUrls}
+              viewerIsArtist={isArtist}
+              onDeleted={loadFresh}
+            />
           )}
           contentContainerStyle={styles.list}
           refreshControl={
@@ -135,6 +147,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   title: { color: '#fff', fontSize: 22, fontWeight: '800', letterSpacing: 2 },
+  topActions: { flexDirection: 'row', gap: 18, alignItems: 'center' },
   list: { paddingBottom: 96, flexGrow: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
   empty: { color: '#555' },
