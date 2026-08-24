@@ -14,16 +14,22 @@ type Props = {
   mediaUrls: Record<string, string>;
   /** The artist always sees their own locked content. */
   viewerIsArtist: boolean;
+  /** True when this viewer has purchased this post. */
+  unlocked?: boolean;
   /** Called after the artist deletes this post, so the feed can refresh. */
   onDeleted?: () => void;
 };
 
 type MenuState = 'closed' | 'confirm-delete' | 'report' | 'reported';
 
-export function PostCard({ post, mediaUrls, viewerIsArtist, onDeleted }: Props) {
+export function PostCard({ post, mediaUrls, viewerIsArtist, unlocked, onDeleted }: Props) {
   const { width: windowWidth } = useWindowDimensions();
   const [menu, setMenu] = useState<MenuState>('closed');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [unlockNotice, setUnlockNotice] = useState(false);
+
+  /** Locked from THIS viewer's perspective. */
+  const locked = post.is_locked && !viewerIsArtist && !unlocked;
 
   async function handleDelete() {
     setMenu('closed');
@@ -106,20 +112,34 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, onDeleted }: Props) 
 
       {post.body ? <Text style={styles.body}>{post.body}</Text> : null}
 
-      {post.is_locked && !viewerIsArtist ? (
+      {post.is_locked && (viewerIsArtist || unlocked) ? (
+        <Text style={styles.unlockedTag}>
+          {viewerIsArtist
+            ? `🔒 Locked post · $${((post.price_cents ?? 0) / 100).toFixed(2)}`
+            : '✓ Unlocked'}
+        </Text>
+      ) : null}
+
+      {locked ? (
         <View style={styles.lockedBox}>
           <Ionicons name="lock-closed" size={22} color="#fbbf24" />
           <View style={styles.lockedMeta}>
             {post.title ? <Text style={styles.lockedTitle}>{post.title}</Text> : null}
-            <Text style={styles.lockedText}>
-              Unlock for ${((post.price_cents ?? 0) / 100).toFixed(2)}
-            </Text>
-            <Text style={styles.lockedHint}>Unlocks are coming soon.</Text>
+            <Pressable style={styles.unlockButton} onPress={() => setUnlockNotice(true)}>
+              <Text style={styles.unlockButtonText}>
+                Unlock for ${((post.price_cents ?? 0) / 100).toFixed(2)}
+              </Text>
+            </Pressable>
+            {unlockNotice ? (
+              <Text style={styles.lockedHint}>
+                Purchases arrive with the App Store version — coming soon.
+              </Text>
+            ) : null}
           </View>
         </View>
       ) : null}
 
-      {post.is_locked && !viewerIsArtist ? null : post.kind === 'audio'
+      {locked ? null : post.kind === 'audio'
         ? media.map((item) => {
             const url = mediaUrls[item.storage_path];
             if (!url) return null;
@@ -134,7 +154,7 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, onDeleted }: Props) 
           })
         : null}
 
-      {post.kind === 'video' && !(post.is_locked && !viewerIsArtist)
+      {post.kind === 'video' && !locked
         ? media.map((item) => {
             const url = mediaUrls[item.storage_path];
             if (!url) return null;
@@ -150,7 +170,7 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, onDeleted }: Props) 
           })
         : null}
 
-      {(post.is_locked && !viewerIsArtist) || post.kind === 'audio' || post.kind === 'video'
+      {locked || post.kind === 'audio' || post.kind === 'video'
         ? null
         : media.map((item) => {
         const url = mediaUrls[item.storage_path];
@@ -214,6 +234,16 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   lockedMeta: { flex: 1 },
+  unlockedTag: { color: '#fbbf24', fontSize: 12, fontWeight: '700', marginBottom: 6 },
+  unlockButton: {
+    backgroundColor: '#fbbf24',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  unlockButtonText: { color: '#000', fontSize: 14, fontWeight: '800' },
   lockedTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
   lockedText: { color: '#fbbf24', fontSize: 14, fontWeight: '700', marginTop: 2 },
   lockedHint: { color: '#666', fontSize: 12, marginTop: 2 },

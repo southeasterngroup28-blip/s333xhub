@@ -14,12 +14,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PostCard } from '@/components/post-card';
 import { fetchPosts, PAGE_SIZE, signedUrlsFor, type Post } from '@/lib/posts';
+import { fetchMyPurchasedPostIds } from '@/lib/purchases';
 import { useAuth } from '@/providers/auth-provider';
 
 export function Feed() {
   const { profile } = useAuth();
   const router = useRouter();
   const [posts, setPosts] = useState<Post[]>([]);
+  const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -29,10 +31,12 @@ export function Feed() {
   const isArtist = profile?.role === 'artist';
 
   const resolveMedia = useCallback(
-    async (batch: Post[]) => {
-      // Don't even request viewing links for locked posts unless the viewer
-      // is the artist — fans get the lock card instead.
-      const visible = isArtist ? batch : batch.filter((p) => !p.is_locked);
+    async (batch: Post[], purchased: Set<string>) => {
+      // Only request viewing links for posts this viewer may actually see:
+      // the artist sees everything; fans see free posts + their unlocks.
+      const visible = isArtist
+        ? batch
+        : batch.filter((p) => !p.is_locked || purchased.has(p.id));
       const paths = visible.flatMap((p) => p.post_media.map((m) => m.storage_path));
       if (paths.length === 0) return;
       const urls = await signedUrlsFor(paths);
@@ -43,15 +47,19 @@ export function Feed() {
 
   const loadFresh = useCallback(async () => {
     try {
+      const purchased = isArtist
+        ? new Set<string>()
+        : await fetchMyPurchasedPostIds().catch(() => new Set<string>());
+      setPurchasedIds(purchased);
       const fresh = await fetchPosts('all');
       setPosts(fresh);
       setEndReached(fresh.length < PAGE_SIZE);
-      await resolveMedia(fresh);
+      await resolveMedia(fresh, purchased);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [resolveMedia]);
+  }, [isArtist, resolveMedia]);
 
   // Reload when the screen regains focus (e.g. after posting).
   useFocusEffect(
@@ -67,7 +75,7 @@ export function Feed() {
       const older = await fetchPosts('all', posts[posts.length - 1].created_at);
       setPosts((prev) => [...prev, ...older]);
       setEndReached(older.length < PAGE_SIZE);
-      await resolveMedia(older);
+      await resolveMedia(older, purchasedIds);
     } finally {
       loadingMore.current = false;
     }
@@ -102,6 +110,7 @@ export function Feed() {
               post={item}
               mediaUrls={mediaUrls}
               viewerIsArtist={isArtist}
+              unlocked={purchasedIds.has(item.id)}
               onDeleted={loadFresh}
             />
           )}
