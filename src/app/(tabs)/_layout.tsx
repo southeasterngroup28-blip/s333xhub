@@ -1,6 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tabs } from 'expo-router';
 import { useEffect } from 'react';
+import { Text, View } from 'react-native';
 
 import { registerPushToken } from '@/lib/notifications';
 
@@ -33,6 +34,24 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="chatbubbles" size={size} color={color} />
           ),
+        }}
+      />
+      <Tabs.Screen
+        name="shop"
+        options={{
+          // Teaser tab: always dimmed, never navigates.
+          tabBarIcon: ({ size }) => <Ionicons name="bag-outline" size={size} color="#3a3d43" />,
+          tabBarLabel: () => (
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ color: '#3a3d43', fontSize: 10, fontWeight: '600' }}>S333XSHOP</Text>
+              <Text style={{ color: '#3a3d43', fontSize: 8 }}>coming soon</Text>
+            </View>
+          ),
+        }}
+        listeners={{
+          tabPress: (e) => {
+            e.preventDefault();
+          },
         }}
       />
     </Tabs>
