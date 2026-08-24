@@ -143,11 +143,21 @@ export default function ChannelScreen() {
     }
   }
 
+  function goBack() {
+    // After a page reload there's no history to go "back" to — go home to the
+    // chat list instead of throwing a navigation error.
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/(tabs)/chat');
+    }
+  }
+
   async function handleLeave() {
     if (!myUserId || !id) return;
     try {
       await setLeft(id, myUserId, true);
-      router.back();
+      goBack();
     } catch (e) {
       setError((e as { message?: string })?.message ?? 'Could not leave.');
     }
@@ -214,7 +224,7 @@ export default function ChannelScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
+        <Pressable onPress={goBack} hitSlop={12}>
           <Ionicons name="chevron-back" size={24} color="#fff" />
         </Pressable>
         <Text style={styles.headerTitle} numberOfLines={1}>
