@@ -64,11 +64,18 @@ export function PostCard({ post, mediaUrls, viewerIsArtist, unlocked, onDeleted 
           <Text style={styles.avatarLetter}>{authorName.slice(0, 1).toUpperCase()}</Text>
         </View>
         <View style={styles.who}>
-          <Text style={styles.author}>{authorName}</Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.author}>{authorName}</Text>
+            {/* Project emblems: Mazze = upright cross, S333XGOD = inverted. */}
+            <Text
+              style={[
+                styles.cross,
+                post.project === 's333xgod' ? styles.crossGod : styles.crossMazze,
+              ]}>
+              †
+            </Text>
+          </View>
           <Text style={styles.sub}>{timeAgo(post.created_at)}</Text>
-        </View>
-        <View style={styles.chip}>
-          <Text style={styles.chipText}>{post.project === 's333xgod' ? 'S333XGOD' : 'MAZZE'}</Text>
         </View>
         <Pressable
           hitSlop={10}
@@ -217,15 +224,12 @@ const styles = StyleSheet.create({
   },
   avatarLetter: { color: '#9a9ba3', fontWeight: '700', fontSize: 14 },
   who: { flex: 1 },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   author: { color: '#fff', fontWeight: '600', fontSize: 14 },
   sub: { color: '#6d7076', fontSize: 11.5, marginTop: 1 },
-  chip: {
-    backgroundColor: 'rgba(55, 200, 216, 0.09)',
-    borderRadius: 999,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-  },
-  chipText: { color: '#37c8d8', fontSize: 10, fontWeight: '600', letterSpacing: 1 },
+  cross: { fontSize: 15, fontWeight: '700', lineHeight: 17 },
+  crossMazze: { color: '#c9cbd0' },
+  crossGod: { color: '#37c8d8', transform: [{ rotate: '180deg' }] },
   body: { color: '#cbcdd1', fontSize: 14, lineHeight: 22 },
   image: { borderRadius: 12, marginTop: 12, backgroundColor: '#1a1d22' },
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 },
