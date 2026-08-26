@@ -9,6 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.s333xhub.app",
       "infoPlist": {
         "UIBackgroundModes": [
           "audio"
@@ -16,6 +17,7 @@
       }
     },
     "android": {
+      "package": "com.s333xhub.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
