@@ -47,7 +47,7 @@ export function Top8Card({ fans, viewerIsArtist }: Props) {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: 'rgba(16, 18, 22, 0.68)',
+    backgroundColor: 'rgba(16, 18, 22, 0.8)',
     borderRadius: 16,
     padding: 16,
     marginHorizontal: 14,
