@@ -1,9 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -44,6 +45,33 @@ export default function ComposeScreen() {
   const [audio, setAudio] = useState<PickedAudio | null>(null);
   const [cover, setCover] = useState<PickedImageDraft | null>(null);
   const [coverFocus, setCoverFocus] = useState(0.5);
+  const [draggingCover, setDraggingCover] = useState(false);
+
+  // Drag-to-frame: vertical drags on the preview slide which part of the
+  // image shows. Refs keep the gesture callbacks stable across renders.
+  const coverFocusRef = useRef(0.5);
+  const dragStartFocus = useRef(0.5);
+  const previewHeight = useRef(1);
+  const coverPan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 2,
+      onPanResponderGrant: () => {
+        dragStartFocus.current = coverFocusRef.current;
+        setDraggingCover(true);
+      },
+      onPanResponderMove: (_e, g) => {
+        const next = Math.min(
+          1,
+          Math.max(0, dragStartFocus.current - g.dy / Math.max(1, previewHeight.current))
+        );
+        coverFocusRef.current = next;
+        setCoverFocus(next);
+      },
+      onPanResponderRelease: () => setDraggingCover(false),
+      onPanResponderTerminate: () => setDraggingCover(false),
+    })
+  ).current;
   const [video, setVideo] = useState<PickedVideo | null>(null);
   const [trackTitle, setTrackTitle] = useState('');
   const [locked, setLocked] = useState(false);
@@ -144,7 +172,10 @@ export default function ComposeScreen() {
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        scrollEnabled={!draggingCover}>
         <View style={styles.projectRow}>
           {(['mazze', 's333xgod'] as const).map((p) => (
             <Pressable
@@ -254,8 +285,13 @@ export default function ComposeScreen() {
             />
             {cover ? (
               <View style={styles.coverBlock}>
-                {/* Live preview of the exact panel the feed shows. */}
-                <View style={styles.coverPreview}>
+                {/* Live preview of the exact panel the feed shows — drag to frame. */}
+                <View
+                  style={styles.coverPreview}
+                  onLayout={(e) => {
+                    previewHeight.current = e.nativeEvent.layout.height;
+                  }}
+                  {...coverPan.panHandlers}>
                   <Image
                     source={{ uri: cover.previewUri }}
                     style={StyleSheet.absoluteFill}
@@ -270,29 +306,9 @@ export default function ComposeScreen() {
                     <Ionicons name="close" size={16} color="#fff" />
                   </Pressable>
                 </View>
-                <View style={styles.focusRow}>
-                  <Text style={styles.focusLabel}>Show:</Text>
-                  {[
-                    { label: 'Top', value: 0 },
-                    { label: 'Upper', value: 0.25 },
-                    { label: 'Center', value: 0.5 },
-                    { label: 'Lower', value: 0.75 },
-                    { label: 'Bottom', value: 1 },
-                  ].map((choice) => (
-                    <Pressable
-                      key={choice.label}
-                      style={[styles.focusChip, coverFocus === choice.value && styles.focusChipOn]}
-                      onPress={() => setCoverFocus(choice.value)}>
-                      <Text
-                        style={[
-                          styles.focusText,
-                          coverFocus === choice.value && styles.focusTextOn,
-                        ]}>
-                        {choice.label}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
+                <Text style={styles.focusLabel}>
+                  {draggingCover ? 'Framing…' : 'Drag the image up or down to frame it'}
+                </Text>
               </View>
             ) : (
               <View style={styles.coverRow}>
@@ -484,17 +500,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 5,
   },
-  focusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' },
-  focusLabel: { color: '#6d7076', fontSize: 12 },
-  focusChip: {
-    backgroundColor: '#0f1114',
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  focusChipOn: { backgroundColor: '#c3cdd6' },
-  focusText: { color: '#9a9ba3', fontSize: 12, fontWeight: '600' },
-  focusTextOn: { color: '#0b0c0e' },
+  focusLabel: { color: '#6d7076', fontSize: 12, marginTop: 7, textAlign: 'center' },
   titleInput: {
     backgroundColor: '#0d0d0f',
     color: '#fff',
