@@ -36,12 +36,15 @@ function formatPrice(cents: number): string {
 }
 
 /**
- * Drag-to-frame cover preview. Self-contained so dragging re-renders ONLY
- * this small widget (re-rendering the whole compose screen per frame is
- * what makes drags feel clunky). Reports the final focus on release.
+ * Twitter-banner-style framing: the WHOLE image is shown, a bright 16:9
+ * window sits over it, everything outside is dimmed, and dragging moves
+ * the window. What's inside the window is exactly what the feed shows.
+ * Self-contained so dragging re-renders only this widget.
  */
 function CoverFramer({
   uri,
+  imageWidth,
+  imageHeight,
   initialFocus,
   disabled,
   onCommit,
@@ -49,68 +52,97 @@ function CoverFramer({
   onDragging,
 }: {
   uri: string;
+  imageWidth: number | null;
+  imageHeight: number | null;
   initialFocus: number;
   disabled: boolean;
   onCommit: (focus: number) => void;
   onRemove: () => void;
   onDragging: (dragging: boolean) => void;
 }) {
-  const [focus, setFocus] = useState(initialFocus);
-  const [dragging, setDragging] = useState(false);
-  const focusRef = useRef(initialFocus);
-  const startFocus = useRef(initialFocus);
-  const height = useRef(1);
+  const [layoutWidth, setLayoutWidth] = useState(0);
+  const [natural, setNatural] = useState<{ w: number; h: number } | null>(
+    imageWidth && imageHeight ? { w: imageWidth, h: imageHeight } : null
+  );
+  const [rectY, setRectY] = useState<number | null>(null);
+  const rectYRef = useRef(0);
+  const dragStartY = useRef(0);
+  const maxYRef = useRef(0);
+
+  const displayHeight = layoutWidth && natural ? layoutWidth * (natural.h / natural.w) : 0;
+  const rectHeight = layoutWidth * (9 / 16);
+  const maxY = Math.max(0, displayHeight - rectHeight);
+  maxYRef.current = maxY;
+
+  // Place the window once we know the sizes.
+  if (rectY === null && layoutWidth > 0 && natural) {
+    const y = initialFocus * maxY;
+    rectYRef.current = y;
+    // eslint-disable-next-line react-hooks/rules-of-hooks -- simple init, not a hook
+    setRectY(y);
+  }
 
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 2,
       onPanResponderGrant: () => {
-        startFocus.current = focusRef.current;
-        setDragging(true);
+        dragStartY.current = rectYRef.current;
         onDragging(true);
       },
       onPanResponderMove: (_e, g) => {
-        const next = Math.min(
-          1,
-          Math.max(0, startFocus.current - (g.dy / Math.max(1, height.current)) * 1.5)
-        );
-        focusRef.current = next;
-        setFocus(next);
+        const next = Math.min(maxYRef.current, Math.max(0, dragStartY.current + g.dy));
+        rectYRef.current = next;
+        setRectY(next);
       },
       onPanResponderRelease: () => {
-        setDragging(false);
         onDragging(false);
-        onCommit(focusRef.current);
+        onCommit(maxYRef.current > 0 ? rectYRef.current / maxYRef.current : 0.5);
       },
       onPanResponderTerminate: () => {
-        setDragging(false);
         onDragging(false);
-        onCommit(focusRef.current);
+        onCommit(maxYRef.current > 0 ? rectYRef.current / maxYRef.current : 0.5);
       },
     })
   ).current;
 
+  const y = rectY ?? 0;
+
   return (
     <View style={framerStyles.block}>
       <View
-        style={framerStyles.preview}
-        onLayout={(e) => {
-          height.current = e.nativeEvent.layout.height;
-        }}
+        style={framerStyles.stage}
+        onLayout={(e) => setLayoutWidth(e.nativeEvent.layout.width)}
         {...pan.panHandlers}>
-        <Image
-          source={{ uri }}
-          style={StyleSheet.absoluteFill}
-          contentFit="cover"
-          contentPosition={{ left: '50%', top: `${focus * 100}%` }}
-        />
+        {layoutWidth > 0 ? (
+          <Image
+            source={{ uri }}
+            style={{ width: layoutWidth, height: displayHeight || rectHeight }}
+            contentFit="cover"
+            onLoad={(e) => {
+              if (!natural && e.source?.width && e.source?.height) {
+                setNatural({ w: e.source.width, h: e.source.height });
+              }
+            }}
+          />
+        ) : null}
+        {displayHeight > 0 ? (
+          <>
+            <View style={[framerStyles.dim, { top: 0, height: y }]} />
+            <View style={[framerStyles.window, { top: y, height: rectHeight }]} />
+            <View
+              style={[framerStyles.dim, { top: y + rectHeight, height: Math.max(0, displayHeight - y - rectHeight) }]}
+            />
+          </>
+        ) : null}
         <Pressable style={framerStyles.remove} hitSlop={8} onPress={onRemove} disabled={disabled}>
           <Ionicons name="close" size={16} color="#fff" />
         </Pressable>
       </View>
       <Text style={framerStyles.hint}>
-        {dragging ? 'Framing…' : 'Drag the image up or down to frame it'}
+        {maxY > 0
+          ? 'Drag the window — what’s inside it is what shows'
+          : 'This image fills the panel exactly'}
       </Text>
     </View>
   );
@@ -118,11 +150,20 @@ function CoverFramer({
 
 const framerStyles = StyleSheet.create({
   block: { marginTop: 12 },
-  preview: {
-    aspectRatio: 16 / 9,
-    borderRadius: 10,
-    backgroundColor: '#1a1d22',
-    overflow: 'hidden',
+  stage: { borderRadius: 10, overflow: 'hidden', backgroundColor: '#0f1114' },
+  dim: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(6, 7, 9, 0.72)',
+  },
+  window: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    borderRadius: 4,
   },
   remove: {
     position: 'absolute',
@@ -360,6 +401,8 @@ export default function ComposeScreen() {
             {cover ? (
               <CoverFramer
                 uri={cover.previewUri}
+                imageWidth={cover.width}
+                imageHeight={cover.height}
                 initialFocus={coverFocus}
                 disabled={posting}
                 onCommit={setCoverFocus}
