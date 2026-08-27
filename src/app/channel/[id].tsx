@@ -398,7 +398,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#222',
   },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700', flex: 1 },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 17,
+    fontFamily: 'Anton_400Regular',
+    letterSpacing: 1.5,
+    flex: 1,
+    textAlign: 'center',
+  },
   headerActions: { flexDirection: 'row', gap: 16 },
   confirmBar: {
     flexDirection: 'row',

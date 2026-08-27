@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  headerTitle: { color: '#fff', fontSize: 17, fontFamily: 'Anton_400Regular', letterSpacing: 1.5 },
   notice: { color: '#4fc07a', paddingHorizontal: 16, paddingVertical: 4, fontSize: 13 },
   error: { color: '#f87171', paddingHorizontal: 16, paddingVertical: 4, fontSize: 13 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 48 },
