@@ -59,6 +59,23 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     setCurrent(track);
     player.replace({ uri: track.url });
     player.play();
+    // Announce the track to the lock screen / control center (native only;
+    // also required on Android for playback beyond ~3 minutes in background).
+    try {
+      (player as unknown as {
+        setActiveForLockScreen?: (
+          active: boolean,
+          metadata?: { title?: string; artist?: string },
+          options?: { showSeekBackward?: boolean; showSeekForward?: boolean }
+        ) => void;
+      }).setActiveForLockScreen?.(
+        true,
+        { title: track.title, artist: 'S333XHUB' },
+        { showSeekBackward: true, showSeekForward: true }
+      );
+    } catch {
+      // No lock screen on this platform (web) — fine.
+    }
   }
 
   function toggle() {
