@@ -96,7 +96,7 @@ const styles = StyleSheet.create({
   wrap: { marginTop: 12 },
   art: {
     borderRadius: 12,
-    backgroundColor: 'rgba(23, 27, 32, 0.82)',
+    backgroundColor: '#171b20',
     minHeight: 110,
     justifyContent: 'flex-end',
     overflow: 'hidden',
