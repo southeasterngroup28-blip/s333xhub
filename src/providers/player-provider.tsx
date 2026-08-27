@@ -10,6 +10,7 @@ export type Track = {
   postId: string;
   title: string;
   url: string;
+  artworkUrl?: string;
 };
 
 type PlayerContextValue = {
@@ -62,25 +63,18 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     if (!current || !status?.playing) return;
     const anyPlayer = player as unknown as Record<string, unknown>;
     // TEMP DEBUG: report what the native side actually exposes.
-    console.log(
-      '[lockscreen] setActiveForLockScreen:',
-      typeof anyPlayer.setActiveForLockScreen,
-      '| updateLockScreenMetadata:',
-      typeof anyPlayer.updateLockScreenMetadata
-    );
     try {
       (anyPlayer.setActiveForLockScreen as (
         active: boolean,
-        metadata?: { title?: string; artist?: string },
+        metadata?: { title?: string; artist?: string; artworkUrl?: string },
         options?: { showSeekBackward?: boolean; showSeekForward?: boolean }
       ) => void)(
         true,
-        { title: current.title, artist: 'S333XHUB' },
+        { title: current.title, artist: 'S333XHUB', artworkUrl: current.artworkUrl },
         { showSeekBackward: true, showSeekForward: true }
       );
-      console.log('[lockscreen] call succeeded');
-    } catch (e) {
-      console.log('[lockscreen] call FAILED:', String(e));
+    } catch {
+      // No lock screen on this platform (web) — fine.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.postId, status?.playing]);

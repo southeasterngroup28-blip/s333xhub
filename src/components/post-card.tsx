@@ -283,6 +283,7 @@ export function PostCard({
                   postId={post.id}
                   title={post.title ?? 'Untitled track'}
                   url={url}
+                  coverUrl={post.cover_path ? mediaUrls[post.cover_path] : undefined}
                 />
               );
             })

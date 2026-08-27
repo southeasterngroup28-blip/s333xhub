@@ -50,7 +50,10 @@ export function Feed() {
       const visible = isArtist
         ? batch
         : batch.filter((p) => !p.is_locked || purchased.has(p.id));
-      const paths = visible.flatMap((p) => p.post_media.map((m) => m.storage_path));
+      const paths = visible.flatMap((p) => [
+        ...p.post_media.map((m) => m.storage_path),
+        ...(p.cover_path ? [p.cover_path] : []),
+      ]);
       if (paths.length === 0) return;
       const urls = await signedUrlsFor(paths);
       setMediaUrls((prev) => ({ ...prev, ...urls }));

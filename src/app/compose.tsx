@@ -42,6 +42,7 @@ export default function ComposeScreen() {
   const [body, setBody] = useState('');
   const [images, setImages] = useState<PickedImageDraft[]>([]);
   const [audio, setAudio] = useState<PickedAudio | null>(null);
+  const [cover, setCover] = useState<PickedImageDraft | null>(null);
   const [video, setVideo] = useState<PickedVideo | null>(null);
   const [trackTitle, setTrackTitle] = useState('');
   const [locked, setLocked] = useState(false);
@@ -101,6 +102,7 @@ export default function ComposeScreen() {
         images: pollMode ? [] : images,
         audio: pollMode ? null : audio,
         video: pollMode ? null : video,
+        cover: pollMode ? null : cover,
         title: trackTitle,
         priceCents: locked ? priceCents : null,
         pollOptions: pollMode ? filledOptions : null,
@@ -231,7 +233,13 @@ export default function ComposeScreen() {
               <Text style={styles.audioName} numberOfLines={1}>
                 {audio.name}
               </Text>
-              <Pressable hitSlop={8} onPress={() => setAudio(null)} disabled={posting}>
+              <Pressable
+                hitSlop={8}
+                onPress={() => {
+                  setAudio(null);
+                  setCover(null);
+                }}
+                disabled={posting}>
                 <Ionicons name="close" size={18} color="#888" />
               </Pressable>
             </View>
@@ -242,6 +250,25 @@ export default function ComposeScreen() {
               value={trackTitle}
               onChangeText={setTrackTitle}
             />
+            <View style={styles.coverRow}>
+              {cover ? (
+                <>
+                  <Image source={{ uri: cover.previewUri }} style={styles.coverThumb} contentFit="cover" />
+                  <Text style={styles.coverLabel}>Cover attached</Text>
+                  <Pressable hitSlop={8} onPress={() => setCover(null)} disabled={posting}>
+                    <Ionicons name="close" size={18} color="#888" />
+                  </Pressable>
+                </>
+              ) : (
+                <PickPhotosButton
+                  label="Add cover"
+                  maxCount={1}
+                  disabled={posting}
+                  onPicked={(picked) => picked[0] && setCover(picked[0])}
+                  onError={setError}
+                />
+              )}
+            </View>
           </View>
         ) : null}
 
@@ -405,6 +432,9 @@ const styles = StyleSheet.create({
   },
   audioRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   audioName: { color: '#ddd', fontSize: 14, flex: 1 },
+  coverRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
+  coverThumb: { width: 44, height: 44, borderRadius: 8, backgroundColor: '#1a1d22' },
+  coverLabel: { color: '#cbcdd1', fontSize: 13.5, flex: 1 },
   titleInput: {
     backgroundColor: '#0d0d0f',
     color: '#fff',

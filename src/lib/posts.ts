@@ -19,6 +19,7 @@ export type Post = {
   title: string | null;
   is_locked: boolean;
   price_cents: number | null;
+  cover_path: string | null;
   created_at: string;
   author: { display_name: string } | null;
   post_media: PostMedia[];
@@ -33,7 +34,7 @@ export const PAGE_SIZE = 20;
 export async function fetchPosts(filter: Project | 'all', before?: string): Promise<Post[]> {
   let query = supabase
     .from('posts')
-    .select('id, project, kind, body, title, is_locked, price_cents, created_at, author:profiles!posts_author_id_fkey(display_name), post_media(id, storage_path, media_type, width, height, position)')
+    .select('id, project, kind, body, title, is_locked, price_cents, cover_path, created_at, author:profiles!posts_author_id_fkey(display_name), post_media(id, storage_path, media_type, width, height, position)')
     .order('created_at', { ascending: false })
     .limit(PAGE_SIZE);
 
@@ -118,6 +119,8 @@ export type NewPost = {
   /** 2–4 labels makes this a poll post; the body is the question. */
   pollOptions?: string[] | null;
   pollEndsAt?: Date | null;
+  /** Optional cover image for an audio post. */
+  cover?: PickedImage | null;
 };
 
 /** Reads a picked file into upload form: browser File directly, phone path via base64. */
@@ -183,6 +186,24 @@ export async function createPost(input: NewPost): Promise<void> {
       position: 0,
     });
     if (mediaError) throw mediaError;
+
+    // Optional cover art, shown in the player card and on the lock screen.
+    const cover = input.cover;
+    if (cover) {
+      const coverExtension = cover.mimeType === 'image/png' ? 'png' : 'jpg';
+      const coverPath = `${post.id}/cover.${coverExtension}`;
+      const { error: coverUploadError } = await supabase.storage
+        .from('post-media')
+        .upload(coverPath, cover.file ?? base64ToArrayBuffer(cover.base64!), {
+          contentType: cover.mimeType,
+        });
+      if (coverUploadError) throw coverUploadError;
+      const { error: coverError } = await supabase
+        .from('posts')
+        .update({ cover_path: coverPath })
+        .eq('id', post.id);
+      if (coverError) throw coverError;
+    }
   }
 
   if (video) {

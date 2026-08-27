@@ -1,4 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { Image } from 'expo-image';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -8,6 +9,7 @@ type Props = {
   postId: string;
   title: string;
   url: string;
+  coverUrl?: string;
 };
 
 function formatTime(totalSeconds: number): string {
@@ -17,7 +19,7 @@ function formatTime(totalSeconds: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-export function AudioPlayerCard({ postId, title, url }: Props) {
+export function AudioPlayerCard({ postId, title, url, coverUrl }: Props) {
   const { current, status, playTrack, toggle, seekTo } = usePlayer();
   const [barWidth, setBarWidth] = useState(0);
 
@@ -31,16 +33,20 @@ export function AudioPlayerCard({ postId, title, url }: Props) {
     if (isCurrent) {
       toggle();
     } else {
-      playTrack({ postId, title, url });
+      playTrack({ postId, title, url, artworkUrl: coverUrl });
     }
   }
 
   return (
     <View style={styles.wrap}>
-      {/* Art panel: deep teal ground with the white play control, the way
-          a cover would sit. Real cover art can drop in here later. */}
-      <View style={styles.art}>
-        <View style={styles.artGlow} />
+      {/* Art panel: real cover art when the post has one, styled ground otherwise. */}
+      <View style={[styles.art, coverUrl && styles.artWithCover]}>
+        {coverUrl ? (
+          <Image source={{ uri: coverUrl }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} />
+        ) : (
+          <View style={styles.artGlow} />
+        )}
+        {coverUrl ? <View style={styles.artScrim} /> : null}
         <View style={styles.artRow}>
           <Pressable style={styles.play} onPress={handlePress} hitSlop={8}>
             <Ionicons
@@ -86,6 +92,15 @@ const styles = StyleSheet.create({
     minHeight: 110,
     justifyContent: 'flex-end',
     overflow: 'hidden',
+  },
+  artWithCover: { minHeight: 190 },
+  artScrim: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 80,
+    backgroundColor: 'rgba(4, 6, 8, 0.55)',
   },
   artGlow: {
     position: 'absolute',
