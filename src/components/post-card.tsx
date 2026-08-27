@@ -164,14 +164,16 @@ export function PostCard({
         <View style={styles.who}>
           <View style={styles.nameRow}>
             <Text style={styles.author}>{authorName}</Text>
-            {/* Project emblems: Mazze = upright cross, S333XGOD = inverted. */}
-            <Text
-              style={[
-                styles.cross,
-                post.project === 's333xgod' ? styles.crossGod : styles.crossMazze,
-              ]}>
-              †
-            </Text>
+            {/* Project emblems: S333XGOD = blue star, Mazze = green skull. */}
+            <Image
+              source={
+                post.project === 's333xgod'
+                  ? require('../../assets/images/emblem-s333xgod.png')
+                  : require('../../assets/images/emblem-mazze.png')
+              }
+              style={styles.emblem}
+              contentFit="contain"
+            />
           </View>
           <Text style={styles.sub}>{timeAgo(post.created_at)}</Text>
         </View>
@@ -379,9 +381,7 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   author: { color: '#fff', fontWeight: '600', fontSize: 14 },
   sub: { color: '#6d7076', fontSize: 11.5, marginTop: 1 },
-  cross: { fontSize: 15, fontWeight: '700', lineHeight: 17 },
-  crossMazze: { color: '#c9cbd0' },
-  crossGod: { color: '#c3cdd6', transform: [{ rotate: '180deg' }] },
+  emblem: { width: 20, height: 20 },
   body: { color: '#cbcdd1', fontSize: 14, lineHeight: 22 },
   image: { borderRadius: 12, marginTop: 12, backgroundColor: '#1a1d22' },
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 },
