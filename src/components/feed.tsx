@@ -227,7 +227,7 @@ const styles = StyleSheet.create({
   },
   topBar: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -238,7 +238,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Anton_400Regular',
     letterSpacing: 3,
   },
-  topActions: { flexDirection: 'row', gap: 18, alignItems: 'center' },
+  topActions: {
+    position: 'absolute',
+    right: 16,
+    flexDirection: 'row',
+    gap: 18,
+    alignItems: 'center',
+  },
   feedError: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 8, fontSize: 13 },
   list: { paddingBottom: 96, flexGrow: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },

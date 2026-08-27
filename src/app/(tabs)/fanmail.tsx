@@ -247,7 +247,7 @@ export default function FanMailScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
-  topBar: { paddingHorizontal: 16, paddingVertical: 12 },
+  topBar: { paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center' },
   title: { color: '#f4f5f6', fontSize: 22, fontFamily: 'Anton_400Regular', letterSpacing: 3 },
   notice: { color: '#4fc07a', paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 },
   error: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 },
