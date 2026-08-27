@@ -60,20 +60,27 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   // Also required on Android for background playback beyond ~3 minutes.
   useEffect(() => {
     if (!current || !status?.playing) return;
+    const anyPlayer = player as unknown as Record<string, unknown>;
+    // TEMP DEBUG: report what the native side actually exposes.
+    console.log(
+      '[lockscreen] setActiveForLockScreen:',
+      typeof anyPlayer.setActiveForLockScreen,
+      '| updateLockScreenMetadata:',
+      typeof anyPlayer.updateLockScreenMetadata
+    );
     try {
-      (player as unknown as {
-        setActiveForLockScreen?: (
-          active: boolean,
-          metadata?: { title?: string; artist?: string },
-          options?: { showSeekBackward?: boolean; showSeekForward?: boolean }
-        ) => void;
-      }).setActiveForLockScreen?.(
+      (anyPlayer.setActiveForLockScreen as (
+        active: boolean,
+        metadata?: { title?: string; artist?: string },
+        options?: { showSeekBackward?: boolean; showSeekForward?: boolean }
+      ) => void)(
         true,
         { title: current.title, artist: 'S333XHUB' },
         { showSeekBackward: true, showSeekForward: true }
       );
-    } catch {
-      // No lock screen on this platform (web) — fine.
+      console.log('[lockscreen] call succeeded');
+    } catch (e) {
+      console.log('[lockscreen] call FAILED:', String(e));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.postId, status?.playing]);
