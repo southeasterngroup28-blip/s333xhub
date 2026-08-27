@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PickPhotosButton } from '@/components/media-pickers';
+import { clearMyBackground, setDefaultBackground, setMyBackground } from '@/lib/backgrounds';
 import { SUPPORT_EMAIL } from '@/lib/legal-content';
 import { deleteMyAccount, fetchBlockedUsers, unblockUser } from '@/lib/moderation';
 import {
@@ -37,6 +39,13 @@ export default function SettingsScreen() {
   const [confirmDelete, setConfirmDelete] = useState(0); // 0 = idle, 1 = first confirm shown
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bgBusy, setBgBusy] = useState(false);
+  const [bgNotice, setBgNotice] = useState<string | null>(null);
+
+  function flashBg(text: string) {
+    setBgNotice(text);
+    setTimeout(() => setBgNotice(null), 3000);
+  }
 
   const isArtist = profile?.role === 'artist';
 
@@ -102,6 +111,72 @@ export default function SettingsScreen() {
           <Text style={styles.name}>{profile?.display_name ?? '…'}</Text>
           <Text style={styles.email}>{session?.user.email}</Text>
           {isArtist ? <Text style={styles.artistTag}>Artist account</Text> : null}
+        </View>
+
+        <Text style={styles.sectionLabel}>BACKGROUND</Text>
+        <View style={styles.card}>
+          <Text style={styles.muted}>
+            {isArtist
+              ? 'Set the background every fan sees, or one just for you.'
+              : 'Make the feed yours — your background only shows on your account.'}
+          </Text>
+          {bgNotice ? <Text style={styles.bgNotice}>{bgNotice}</Text> : null}
+          <View style={styles.bgActions}>
+            <PickPhotosButton
+              label="My background"
+              maxCount={1}
+              disabled={bgBusy}
+              onPicked={async (picked) => {
+                if (!picked[0]) return;
+                setBgBusy(true);
+                try {
+                  await setMyBackground(picked[0]);
+                  flashBg('Saved — pull the feed to refresh.');
+                } catch (e) {
+                  setError((e as { message?: string })?.message ?? 'Could not save background.');
+                } finally {
+                  setBgBusy(false);
+                }
+              }}
+              onError={setError}
+            />
+            {isArtist ? (
+              <PickPhotosButton
+                label="Default for everyone"
+                maxCount={1}
+                disabled={bgBusy}
+                onPicked={async (picked) => {
+                  if (!picked[0]) return;
+                  setBgBusy(true);
+                  try {
+                    await setDefaultBackground(picked[0]);
+                    flashBg('App default updated for all fans.');
+                  } catch (e) {
+                    setError((e as { message?: string })?.message ?? 'Could not set the default.');
+                  } finally {
+                    setBgBusy(false);
+                  }
+                }}
+                onError={setError}
+              />
+            ) : null}
+          </View>
+          <Pressable
+            style={styles.bgReset}
+            disabled={bgBusy}
+            onPress={async () => {
+              setBgBusy(true);
+              try {
+                await clearMyBackground();
+                flashBg(isArtist ? 'Personal override removed.' : 'Back to the artist’s background.');
+              } catch (e) {
+                setError((e as { message?: string })?.message ?? 'Could not reset.');
+              } finally {
+                setBgBusy(false);
+              }
+            }}>
+            <Text style={styles.bgResetText}>Remove my background</Text>
+          </Pressable>
         </View>
 
         <Text style={styles.sectionLabel}>NOTIFICATIONS</Text>
@@ -225,6 +300,10 @@ const styles = StyleSheet.create({
   email: { color: '#888', fontSize: 14, marginTop: 2 },
   artistTag: { color: '#c3cdd6', fontSize: 12, fontWeight: '700', marginTop: 6 },
   muted: { color: '#555' },
+  bgNotice: { color: '#4fc07a', fontSize: 13, marginTop: 8 },
+  bgActions: { flexDirection: 'row', gap: 8, marginTop: 12, flexWrap: 'wrap' },
+  bgReset: { marginTop: 10 },
+  bgResetText: { color: '#8f99a3', fontSize: 13, fontWeight: '600' },
   prefRow: {
     flexDirection: 'row',
     alignItems: 'center',
