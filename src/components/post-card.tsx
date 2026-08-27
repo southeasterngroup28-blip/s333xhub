@@ -354,7 +354,7 @@ export function PostCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#131519',
+    backgroundColor: 'rgba(16, 18, 22, 0.68)',
     borderRadius: 16,
     padding: 16,
     marginHorizontal: 14,
@@ -407,7 +407,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#14171b',
+    backgroundColor: 'rgba(20, 23, 27, 0.6)',
     borderWidth: 1,
     borderColor: '#262a30',
     borderRadius: 16,

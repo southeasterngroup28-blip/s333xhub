@@ -223,7 +223,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(6, 7, 9, 0.6)',
+    backgroundColor: 'rgba(6, 7, 9, 0.32)',
   },
   topBar: {
     flexDirection: 'row',
