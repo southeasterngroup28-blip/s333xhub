@@ -1,5 +1,6 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
+import { base64ToArrayBuffer, filePayload } from '@/lib/posts';
 import { cleanMessage } from '@/lib/profanity';
 import { supabase } from '@/lib/supabase';
 
@@ -15,11 +16,19 @@ export type ChatListItem = {
   leftAt: string | null;
 };
 
+export type MessageKind = 'text' | 'gif' | 'voice' | 'image';
+
 export type Message = {
   id: string;
   channel_id: string;
   sender_id: string;
   body: string;
+  kind: MessageKind;
+  /** Storage path for voice/image files (needs a signed URL to view). */
+  media_path: string | null;
+  /** Direct URL for GIFs. */
+  media_url: string | null;
+  duration_seconds: number | null;
   created_at: string;
   deleted_at: string | null;
   sender: { display_name: string; status: string | null } | null;
@@ -27,6 +36,10 @@ export type Message = {
 
 export const MESSAGE_PAGE_SIZE = 50;
 export const MESSAGE_MAX_LENGTH = 1000;
+export const VOICE_MAX_SECONDS = 60;
+
+const MESSAGE_COLUMNS =
+  'id, channel_id, sender_id, body, kind, media_path, media_url, duration_seconds, created_at, deleted_at, sender:profiles(display_name, status)';
 
 /** Everything I'm a member of, with DM titles resolved to the other person. */
 export async function fetchChatList(myUserId: string): Promise<ChatListItem[]> {
@@ -86,7 +99,7 @@ export async function fetchChatList(myUserId: string): Promise<ChatListItem[]> {
 export async function fetchMessages(channelId: string, before?: string): Promise<Message[]> {
   let query = supabase
     .from('messages')
-    .select('id, channel_id, sender_id, body, created_at, deleted_at, sender:profiles(display_name, status)')
+    .select(MESSAGE_COLUMNS)
     .eq('channel_id', channelId)
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
@@ -103,7 +116,7 @@ export async function fetchMessages(channelId: string, before?: string): Promise
 export async function fetchMessage(id: string): Promise<Message | null> {
   const { data, error } = await supabase
     .from('messages')
-    .select('id, channel_id, sender_id, body, created_at, deleted_at, sender:profiles(display_name, status)')
+    .select(MESSAGE_COLUMNS)
     .eq('id', id)
     .maybeSingle();
   if (error) throw error;
@@ -120,10 +133,76 @@ export async function sendMessage(channelId: string, body: string): Promise<Mess
       sender_id: (await supabase.auth.getUser()).data.user!.id,
       body: cleaned,
     })
-    .select('id, channel_id, sender_id, body, created_at, deleted_at, sender:profiles(display_name, status)')
+    .select(MESSAGE_COLUMNS)
     .single();
   if (error) throw error;
   return data as unknown as Message;
+}
+
+/** Sends a GIF picked from search (we store its URL, not the file). */
+export async function sendGifMessage(channelId: string, gifUrl: string): Promise<Message> {
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({
+      channel_id: channelId,
+      sender_id: (await supabase.auth.getUser()).data.user!.id,
+      body: '',
+      kind: 'gif',
+      media_url: gifUrl,
+    })
+    .select(MESSAGE_COLUMNS)
+    .single();
+  if (error) throw error;
+  return data as unknown as Message;
+}
+
+/**
+ * Uploads a voice note or picture, then sends the message pointing at it.
+ * Files live at <my user id>/<channel id>/<timestamped name> so storage
+ * rules can verify both the sender and the room.
+ */
+export async function sendMediaMessage(
+  channelId: string,
+  kind: 'voice' | 'image',
+  media: { uri?: string; file?: Blob; base64?: string; mimeType: string },
+  durationSeconds?: number
+): Promise<Message> {
+  const userId = (await supabase.auth.getUser()).data.user!.id;
+  const ext = kind === 'voice' ? 'm4a' : media.mimeType.includes('png') ? 'png' : 'jpg';
+  const path = `${userId}/${channelId}/${Date.now()}.${ext}`;
+
+  const payload = media.base64 ? base64ToArrayBuffer(media.base64) : await filePayload(media);
+  const { error: uploadError } = await supabase.storage
+    .from('chat-media')
+    .upload(path, payload, { contentType: media.mimeType });
+  if (uploadError) throw uploadError;
+
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({
+      channel_id: channelId,
+      sender_id: userId,
+      body: '',
+      kind,
+      media_path: path,
+      duration_seconds: durationSeconds ?? null,
+    })
+    .select(MESSAGE_COLUMNS)
+    .single();
+  if (error) throw error;
+  return data as unknown as Message;
+}
+
+/** storage path → temporary viewing URL, for voice notes and pictures. */
+export async function chatMediaUrls(paths: string[]): Promise<Record<string, string>> {
+  if (paths.length === 0) return {};
+  const { data, error } = await supabase.storage.from('chat-media').createSignedUrls(paths, 3600);
+  if (error) throw error;
+  const map: Record<string, string> = {};
+  for (const row of data ?? []) {
+    if (row.path && row.signedUrl) map[row.path] = row.signedUrl;
+  }
+  return map;
 }
 
 /**

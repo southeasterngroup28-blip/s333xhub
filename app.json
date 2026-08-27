@@ -45,7 +45,12 @@
           "imageWidth": 220
         }
       ],
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "S333XHUB uses the microphone to record voice notes for chat."
+        }
+      ],
       "expo-video",
       "expo-font"
     ],
