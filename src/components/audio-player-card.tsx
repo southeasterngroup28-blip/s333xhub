@@ -10,6 +10,8 @@ type Props = {
   title: string;
   url: string;
   coverUrl?: string;
+  /** Which vertical slice of the cover shows: 0 top … 1 bottom. */
+  coverFocus?: number;
 };
 
 function formatTime(totalSeconds: number): string {
@@ -19,7 +21,7 @@ function formatTime(totalSeconds: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-export function AudioPlayerCard({ postId, title, url, coverUrl }: Props) {
+export function AudioPlayerCard({ postId, title, url, coverUrl, coverFocus = 0.5 }: Props) {
   const { current, status, playTrack, toggle, seekTo } = usePlayer();
   const [barWidth, setBarWidth] = useState(0);
 
@@ -42,7 +44,13 @@ export function AudioPlayerCard({ postId, title, url, coverUrl }: Props) {
       {/* Art panel: real cover art when the post has one, styled ground otherwise. */}
       <View style={[styles.art, coverUrl && styles.artWithCover]}>
         {coverUrl ? (
-          <Image source={{ uri: coverUrl }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} />
+          <Image
+            source={{ uri: coverUrl }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            contentPosition={{ left: '50%', top: `${coverFocus * 100}%` }}
+            transition={150}
+          />
         ) : (
           <View style={styles.artGlow} />
         )}
@@ -93,7 +101,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     overflow: 'hidden',
   },
-  artWithCover: { minHeight: 190 },
+  artWithCover: { aspectRatio: 16 / 9 },
   artScrim: {
     position: 'absolute',
     left: 0,

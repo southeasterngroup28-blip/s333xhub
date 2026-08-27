@@ -43,6 +43,7 @@ export default function ComposeScreen() {
   const [images, setImages] = useState<PickedImageDraft[]>([]);
   const [audio, setAudio] = useState<PickedAudio | null>(null);
   const [cover, setCover] = useState<PickedImageDraft | null>(null);
+  const [coverFocus, setCoverFocus] = useState(0.5);
   const [video, setVideo] = useState<PickedVideo | null>(null);
   const [trackTitle, setTrackTitle] = useState('');
   const [locked, setLocked] = useState(false);
@@ -103,6 +104,7 @@ export default function ComposeScreen() {
         audio: pollMode ? null : audio,
         video: pollMode ? null : video,
         cover: pollMode ? null : cover,
+        coverFocus,
         title: trackTitle,
         priceCents: locked ? priceCents : null,
         pollOptions: pollMode ? filledOptions : null,
@@ -250,16 +252,50 @@ export default function ComposeScreen() {
               value={trackTitle}
               onChangeText={setTrackTitle}
             />
-            <View style={styles.coverRow}>
-              {cover ? (
-                <>
-                  <Image source={{ uri: cover.previewUri }} style={styles.coverThumb} contentFit="cover" />
-                  <Text style={styles.coverLabel}>Cover attached</Text>
-                  <Pressable hitSlop={8} onPress={() => setCover(null)} disabled={posting}>
-                    <Ionicons name="close" size={18} color="#888" />
+            {cover ? (
+              <View style={styles.coverBlock}>
+                {/* Live preview of the exact panel the feed shows. */}
+                <View style={styles.coverPreview}>
+                  <Image
+                    source={{ uri: cover.previewUri }}
+                    style={StyleSheet.absoluteFill}
+                    contentFit="cover"
+                    contentPosition={{ left: '50%', top: `${coverFocus * 100}%` }}
+                  />
+                  <Pressable
+                    style={styles.coverRemove}
+                    hitSlop={8}
+                    onPress={() => setCover(null)}
+                    disabled={posting}>
+                    <Ionicons name="close" size={16} color="#fff" />
                   </Pressable>
-                </>
-              ) : (
+                </View>
+                <View style={styles.focusRow}>
+                  <Text style={styles.focusLabel}>Show:</Text>
+                  {[
+                    { label: 'Top', value: 0 },
+                    { label: 'Upper', value: 0.25 },
+                    { label: 'Center', value: 0.5 },
+                    { label: 'Lower', value: 0.75 },
+                    { label: 'Bottom', value: 1 },
+                  ].map((choice) => (
+                    <Pressable
+                      key={choice.label}
+                      style={[styles.focusChip, coverFocus === choice.value && styles.focusChipOn]}
+                      onPress={() => setCoverFocus(choice.value)}>
+                      <Text
+                        style={[
+                          styles.focusText,
+                          coverFocus === choice.value && styles.focusTextOn,
+                        ]}>
+                        {choice.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            ) : (
+              <View style={styles.coverRow}>
                 <PickPhotosButton
                   label="Add cover"
                   maxCount={1}
@@ -267,8 +303,8 @@ export default function ComposeScreen() {
                   onPicked={(picked) => picked[0] && setCover(picked[0])}
                   onError={setError}
                 />
-              )}
-            </View>
+              </View>
+            )}
           </View>
         ) : null}
 
@@ -433,8 +469,32 @@ const styles = StyleSheet.create({
   audioRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   audioName: { color: '#ddd', fontSize: 14, flex: 1 },
   coverRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
-  coverThumb: { width: 44, height: 44, borderRadius: 8, backgroundColor: '#1a1d22' },
-  coverLabel: { color: '#cbcdd1', fontSize: 13.5, flex: 1 },
+  coverBlock: { marginTop: 12 },
+  coverPreview: {
+    aspectRatio: 16 / 9,
+    borderRadius: 10,
+    backgroundColor: '#1a1d22',
+    overflow: 'hidden',
+  },
+  coverRemove: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(10, 12, 14, 0.75)',
+    borderRadius: 12,
+    padding: 5,
+  },
+  focusRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' },
+  focusLabel: { color: '#6d7076', fontSize: 12 },
+  focusChip: {
+    backgroundColor: '#0f1114',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  focusChipOn: { backgroundColor: '#c3cdd6' },
+  focusText: { color: '#9a9ba3', fontSize: 12, fontWeight: '600' },
+  focusTextOn: { color: '#0b0c0e' },
   titleInput: {
     backgroundColor: '#0d0d0f',
     color: '#fff',

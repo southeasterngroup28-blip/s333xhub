@@ -284,6 +284,7 @@ export function PostCard({
                   title={post.title ?? 'Untitled track'}
                   url={url}
                   coverUrl={post.cover_path ? mediaUrls[post.cover_path] : undefined}
+                  coverFocus={post.cover_focus ?? 0.5}
                 />
               );
             })
