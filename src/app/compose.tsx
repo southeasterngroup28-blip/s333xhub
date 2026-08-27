@@ -35,6 +35,106 @@ function formatPrice(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+/**
+ * Drag-to-frame cover preview. Self-contained so dragging re-renders ONLY
+ * this small widget (re-rendering the whole compose screen per frame is
+ * what makes drags feel clunky). Reports the final focus on release.
+ */
+function CoverFramer({
+  uri,
+  initialFocus,
+  disabled,
+  onCommit,
+  onRemove,
+  onDragging,
+}: {
+  uri: string;
+  initialFocus: number;
+  disabled: boolean;
+  onCommit: (focus: number) => void;
+  onRemove: () => void;
+  onDragging: (dragging: boolean) => void;
+}) {
+  const [focus, setFocus] = useState(initialFocus);
+  const [dragging, setDragging] = useState(false);
+  const focusRef = useRef(initialFocus);
+  const startFocus = useRef(initialFocus);
+  const height = useRef(1);
+
+  const pan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 2,
+      onPanResponderGrant: () => {
+        startFocus.current = focusRef.current;
+        setDragging(true);
+        onDragging(true);
+      },
+      onPanResponderMove: (_e, g) => {
+        const next = Math.min(
+          1,
+          Math.max(0, startFocus.current - (g.dy / Math.max(1, height.current)) * 1.5)
+        );
+        focusRef.current = next;
+        setFocus(next);
+      },
+      onPanResponderRelease: () => {
+        setDragging(false);
+        onDragging(false);
+        onCommit(focusRef.current);
+      },
+      onPanResponderTerminate: () => {
+        setDragging(false);
+        onDragging(false);
+        onCommit(focusRef.current);
+      },
+    })
+  ).current;
+
+  return (
+    <View style={framerStyles.block}>
+      <View
+        style={framerStyles.preview}
+        onLayout={(e) => {
+          height.current = e.nativeEvent.layout.height;
+        }}
+        {...pan.panHandlers}>
+        <Image
+          source={{ uri }}
+          style={StyleSheet.absoluteFill}
+          contentFit="cover"
+          contentPosition={{ left: '50%', top: `${focus * 100}%` }}
+        />
+        <Pressable style={framerStyles.remove} hitSlop={8} onPress={onRemove} disabled={disabled}>
+          <Ionicons name="close" size={16} color="#fff" />
+        </Pressable>
+      </View>
+      <Text style={framerStyles.hint}>
+        {dragging ? 'Framing…' : 'Drag the image up or down to frame it'}
+      </Text>
+    </View>
+  );
+}
+
+const framerStyles = StyleSheet.create({
+  block: { marginTop: 12 },
+  preview: {
+    aspectRatio: 16 / 9,
+    borderRadius: 10,
+    backgroundColor: '#1a1d22',
+    overflow: 'hidden',
+  },
+  remove: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(10, 12, 14, 0.75)',
+    borderRadius: 12,
+    padding: 5,
+  },
+  hint: { color: '#6d7076', fontSize: 12, marginTop: 7, textAlign: 'center' },
+});
+
 export default function ComposeScreen() {
   const params = useLocalSearchParams<{ project: Project }>();
   const { profile } = useAuth();
@@ -46,32 +146,6 @@ export default function ComposeScreen() {
   const [cover, setCover] = useState<PickedImageDraft | null>(null);
   const [coverFocus, setCoverFocus] = useState(0.5);
   const [draggingCover, setDraggingCover] = useState(false);
-
-  // Drag-to-frame: vertical drags on the preview slide which part of the
-  // image shows. Refs keep the gesture callbacks stable across renders.
-  const coverFocusRef = useRef(0.5);
-  const dragStartFocus = useRef(0.5);
-  const previewHeight = useRef(1);
-  const coverPan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 2,
-      onPanResponderGrant: () => {
-        dragStartFocus.current = coverFocusRef.current;
-        setDraggingCover(true);
-      },
-      onPanResponderMove: (_e, g) => {
-        const next = Math.min(
-          1,
-          Math.max(0, dragStartFocus.current - g.dy / Math.max(1, previewHeight.current))
-        );
-        coverFocusRef.current = next;
-        setCoverFocus(next);
-      },
-      onPanResponderRelease: () => setDraggingCover(false),
-      onPanResponderTerminate: () => setDraggingCover(false),
-    })
-  ).current;
   const [video, setVideo] = useState<PickedVideo | null>(null);
   const [trackTitle, setTrackTitle] = useState('');
   const [locked, setLocked] = useState(false);
@@ -284,32 +358,14 @@ export default function ComposeScreen() {
               onChangeText={setTrackTitle}
             />
             {cover ? (
-              <View style={styles.coverBlock}>
-                {/* Live preview of the exact panel the feed shows — drag to frame. */}
-                <View
-                  style={styles.coverPreview}
-                  onLayout={(e) => {
-                    previewHeight.current = e.nativeEvent.layout.height;
-                  }}
-                  {...coverPan.panHandlers}>
-                  <Image
-                    source={{ uri: cover.previewUri }}
-                    style={StyleSheet.absoluteFill}
-                    contentFit="cover"
-                    contentPosition={{ left: '50%', top: `${coverFocus * 100}%` }}
-                  />
-                  <Pressable
-                    style={styles.coverRemove}
-                    hitSlop={8}
-                    onPress={() => setCover(null)}
-                    disabled={posting}>
-                    <Ionicons name="close" size={16} color="#fff" />
-                  </Pressable>
-                </View>
-                <Text style={styles.focusLabel}>
-                  {draggingCover ? 'Framing…' : 'Drag the image up or down to frame it'}
-                </Text>
-              </View>
+              <CoverFramer
+                uri={cover.previewUri}
+                initialFocus={coverFocus}
+                disabled={posting}
+                onCommit={setCoverFocus}
+                onRemove={() => setCover(null)}
+                onDragging={setDraggingCover}
+              />
             ) : (
               <View style={styles.coverRow}>
                 <PickPhotosButton
@@ -485,22 +541,6 @@ const styles = StyleSheet.create({
   audioRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   audioName: { color: '#ddd', fontSize: 14, flex: 1 },
   coverRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
-  coverBlock: { marginTop: 12 },
-  coverPreview: {
-    aspectRatio: 16 / 9,
-    borderRadius: 10,
-    backgroundColor: '#1a1d22',
-    overflow: 'hidden',
-  },
-  coverRemove: {
-    position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: 'rgba(10, 12, 14, 0.75)',
-    borderRadius: 12,
-    padding: 5,
-  },
-  focusLabel: { color: '#6d7076', fontSize: 12, marginTop: 7, textAlign: 'center' },
   titleInput: {
     backgroundColor: '#0d0d0f',
     color: '#fff',
