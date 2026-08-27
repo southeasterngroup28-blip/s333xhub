@@ -12,8 +12,10 @@
       "bundleIdentifier": "com.s333xhub.app",
       "infoPlist": {
         "UIBackgroundModes": [
+          "audio",
           "audio"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -24,7 +26,13 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
     "web": {
       "output": "single",
@@ -47,6 +55,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ac256b7f-e3df-4361-9ed7-b853e2ccd2c9"
+      }
+    },
+    "owner": "southeasterngroup28"
   }
 }

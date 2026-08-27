@@ -58,18 +58,43 @@ export function AuthProvider({ children }: PropsWithChildren) {
       return;
     }
     let cancelled = false;
-    supabase
-      .from('profiles')
-      .select('id, display_name, role, status')
-      .eq('id', session.user.id)
-      .single()
-      .then(({ data, error }) => {
+
+    // On native, a query fired in the same instant as sign-in can hang
+    // forever (auth client lock). Race each attempt against a timeout and
+    // retry — a later attempt always lands.
+    const load = async (attempt: number) => {
+      try {
+        const result = await Promise.race([
+          supabase
+            .from('profiles')
+            .select('id, display_name, role, status')
+            .eq('id', session.user.id)
+            .single(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('profile fetch timed out')), 3000)
+          ),
+        ]);
         if (cancelled) return;
-        setProfile(data);
-        setProfileError(error ? error.message : null);
-      });
+        if (result.data) {
+          setProfile(result.data as Profile);
+          setProfileError(null);
+          return;
+        }
+        throw result.error ?? new Error('no profile row');
+      } catch (e) {
+        if (cancelled) return;
+        if (attempt < 4) {
+          setTimeout(() => load(attempt + 1), 700);
+        } else {
+          setProfileError((e as { message?: string })?.message ?? 'profile fetch failed');
+        }
+      }
+    };
+
+    const kickoff = setTimeout(() => load(0), 0);
     return () => {
       cancelled = true;
+      clearTimeout(kickoff);
     };
   }, [session?.user.id]);
 
