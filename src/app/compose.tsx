@@ -4,9 +4,11 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   PanResponder,
   Platform,
   Pressable,
+  SafeAreaView as RNSafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -46,19 +48,13 @@ function CoverFramer({
   imageWidth,
   imageHeight,
   initialFocus,
-  disabled,
   onCommit,
-  onRemove,
-  onDragging,
 }: {
   uri: string;
   imageWidth: number | null;
   imageHeight: number | null;
   initialFocus: number;
-  disabled: boolean;
   onCommit: (focus: number) => void;
-  onRemove: () => void;
-  onDragging: (dragging: boolean) => void;
 }) {
   const [layoutWidth, setLayoutWidth] = useState(0);
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(
@@ -88,7 +84,6 @@ function CoverFramer({
       onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 2,
       onPanResponderGrant: () => {
         dragStartY.current = rectYRef.current;
-        onDragging(true);
       },
       onPanResponderMove: (_e, g) => {
         const next = Math.min(maxYRef.current, Math.max(0, dragStartY.current + g.dy));
@@ -96,11 +91,9 @@ function CoverFramer({
         setRectY(next);
       },
       onPanResponderRelease: () => {
-        onDragging(false);
         onCommit(maxYRef.current > 0 ? rectYRef.current / maxYRef.current : 0.5);
       },
       onPanResponderTerminate: () => {
-        onDragging(false);
         onCommit(maxYRef.current > 0 ? rectYRef.current / maxYRef.current : 0.5);
       },
     })
@@ -135,9 +128,6 @@ function CoverFramer({
             />
           </>
         ) : null}
-        <Pressable style={framerStyles.remove} hitSlop={8} onPress={onRemove} disabled={disabled}>
-          <Ionicons name="close" size={16} color="#fff" />
-        </Pressable>
       </View>
       <Text style={framerStyles.hint}>
         {maxY > 0
@@ -186,7 +176,9 @@ export default function ComposeScreen() {
   const [audio, setAudio] = useState<PickedAudio | null>(null);
   const [cover, setCover] = useState<PickedImageDraft | null>(null);
   const [coverFocus, setCoverFocus] = useState(0.5);
-  const [draggingCover, setDraggingCover] = useState(false);
+  const [coverEditorOpen, setCoverEditorOpen] = useState(false);
+  const [draftFocus, setDraftFocus] = useState(0.5);
+  const coverIsFresh = useRef(false);
   const [video, setVideo] = useState<PickedVideo | null>(null);
   const [trackTitle, setTrackTitle] = useState('');
   const [locked, setLocked] = useState(false);
@@ -287,10 +279,7 @@ export default function ComposeScreen() {
         </Pressable>
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
-        scrollEnabled={!draggingCover}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.projectRow}>
           {(['mazze', 's333xgod'] as const).map((p) => (
             <Pressable
@@ -399,23 +388,50 @@ export default function ComposeScreen() {
               onChangeText={setTrackTitle}
             />
             {cover ? (
-              <CoverFramer
-                uri={cover.previewUri}
-                imageWidth={cover.width}
-                imageHeight={cover.height}
-                initialFocus={coverFocus}
-                disabled={posting}
-                onCommit={setCoverFocus}
-                onRemove={() => setCover(null)}
-                onDragging={setDraggingCover}
-              />
+              <View style={styles.coverBlock}>
+                <View style={styles.coverPreview}>
+                  <Image
+                    source={{ uri: cover.previewUri }}
+                    style={StyleSheet.absoluteFill}
+                    contentFit="cover"
+                    contentPosition={{ left: '50%', top: `${coverFocus * 100}%` }}
+                  />
+                </View>
+                <View style={styles.coverActions}>
+                  <Pressable
+                    style={styles.coverAction}
+                    onPress={() => {
+                      coverIsFresh.current = false;
+                      setDraftFocus(coverFocus);
+                      setCoverEditorOpen(true);
+                    }}
+                    disabled={posting}>
+                    <Ionicons name="crop" size={15} color="#c3cdd6" />
+                    <Text style={styles.coverActionText}>Adjust framing</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.coverAction}
+                    onPress={() => setCover(null)}
+                    disabled={posting}>
+                    <Ionicons name="trash-outline" size={15} color="#9a9ba3" />
+                    <Text style={styles.coverActionText}>Remove</Text>
+                  </Pressable>
+                </View>
+              </View>
             ) : (
               <View style={styles.coverRow}>
                 <PickPhotosButton
                   label="Add cover"
                   maxCount={1}
                   disabled={posting}
-                  onPicked={(picked) => picked[0] && setCover(picked[0])}
+                  onPicked={(picked) => {
+                    if (!picked[0]) return;
+                    setCover(picked[0]);
+                    setCoverFocus(0.5);
+                    setDraftFocus(0.5);
+                    coverIsFresh.current = true;
+                    setCoverEditorOpen(true);
+                  }}
                   onError={setError}
                 />
               </View>
@@ -518,6 +534,43 @@ export default function ComposeScreen() {
           <Text style={styles.uploadingNote}>Uploading — keep this screen open…</Text>
         ) : null}
       </ScrollView>
+
+      {/* Full-screen cover framing editor (Twitter-banner style). */}
+      <Modal visible={coverEditorOpen} animationType="slide" onRequestClose={() => setCoverEditorOpen(false)}>
+        <RNSafeAreaView style={styles.editorSafe}>
+          <View style={styles.editorHeader}>
+            <Pressable
+              hitSlop={12}
+              onPress={() => {
+                if (coverIsFresh.current) setCover(null);
+                setCoverEditorOpen(false);
+              }}>
+              <Text style={styles.editorCancel}>Cancel</Text>
+            </Pressable>
+            <Text style={styles.editorTitle}>Frame cover</Text>
+            <Pressable
+              hitSlop={12}
+              onPress={() => {
+                setCoverFocus(draftFocus);
+                coverIsFresh.current = false;
+                setCoverEditorOpen(false);
+              }}>
+              <Text style={styles.editorSave}>Save</Text>
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.editorBody} scrollEnabled={false}>
+            {cover ? (
+              <CoverFramer
+                uri={cover.previewUri}
+                imageWidth={cover.width}
+                imageHeight={cover.height}
+                initialFocus={draftFocus}
+                onCommit={setDraftFocus}
+              />
+            ) : null}
+          </ScrollView>
+        </RNSafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -584,6 +637,28 @@ const styles = StyleSheet.create({
   audioRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   audioName: { color: '#ddd', fontSize: 14, flex: 1 },
   coverRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
+  coverBlock: { marginTop: 12 },
+  coverPreview: {
+    aspectRatio: 16 / 9,
+    borderRadius: 10,
+    backgroundColor: '#1a1d22',
+    overflow: 'hidden',
+  },
+  coverActions: { flexDirection: 'row', gap: 14, marginTop: 8 },
+  coverAction: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
+  coverActionText: { color: '#c3cdd6', fontSize: 13, fontWeight: '600' },
+  editorSafe: { flex: 1, backgroundColor: '#0b0c0e' },
+  editorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  editorCancel: { color: '#9a9ba3', fontSize: 16 },
+  editorTitle: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  editorSave: { color: '#c3cdd6', fontSize: 16, fontWeight: '700' },
+  editorBody: { flexGrow: 1, justifyContent: 'center', padding: 16 },
   titleInput: {
     backgroundColor: '#0d0d0f',
     color: '#fff',
