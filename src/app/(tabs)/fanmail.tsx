@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 
+import { AppBackground } from '@/components/app-background';
 import {
   PickAudioButton,
   PickPhotosButton,
@@ -102,6 +103,7 @@ export default function FanMailScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <AppBackground />
       <View style={styles.topBar}>
         <Text style={styles.title}>FAN MAIL</Text>
       </View>

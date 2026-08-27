@@ -12,11 +12,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Image } from 'expo-image';
-
+import { AppBackground } from '@/components/app-background';
 import { PostCard } from '@/components/post-card';
 import { Top8Card } from '@/components/top8-card';
-import { fetchEffectiveBackgroundUrl } from '@/lib/backgrounds';
 import { fetchPosts, PAGE_SIZE, signedUrlsFor, type Post } from '@/lib/posts';
 import { fetchMyPurchasedPostIds } from '@/lib/purchases';
 import {
@@ -38,7 +36,6 @@ export function Feed() {
   const [social, setSocial] = useState<SocialSummary>({ reactions: {}, commentCounts: {} });
   const [polls, setPolls] = useState<Record<string, PollState>>({});
   const [topFans, setTopFans] = useState<TopFan[]>([]);
-  const [backgroundUrl, setBackgroundUrl] = useState<string | null>(null);
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -78,16 +75,14 @@ export function Feed() {
 
       const ids = fresh.map((p) => p.id);
       const pollIds = fresh.filter((p) => p.kind === 'poll').map((p) => p.id);
-      const [summary, pollStates, top, background] = await Promise.all([
+      const [summary, pollStates, top] = await Promise.all([
         fetchSocialSummary(ids).catch(() => ({ reactions: {}, commentCounts: {} })),
         fetchPolls(pollIds).catch(() => ({})),
         fetchTopFans().catch(() => []),
-        profile ? fetchEffectiveBackgroundUrl(profile.id).catch(() => null) : Promise.resolve(null),
       ]);
       setSocial(summary);
       setPolls(pollStates);
       setTopFans(top);
-      setBackgroundUrl(background);
 
       await resolveMedia(fresh, purchased);
     } catch (e) {
@@ -134,18 +129,7 @@ export function Feed() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {backgroundUrl ? (
-        <>
-          <Image
-            source={{ uri: backgroundUrl }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            transition={300}
-          />
-          {/* Dark wash so posts stay readable over any image. */}
-          <View style={styles.backgroundScrim} />
-        </>
-      ) : null}
+      <AppBackground />
       <View style={styles.topBar}>
         <Text style={styles.title}>S333XHUB</Text>
         <View style={styles.topActions}>
@@ -217,14 +201,6 @@ export function Feed() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
-  backgroundScrim: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(6, 7, 9, 0.32)',
-  },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'center',

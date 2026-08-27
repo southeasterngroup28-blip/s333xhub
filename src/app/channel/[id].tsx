@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppBackground } from '@/components/app-background';
 import {
   fetchChatList,
   fetchMessages,
@@ -223,6 +224,7 @@ export default function ChannelScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <AppBackground />
       <View style={styles.header}>
         <Pressable onPress={goBack} hitSlop={12}>
           <Ionicons name="chevron-back" size={24} color="#fff" />

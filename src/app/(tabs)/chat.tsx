@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppBackground } from '@/components/app-background';
 import { fetchChatList, getOrCreateDm, setLeft, type ChatListItem } from '@/lib/chat';
 import { useAuth } from '@/providers/auth-provider';
 
@@ -64,6 +65,7 @@ export default function ChatListScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      <AppBackground />
       <View style={styles.topBar}>
         <Text style={styles.title}>Chat</Text>
       </View>

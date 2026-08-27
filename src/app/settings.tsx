@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { PickPhotosButton } from '@/components/media-pickers';
+import { invalidateBackgroundCache } from '@/components/app-background';
 import { clearMyBackground, setDefaultBackground, setMyBackground } from '@/lib/backgrounds';
 import { SUPPORT_EMAIL } from '@/lib/legal-content';
 import { deleteMyAccount, fetchBlockedUsers, unblockUser } from '@/lib/moderation';
@@ -131,7 +132,8 @@ export default function SettingsScreen() {
                 setBgBusy(true);
                 try {
                   await setMyBackground(picked[0]);
-                  flashBg('Saved — pull the feed to refresh.');
+                  invalidateBackgroundCache();
+                  flashBg('Saved.');
                 } catch (e) {
                   setError((e as { message?: string })?.message ?? 'Could not save background.');
                 } finally {
@@ -150,6 +152,7 @@ export default function SettingsScreen() {
                   setBgBusy(true);
                   try {
                     await setDefaultBackground(picked[0]);
+                    invalidateBackgroundCache();
                     flashBg('App default updated for all fans.');
                   } catch (e) {
                     setError((e as { message?: string })?.message ?? 'Could not set the default.');
@@ -168,6 +171,7 @@ export default function SettingsScreen() {
               setBgBusy(true);
               try {
                 await clearMyBackground();
+                invalidateBackgroundCache();
                 flashBg(isArtist ? 'Personal override removed.' : 'Back to the artist’s background.');
               } catch (e) {
                 setError((e as { message?: string })?.message ?? 'Could not reset.');

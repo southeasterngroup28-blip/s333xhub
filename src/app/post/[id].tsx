@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AppBackground } from '@/components/app-background';
 import { fileReport, REPORT_REASONS } from '@/lib/moderation';
 import { timeAgo } from '@/lib/posts';
 import { cleanMessage } from '@/lib/profanity';
@@ -119,6 +120,7 @@ export default function CommentsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <AppBackground />
       <View style={styles.header}>
         <Pressable
           onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
