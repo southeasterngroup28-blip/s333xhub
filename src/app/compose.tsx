@@ -375,15 +375,17 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   thumbRow: { marginTop: 16 },
-  thumbWrap: { marginRight: 10 },
+  // The remove button must stay INSIDE this box's bounds — iOS ignores
+  // taps on children that overflow their parent.
+  thumbWrap: { marginRight: 10, paddingTop: 8, paddingRight: 8 },
   thumb: { width: 88, height: 88, borderRadius: 10, backgroundColor: '#1a1a1c' },
   thumbRemove: {
     position: 'absolute',
-    top: -6,
-    right: -6,
-    backgroundColor: '#333',
-    borderRadius: 10,
-    padding: 3,
+    top: 0,
+    right: 0,
+    backgroundColor: '#33363c',
+    borderRadius: 11,
+    padding: 4,
   },
   attachRow: { flexDirection: 'row', gap: 10, marginTop: 20, flexWrap: 'wrap' },
   attach: {

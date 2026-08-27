@@ -55,12 +55,11 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function playTrack(track: Track) {
-    setCurrent(track);
-    player.replace({ uri: track.url });
-    player.play();
-    // Announce the track to the lock screen / control center (native only;
-    // also required on Android for playback beyond ~3 minutes in background).
+  // Announce the current track to the lock screen / control center once
+  // playback has actually started (announcing before load gets dropped).
+  // Also required on Android for background playback beyond ~3 minutes.
+  useEffect(() => {
+    if (!current || !status?.playing) return;
     try {
       (player as unknown as {
         setActiveForLockScreen?: (
@@ -70,12 +69,19 @@ export function PlayerProvider({ children }: PropsWithChildren) {
         ) => void;
       }).setActiveForLockScreen?.(
         true,
-        { title: track.title, artist: 'S333XHUB' },
+        { title: current.title, artist: 'S333XHUB' },
         { showSeekBackward: true, showSeekForward: true }
       );
     } catch {
       // No lock screen on this platform (web) — fine.
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current?.postId, status?.playing]);
+
+  function playTrack(track: Track) {
+    setCurrent(track);
+    player.replace({ uri: track.url });
+    player.play();
   }
 
   function toggle() {
