@@ -454,14 +454,14 @@ const styles = StyleSheet.create({
   bubbleRowMine: { justifyContent: 'flex-end' },
   bubble: {
     maxWidth: '80%',
-    backgroundColor: '#1a1d22',
+    backgroundColor: '#22262c',
     borderRadius: 18,
     borderBottomLeftRadius: 5,
     paddingHorizontal: 13,
     paddingVertical: 9,
   },
   bubbleMine: {
-    backgroundColor: '#2a2f36',
+    backgroundColor: '#39414c',
     borderBottomLeftRadius: 18,
     borderBottomRightRadius: 5,
   },
