@@ -6,7 +6,7 @@ const canBuzz = Platform.OS !== 'web';
 
 /** Soft tick — reactions, toggles, small selections. */
 export function tapFeedback() {
-  if (canBuzz) Haptics.selectionAsync().catch(() => {});
+  if (canBuzz) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 }
 
 /** Medium thump — play/pause, sending things. */

@@ -8,7 +8,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSequence,
-  withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 
 import { AudioPlayerCard } from '@/components/audio-player-card';
@@ -63,9 +63,10 @@ function ReactionChip({
       <Pressable
         style={[styles.react, mine && styles.reactOn]}
         onPress={() => {
+          // Quick snap — springs settle too lazily for a tap this small.
           scale.value = withSequence(
-            withSpring(1.35, { damping: 9, stiffness: 400 }),
-            withSpring(1, { damping: 12, stiffness: 300 })
+            withTiming(1.28, { duration: 90 }),
+            withTiming(1, { duration: 130 })
           );
           tapFeedback();
           onPress();
