@@ -72,11 +72,11 @@ export type Comment = {
   pinned: boolean;
   created_at: string;
   deleted_at: string | null;
-  author: { display_name: string; role: string; status: string | null; avatar_path: string | null } | null;
+  author: { display_name: string; role: string; status: string | null; avatar_path: string | null; avatar_focus: number | null } | null;
 };
 
 const COMMENT_SELECT =
-  'id, post_id, user_id, body, pinned, created_at, deleted_at, author:profiles!post_comments_user_id_fkey(display_name, role, status, avatar_path)';
+  'id, post_id, user_id, body, pinned, created_at, deleted_at, author:profiles!post_comments_user_id_fkey(display_name, role, status, avatar_path, avatar_focus)';
 
 export async function fetchComments(postId: string): Promise<Comment[]> {
   const { data, error } = await supabase
@@ -132,13 +132,13 @@ export async function deleteComment(commentId: string): Promise<void> {
 export type TopFan = {
   position: number;
   user_id: string;
-  profile: { display_name: string; avatar_path: string | null } | null;
+  profile: { display_name: string; avatar_path: string | null; avatar_focus: number | null } | null;
 };
 
 export async function fetchTopFans(): Promise<TopFan[]> {
   const { data, error } = await supabase
     .from('top_fans')
-    .select('position, user_id, profile:profiles!top_fans_user_id_fkey(display_name, avatar_path)')
+    .select('position, user_id, profile:profiles!top_fans_user_id_fkey(display_name, avatar_path, avatar_focus)')
     .order('position');
   if (error) throw error;
   return (data as unknown as TopFan[]) ?? [];

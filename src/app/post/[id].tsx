@@ -162,6 +162,7 @@ export default function CommentsScreen() {
                   delayLongPress={300}>
                   <Avatar
                     path={item.author?.avatar_path}
+                    focus={item.author?.avatar_focus}
                     name={item.author?.display_name}
                     size={30}
                   />

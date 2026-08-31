@@ -207,7 +207,7 @@ export function PostCard({
         post.project === 's333xgod' ? styles.cardGod : styles.cardMazze,
       ]}>
       <View style={styles.header}>
-        <Avatar path={post.author?.avatar_path} name={authorName} size={34} />
+        <Avatar path={post.author?.avatar_path} focus={post.author?.avatar_focus} name={authorName} size={34} />
         <View style={styles.who}>
           <View style={styles.nameRow}>
             <Text style={styles.author}>{authorName}</Text>

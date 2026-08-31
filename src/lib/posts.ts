@@ -22,7 +22,7 @@ export type Post = {
   cover_path: string | null;
   cover_focus: number;
   created_at: string;
-  author: { display_name: string; avatar_path: string | null } | null;
+  author: { display_name: string; avatar_path: string | null; avatar_focus: number | null } | null;
   post_media: PostMedia[];
 };
 
@@ -35,7 +35,7 @@ export const PAGE_SIZE = 20;
 export async function fetchPosts(filter: Project | 'all', before?: string): Promise<Post[]> {
   let query = supabase
     .from('posts')
-    .select('id, project, kind, body, title, is_locked, price_cents, cover_path, cover_focus, created_at, author:profiles!posts_author_id_fkey(display_name, avatar_path), post_media(id, storage_path, media_type, width, height, position)')
+    .select('id, project, kind, body, title, is_locked, price_cents, cover_path, cover_focus, created_at, author:profiles!posts_author_id_fkey(display_name, avatar_path, avatar_focus), post_media(id, storage_path, media_type, width, height, position)')
     .order('created_at', { ascending: false })
     .limit(PAGE_SIZE);
 

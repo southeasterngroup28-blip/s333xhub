@@ -7,6 +7,7 @@ export type Profile = {
   id: string;
   display_name: string;
   avatar_path: string | null;
+  avatar_focus: number | null;
   role: 'fan' | 'artist';
   status: string | null;
 };
@@ -71,7 +72,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         const result = await Promise.race([
           supabase
             .from('profiles')
-            .select('id, display_name, role, status, avatar_path')
+            .select('id, display_name, role, status, avatar_path, avatar_focus')
             .eq('id', session.user.id)
             .single(),
           new Promise<never>((_, reject) =>
@@ -113,7 +114,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
           if (!session) return;
           const { data } = await supabase
             .from('profiles')
-            .select('id, display_name, role, status, avatar_path')
+            .select('id, display_name, role, status, avatar_path, avatar_focus')
             .eq('id', session.user.id)
             .single();
           if (data) setProfile(data as Profile);

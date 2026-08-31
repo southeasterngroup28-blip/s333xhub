@@ -36,7 +36,16 @@ export function Top8Card({ fans, viewerIsArtist }: Props) {
             <View key={index} style={styles.slot}>
               <View style={[styles.avatar, fan && styles.avatarFilled]}>
                 {photo ? (
-                  <Image source={{ uri: photo }} style={styles.photo} contentFit="cover" transition={150} />
+                  <Image
+                    source={{ uri: photo }}
+                    style={styles.photo}
+                    contentFit="cover"
+                    contentPosition={{
+                      left: `${(fan?.profile?.avatar_focus ?? 0.5) * 100}%`,
+                      top: `${(fan?.profile?.avatar_focus ?? 0.5) * 100}%`,
+                    }}
+                    transition={150}
+                  />
                 ) : (
                   <Text style={styles.letter}>
                     {fan ? (fan.profile?.display_name ?? '?').slice(0, 1).toUpperCase() : '?'}

@@ -8,7 +8,7 @@ export function avatarUrl(path: string | null | undefined): string | null {
 }
 
 /** Uploads a new profile photo and points my profile at it. */
-export async function setMyAvatar(image: PickedImage): Promise<string> {
+export async function setMyAvatar(image: PickedImage, focus = 0.5): Promise<string> {
   const userId = (await supabase.auth.getUser()).data.user!.id;
   const ext = image.mimeType === 'image/png' ? 'png' : 'jpg';
   // Timestamped name = old cached copies can't shadow the new photo.
@@ -29,7 +29,7 @@ export async function setMyAvatar(image: PickedImage): Promise<string> {
 
   const { error } = await supabase
     .from('profiles')
-    .update({ avatar_path: path })
+    .update({ avatar_path: path, avatar_focus: focus })
     .eq('id', userId);
   if (error) throw error;
 

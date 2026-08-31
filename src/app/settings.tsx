@@ -14,7 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/avatar';
-import { PickPhotosButton } from '@/components/media-pickers';
+import { AvatarFramer } from '@/components/avatar-framer';
+import { PickPhotosButton, type PickedImageDraft } from '@/components/media-pickers';
 import { invalidateBackgroundCache } from '@/components/app-background';
 import { removeMyAvatar, setMyAvatar } from '@/lib/avatars';
 import { clearMyBackground, setDefaultBackground, setMyBackground } from '@/lib/backgrounds';
@@ -45,10 +46,14 @@ export default function SettingsScreen() {
   const [bgBusy, setBgBusy] = useState(false);
   const [bgNotice, setBgNotice] = useState<string | null>(null);
   const [avatarPath, setAvatarPath] = useState<string | null | undefined>(undefined);
+  const [avatarFocus, setAvatarFocus] = useState<number | null>(null);
   const [avatarBusy, setAvatarBusy] = useState(false);
+  /** Freshly picked photo awaiting circle-framing in the editor. */
+  const [avatarDraft, setAvatarDraft] = useState<PickedImageDraft | null>(null);
 
   // Local override so the preview updates instantly after a change.
   const shownAvatar = avatarPath === undefined ? profile?.avatar_path : avatarPath;
+  const shownFocus = avatarFocus ?? profile?.avatar_focus ?? 0.5;
 
   function flashBg(text: string) {
     setBgNotice(text);
@@ -117,7 +122,7 @@ export default function SettingsScreen() {
         <Text style={styles.sectionLabel}>ACCOUNT</Text>
         <View style={styles.card}>
           <View style={styles.accountRow}>
-            <Avatar path={shownAvatar} name={profile?.display_name} size={56} />
+            <Avatar path={shownAvatar} focus={shownFocus} name={profile?.display_name} size={56} />
             <View style={styles.accountMeta}>
               <Text style={styles.name}>{profile?.display_name ?? '…'}</Text>
               <Text style={styles.email}>{session?.user.email}</Text>
@@ -129,18 +134,9 @@ export default function SettingsScreen() {
               label={shownAvatar ? 'Change photo' : 'Add profile photo'}
               maxCount={1}
               disabled={avatarBusy}
-              onPicked={async (picked) => {
-                if (!picked[0]) return;
-                setAvatarBusy(true);
-                setError(null);
-                try {
-                  setAvatarPath(await setMyAvatar(picked[0]));
-                  refreshProfile().catch(() => {});
-                } catch (e) {
-                  setError((e as { message?: string })?.message ?? 'Could not save the photo.');
-                } finally {
-                  setAvatarBusy(false);
-                }
+              onPicked={(picked) => {
+                // Framing first — the upload happens on Save in the editor.
+                if (picked[0]) setAvatarDraft(picked[0]);
               }}
               onError={setError}
             />
@@ -152,6 +148,7 @@ export default function SettingsScreen() {
                   try {
                     await removeMyAvatar();
                     setAvatarPath(null);
+                    setAvatarFocus(null);
                     refreshProfile().catch(() => {});
                   } catch (e) {
                     setError((e as { message?: string })?.message ?? 'Could not remove it.');
@@ -328,6 +325,28 @@ export default function SettingsScreen() {
           </Text>
         )}
       </ScrollView>
+
+      <AvatarFramer
+        visible={!!avatarDraft}
+        uri={avatarDraft?.previewUri ?? null}
+        onCancel={() => setAvatarDraft(null)}
+        onSave={async (focus) => {
+          const draft = avatarDraft;
+          setAvatarDraft(null);
+          if (!draft) return;
+          setAvatarBusy(true);
+          setError(null);
+          try {
+            setAvatarPath(await setMyAvatar(draft, focus));
+            setAvatarFocus(focus);
+            refreshProfile().catch(() => {});
+          } catch (e) {
+            setError((e as { message?: string })?.message ?? 'Could not save the photo.');
+          } finally {
+            setAvatarBusy(false);
+          }
+        }}
+      />
     </SafeAreaView>
   );
 }

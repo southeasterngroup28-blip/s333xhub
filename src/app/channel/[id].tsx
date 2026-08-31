@@ -410,6 +410,7 @@ export default function ChannelScreen() {
                   {!mine ? (
                     <Avatar
                       path={item.sender?.avatar_path}
+                      focus={item.sender?.avatar_focus}
                       name={item.sender?.display_name}
                       size={26}
                     />

@@ -6,14 +6,17 @@ import { avatarUrl } from '@/lib/avatars';
 type Props = {
   /** profiles.avatar_path — falls back to the first letter of the name. */
   path?: string | null;
+  /** Which slice of the photo shows (0 top/left … 1 bottom/right). */
+  focus?: number | null;
   name?: string | null;
   size?: number;
 };
 
 /** One circular profile photo (or letter placeholder), any size. */
-export function Avatar({ path, name, size = 36 }: Props) {
+export function Avatar({ path, focus, name, size = 36 }: Props) {
   const url = avatarUrl(path);
   const radius = size / 2;
+  const pos = `${(focus ?? 0.5) * 100}%` as const;
 
   if (url) {
     return (
@@ -21,6 +24,7 @@ export function Avatar({ path, name, size = 36 }: Props) {
         source={{ uri: url }}
         style={{ width: size, height: size, borderRadius: radius, backgroundColor: '#1e2126' }}
         contentFit="cover"
+        contentPosition={{ left: pos, top: pos }}
         transition={150}
       />
     );
