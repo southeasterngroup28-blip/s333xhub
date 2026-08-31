@@ -31,7 +31,7 @@ export type Message = {
   duration_seconds: number | null;
   created_at: string;
   deleted_at: string | null;
-  sender: { display_name: string; status: string | null } | null;
+  sender: { display_name: string; status: string | null; avatar_path: string | null } | null;
 };
 
 export const MESSAGE_PAGE_SIZE = 50;
@@ -39,7 +39,7 @@ export const MESSAGE_MAX_LENGTH = 1000;
 export const VOICE_MAX_SECONDS = 60;
 
 const MESSAGE_COLUMNS =
-  'id, channel_id, sender_id, body, kind, media_path, media_url, duration_seconds, created_at, deleted_at, sender:profiles(display_name, status)';
+  'id, channel_id, sender_id, body, kind, media_path, media_url, duration_seconds, created_at, deleted_at, sender:profiles(display_name, status, avatar_path)';
 
 /** Everything I'm a member of, with DM titles resolved to the other person. */
 export async function fetchChatList(myUserId: string): Promise<ChatListItem[]> {

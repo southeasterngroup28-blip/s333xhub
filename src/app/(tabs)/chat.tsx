@@ -5,6 +5,7 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from '
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppBackground } from '@/components/app-background';
+import { ChatRowSkeleton } from '@/components/skeleton';
 import { fetchChatList, getOrCreateDm, setLeft, type ChatListItem } from '@/lib/chat';
 import { useAuth } from '@/providers/auth-provider';
 
@@ -73,8 +74,9 @@ export default function ChatListScreen() {
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color="#fff" />
+        <View style={styles.list}>
+          <ChatRowSkeleton />
+          <ChatRowSkeleton />
         </View>
       ) : (
         <FlatList

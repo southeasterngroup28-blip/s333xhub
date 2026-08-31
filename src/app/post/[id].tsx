@@ -15,6 +15,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppBackground } from '@/components/app-background';
+import { Avatar } from '@/components/avatar';
+import { CommentSkeleton } from '@/components/skeleton';
 import { fileReport, REPORT_REASONS } from '@/lib/moderation';
 import { timeAgo } from '@/lib/posts';
 import { cleanMessage } from '@/lib/profanity';
@@ -138,8 +140,10 @@ export default function CommentsScreen() {
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {loading ? (
-          <View style={styles.center}>
-            <ActivityIndicator color="#fff" />
+          <View style={styles.list}>
+            <CommentSkeleton />
+            <CommentSkeleton />
+            <CommentSkeleton />
           </View>
         ) : (
           <FlatList
@@ -156,11 +160,11 @@ export default function CommentsScreen() {
                     if (!mine || isArtist) setActionTarget(item);
                   }}
                   delayLongPress={300}>
-                  <View style={styles.avatar}>
-                    <Text style={styles.avatarLetter}>
-                      {(item.author?.display_name ?? '?').slice(0, 1).toUpperCase()}
-                    </Text>
-                  </View>
+                  <Avatar
+                    path={item.author?.avatar_path}
+                    name={item.author?.display_name}
+                    size={30}
+                  />
                   <View style={styles.bubble}>
                     <View style={styles.whoRow}>
                       <Text style={styles.who}>{item.author?.display_name ?? 'Deleted user'}</Text>

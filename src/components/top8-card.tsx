@@ -1,7 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { avatarUrl } from '@/lib/avatars';
 import type { TopFan } from '@/lib/social';
 
 type Props = {
@@ -28,18 +30,25 @@ export function Top8Card({ fans, viewerIsArtist }: Props) {
         ) : null}
       </View>
       <View style={styles.grid}>
-        {slots.map((fan, index) => (
-          <View key={index} style={styles.slot}>
-            <View style={[styles.avatar, fan && styles.avatarFilled]}>
-              <Text style={styles.letter}>
-                {fan ? (fan.profile?.display_name ?? '?').slice(0, 1).toUpperCase() : '?'}
+        {slots.map((fan, index) => {
+          const photo = avatarUrl(fan?.profile?.avatar_path);
+          return (
+            <View key={index} style={styles.slot}>
+              <View style={[styles.avatar, fan && styles.avatarFilled]}>
+                {photo ? (
+                  <Image source={{ uri: photo }} style={styles.photo} contentFit="cover" transition={150} />
+                ) : (
+                  <Text style={styles.letter}>
+                    {fan ? (fan.profile?.display_name ?? '?').slice(0, 1).toUpperCase() : '?'}
+                  </Text>
+                )}
+              </View>
+              <Text style={styles.name} numberOfLines={1}>
+                {fan ? fan.profile?.display_name ?? '?' : 'you?'}
               </Text>
             </View>
-            <Text style={styles.name} numberOfLines={1}>
-              {fan ? fan.profile?.display_name ?? '?' : 'you?'}
-            </Text>
-          </View>
-        ))}
+          );
+        })}
       </View>
     </View>
   );
@@ -74,7 +83,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarFilled: { borderColor: '#c3cdd6' },
+  avatarFilled: { borderColor: '#c3cdd6', overflow: 'hidden' },
+  photo: { width: '100%', height: '100%' },
   letter: { color: '#8f99a3', fontWeight: '700', fontSize: 17 },
   name: { color: '#9a9ba3', fontSize: 10, marginTop: 4, maxWidth: '100%' },
 });

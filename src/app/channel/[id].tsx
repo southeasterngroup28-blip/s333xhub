@@ -23,6 +23,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppBackground } from '@/components/app-background';
+import { Avatar } from '@/components/avatar';
 import { GifPicker } from '@/components/gif-picker';
 import { PickPhotosButton } from '@/components/media-pickers';
 import { VoiceNoteBubble } from '@/components/voice-note';
@@ -406,6 +407,13 @@ export default function ChannelScreen() {
               const mine = item.sender_id === myUserId;
               return (
                 <View style={[styles.bubbleRow, mine && styles.bubbleRowMine]}>
+                  {!mine ? (
+                    <Avatar
+                      path={item.sender?.avatar_path}
+                      name={item.sender?.display_name}
+                      size={26}
+                    />
+                  ) : null}
                   <Pressable
                     style={[styles.bubble, mine && styles.bubbleMine]}
                     onLongPress={() => {
@@ -661,7 +669,7 @@ const styles = StyleSheet.create({
   },
   empty: { color: '#555' },
   list: { paddingHorizontal: 12, paddingVertical: 12, flexGrow: 1 },
-  bubbleRow: { flexDirection: 'row', marginVertical: 3 },
+  bubbleRow: { flexDirection: 'row', marginVertical: 3, gap: 8, alignItems: 'flex-end' },
   bubbleRowMine: { justifyContent: 'flex-end' },
   bubble: {
     maxWidth: '80%',

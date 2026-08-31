@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppBackground } from '@/components/app-background';
 import { PostCard } from '@/components/post-card';
+import { PostSkeleton } from '@/components/skeleton';
 import { Top8Card } from '@/components/top8-card';
 import { fetchPosts, PAGE_SIZE, signedUrlsFor, type Post } from '@/lib/posts';
 import { fetchMyPurchasedPostIds } from '@/lib/purchases';
@@ -26,9 +27,11 @@ import {
   type TopFan,
 } from '@/lib/social';
 import { useAuth } from '@/providers/auth-provider';
+import { usePlayer } from '@/providers/player-provider';
 
 export function Feed() {
   const { profile } = useAuth();
+  const { current: currentTrack } = usePlayer();
   const router = useRouter();
   const [posts, setPosts] = useState<Post[]>([]);
   const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
@@ -55,6 +58,11 @@ export function Feed() {
         ...p.post_media.map((m) => m.storage_path),
         ...(p.cover_path ? [p.cover_path] : []),
       ]);
+      // Locked posts still get their cover — it shows blurred as a teaser
+      // (the storage rules allow covers through; the media stays sealed).
+      for (const p of batch) {
+        if (p.is_locked && !purchased.has(p.id) && p.cover_path) paths.push(p.cover_path);
+      }
       if (paths.length === 0) return;
       const urls = await signedUrlsFor(paths);
       setMediaUrls((prev) => ({ ...prev, ...urls }));
@@ -147,8 +155,10 @@ export function Feed() {
       {feedError ? <Text style={styles.feedError}>{feedError}</Text> : null}
 
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color="#fff" />
+        <View>
+          <PostSkeleton />
+          <PostSkeleton />
+          <PostSkeleton />
         </View>
       ) : (
         <FlatList
@@ -190,7 +200,8 @@ export function Feed() {
 
       {profile?.role === 'artist' ? (
         <Pressable
-          style={styles.fab}
+          // Hop above the mini player when a track is loaded.
+          style={[styles.fab, currentTrack && { bottom: 84 }]}
           onPress={() => router.push('/compose')}>
           <Ionicons name="add" size={30} color="#0b0c0e" />
         </Pressable>

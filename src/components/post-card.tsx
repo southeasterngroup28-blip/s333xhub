@@ -3,8 +3,17 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import Animated, {
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+} from 'react-native-reanimated';
 
 import { AudioPlayerCard } from '@/components/audio-player-card';
+import { Avatar } from '@/components/avatar';
+import { pressFeedback, tapFeedback } from '@/lib/haptics';
 import { VideoPlayerCard } from '@/components/video-player-card';
 import { deletePost, fileReport, REPORT_REASONS } from '@/lib/moderation';
 import { timeAgo, type Post } from '@/lib/posts';
@@ -33,6 +42,41 @@ type Props = {
   /** Called after the artist deletes this post, so the feed can refresh. */
   onDeleted?: () => void;
 };
+
+/** One reaction chip that pops when tapped. */
+function ReactionChip({
+  emoji,
+  count,
+  mine,
+  onPress,
+}: {
+  emoji: string;
+  count: number;
+  mine: boolean;
+  onPress: () => void;
+}) {
+  const scale = useSharedValue(1);
+  const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
+  return (
+    <Animated.View style={animated}>
+      <Pressable
+        style={[styles.react, mine && styles.reactOn]}
+        onPress={() => {
+          scale.value = withSequence(
+            withSpring(1.35, { damping: 9, stiffness: 400 }),
+            withSpring(1, { damping: 12, stiffness: 300 })
+          );
+          tapFeedback();
+          onPress();
+        }}
+        hitSlop={4}>
+        <Text style={styles.reactEmoji}>{emoji}</Text>
+        {count > 0 ? <Text style={styles.reactCount}>{count}</Text> : null}
+      </Pressable>
+    </Animated.View>
+  );
+}
 
 function formatEndsIn(endsAt: string | null): string {
   if (!endsAt) return '';
@@ -156,11 +200,14 @@ export function PostCard({
   }
 
   return (
-    <View style={styles.card}>
+    <Animated.View
+      entering={FadeInDown.duration(280)}
+      style={[
+        styles.card,
+        post.project === 's333xgod' ? styles.cardGod : styles.cardMazze,
+      ]}>
       <View style={styles.header}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarLetter}>{authorName.slice(0, 1).toUpperCase()}</Text>
-        </View>
+        <Avatar path={post.author?.avatar_path} name={authorName} size={34} />
         <View style={styles.who}>
           <View style={styles.nameRow}>
             <Text style={styles.author}>{authorName}</Text>
@@ -255,21 +302,48 @@ export function PostCard({
       ) : null}
 
       {locked ? (
-        <View style={styles.lockCard}>
-          <View style={styles.lockIcon}>
-            <Ionicons name="lock-closed" size={17} color="#c3cdd6" />
-          </View>
-          <View style={styles.lockMeta}>
-            <Text style={styles.lockTitle}>{post.title ?? 'Exclusive drop'}</Text>
-            <Text style={styles.lockSub}>
-              {unlockNotice ? 'Purchases arrive with the App Store version' : 'One-time unlock'}
+        <View style={styles.teaseWrap}>
+          {post.cover_path && mediaUrls[post.cover_path] ? (
+            // The real cover art, heavily blurred — a tease of what's inside.
+            <Image
+              source={{ uri: mediaUrls[post.cover_path] }}
+              style={StyleSheet.absoluteFill}
+              contentFit="cover"
+              blurRadius={22}
+              transition={200}
+            />
+          ) : (
+            <Image
+              source={
+                post.project === 's333xgod'
+                  ? require('../../assets/images/emblem-s333xgod.png')
+                  : require('../../assets/images/emblem-mazze.png')
+              }
+              style={styles.teaseEmblem}
+              contentFit="contain"
+              blurRadius={3}
+            />
+          )}
+          <View style={styles.teaseScrim} />
+          <View style={styles.teaseContent}>
+            <Ionicons name="lock-closed" size={20} color="#e8e9eb" />
+            <Text style={styles.teaseTitle} numberOfLines={1}>
+              {post.title ?? 'Exclusive drop'}
             </Text>
+            <Pressable
+              style={styles.unlockPill}
+              onPress={() => {
+                pressFeedback();
+                setUnlockNotice(true);
+              }}>
+              <Text style={styles.unlockPillText}>
+                Unlock · ${((post.price_cents ?? 0) / 100).toFixed(2)}
+              </Text>
+            </Pressable>
+            {unlockNotice ? (
+              <Text style={styles.teaseSub}>Purchases arrive with the App Store version</Text>
+            ) : null}
           </View>
-          <Pressable style={styles.unlockPill} onPress={() => setUnlockNotice(true)}>
-            <Text style={styles.unlockPillText}>
-              ${((post.price_cents ?? 0) / 100).toFixed(2)}
-            </Text>
-          </Pressable>
         </View>
       ) : null}
 
@@ -326,20 +400,15 @@ export function PostCard({
           })}
 
       <View style={styles.socialRow}>
-        {REACTION_EMOJIS.map((emoji) => {
-          const count = reactionCounts[emoji] ?? 0;
-          const mine = myReactions.has(emoji);
-          return (
-            <Pressable
-              key={emoji}
-              style={[styles.react, mine && styles.reactOn]}
-              onPress={() => handleReaction(emoji)}
-              hitSlop={4}>
-              <Text style={styles.reactEmoji}>{emoji}</Text>
-              {count > 0 ? <Text style={styles.reactCount}>{count}</Text> : null}
-            </Pressable>
-          );
-        })}
+        {REACTION_EMOJIS.map((emoji) => (
+          <ReactionChip
+            key={emoji}
+            emoji={emoji}
+            count={reactionCounts[emoji] ?? 0}
+            mine={myReactions.has(emoji)}
+            onPress={() => handleReaction(emoji)}
+          />
+        ))}
         <Pressable
           style={styles.commentsChip}
           onPress={() => router.push(`/post/${post.id}` as never)}
@@ -350,7 +419,7 @@ export function PostCard({
           </Text>
         </Pressable>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -367,16 +436,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 },
     elevation: 6,
   },
+  cardGod: { borderWidth: 1, borderColor: 'rgba(88, 178, 235, 0.22)' },
+  cardMazze: { borderWidth: 1, borderColor: 'rgba(126, 211, 84, 0.18)' },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#1e2126',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarLetter: { color: '#9a9ba3', fontWeight: '700', fontSize: 14 },
   who: { flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   author: { color: '#fff', fontWeight: '600', fontSize: 14 },
@@ -403,28 +465,39 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 6,
   },
-  lockCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    backgroundColor: '#14171b',
-    borderWidth: 1,
-    borderColor: '#262a30',
+  teaseWrap: {
     borderRadius: 16,
-    padding: 14,
+    overflow: 'hidden',
+    backgroundColor: '#14171b',
+    aspectRatio: 16 / 9,
     marginTop: 10,
-  },
-  lockIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: 'rgba(195, 205, 214, 0.1)',
-    alignItems: 'center',
     justifyContent: 'center',
   },
-  lockMeta: { flex: 1 },
-  lockTitle: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  lockSub: { color: '#6d7076', fontSize: 12, marginTop: 2 },
+  teaseEmblem: {
+    position: 'absolute',
+    alignSelf: 'center',
+    width: '55%',
+    height: '75%',
+    opacity: 0.16,
+  },
+  teaseScrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(5, 7, 9, 0.45)',
+  },
+  teaseContent: { alignItems: 'center', gap: 8, paddingHorizontal: 20 },
+  teaseTitle: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 16,
+    letterSpacing: 0.3,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowRadius: 8,
+  },
+  teaseSub: { color: '#aab2ba', fontSize: 11.5, textAlign: 'center' },
   unlockPill: {
     backgroundColor: '#c3cdd6',
     borderRadius: 999,

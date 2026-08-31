@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 export type Profile = {
   id: string;
   display_name: string;
+  avatar_path: string | null;
   role: 'fan' | 'artist';
   status: string | null;
 };
@@ -67,7 +68,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         const result = await Promise.race([
           supabase
             .from('profiles')
-            .select('id, display_name, role, status')
+            .select('id, display_name, role, status, avatar_path')
             .eq('id', session.user.id)
             .single(),
           new Promise<never>((_, reject) =>

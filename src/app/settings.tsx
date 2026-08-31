@@ -13,8 +13,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Avatar } from '@/components/avatar';
 import { PickPhotosButton } from '@/components/media-pickers';
 import { invalidateBackgroundCache } from '@/components/app-background';
+import { removeMyAvatar, setMyAvatar } from '@/lib/avatars';
 import { clearMyBackground, setDefaultBackground, setMyBackground } from '@/lib/backgrounds';
 import { SUPPORT_EMAIL } from '@/lib/legal-content';
 import { deleteMyAccount, fetchBlockedUsers, unblockUser } from '@/lib/moderation';
@@ -42,6 +44,11 @@ export default function SettingsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [bgBusy, setBgBusy] = useState(false);
   const [bgNotice, setBgNotice] = useState<string | null>(null);
+  const [avatarPath, setAvatarPath] = useState<string | null | undefined>(undefined);
+  const [avatarBusy, setAvatarBusy] = useState(false);
+
+  // Local override so the preview updates instantly after a change.
+  const shownAvatar = avatarPath === undefined ? profile?.avatar_path : avatarPath;
 
   function flashBg(text: string) {
     setBgNotice(text);
@@ -109,9 +116,52 @@ export default function SettingsScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.sectionLabel}>ACCOUNT</Text>
         <View style={styles.card}>
-          <Text style={styles.name}>{profile?.display_name ?? '…'}</Text>
-          <Text style={styles.email}>{session?.user.email}</Text>
-          {isArtist ? <Text style={styles.artistTag}>Artist account</Text> : null}
+          <View style={styles.accountRow}>
+            <Avatar path={shownAvatar} name={profile?.display_name} size={56} />
+            <View style={styles.accountMeta}>
+              <Text style={styles.name}>{profile?.display_name ?? '…'}</Text>
+              <Text style={styles.email}>{session?.user.email}</Text>
+              {isArtist ? <Text style={styles.artistTag}>Artist account</Text> : null}
+            </View>
+          </View>
+          <View style={styles.avatarActions}>
+            <PickPhotosButton
+              label={shownAvatar ? 'Change photo' : 'Add profile photo'}
+              maxCount={1}
+              disabled={avatarBusy}
+              onPicked={async (picked) => {
+                if (!picked[0]) return;
+                setAvatarBusy(true);
+                setError(null);
+                try {
+                  setAvatarPath(await setMyAvatar(picked[0]));
+                } catch (e) {
+                  setError((e as { message?: string })?.message ?? 'Could not save the photo.');
+                } finally {
+                  setAvatarBusy(false);
+                }
+              }}
+              onError={setError}
+            />
+            {shownAvatar ? (
+              <Pressable
+                disabled={avatarBusy}
+                onPress={async () => {
+                  setAvatarBusy(true);
+                  try {
+                    await removeMyAvatar();
+                    setAvatarPath(null);
+                  } catch (e) {
+                    setError((e as { message?: string })?.message ?? 'Could not remove it.');
+                  } finally {
+                    setAvatarBusy(false);
+                  }
+                }}>
+                <Text style={styles.avatarRemove}>Remove</Text>
+              </Pressable>
+            ) : null}
+            {avatarBusy ? <ActivityIndicator color="#8f99a3" size="small" /> : null}
+          </View>
         </View>
 
         <Text style={styles.sectionLabel}>BACKGROUND</Text>
@@ -300,6 +350,10 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   card: { backgroundColor: '#131519', borderRadius: 12, padding: 16 },
+  accountRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  accountMeta: { flex: 1 },
+  avatarActions: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 14 },
+  avatarRemove: { color: '#f87171', fontSize: 13, fontWeight: '600' },
   name: { color: '#fff', fontSize: 17, fontWeight: '700' },
   email: { color: '#888', fontSize: 14, marginTop: 2 },
   artistTag: { color: '#c3cdd6', fontSize: 12, fontWeight: '700', marginTop: 6 },

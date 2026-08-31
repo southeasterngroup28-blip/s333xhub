@@ -3,6 +3,7 @@ import { Tabs } from 'expo-router';
 import { useEffect } from 'react';
 import { Text, View } from 'react-native';
 
+import { MiniPlayer } from '@/components/mini-player';
 import { registerPushToken } from '@/lib/notifications';
 
 export default function TabsLayout() {
@@ -13,8 +14,9 @@ export default function TabsLayout() {
   }, []);
 
   return (
-    <Tabs
-      screenOptions={{
+    <View style={{ flex: 1 }}>
+      <Tabs
+        screenOptions={{
         headerShown: false,
         tabBarStyle: { backgroundColor: '#0b0c0e', borderTopColor: '#1a1d22' },
         tabBarActiveTintColor: '#ffffff',
@@ -61,6 +63,8 @@ export default function TabsLayout() {
           },
         }}
       />
-    </Tabs>
+      </Tabs>
+      <MiniPlayer />
+    </View>
   );
 }
