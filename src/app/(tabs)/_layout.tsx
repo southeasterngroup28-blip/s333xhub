@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tabs } from 'expo-router';
 import { useEffect } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MiniPlayer } from '@/components/mini-player';
@@ -69,7 +69,8 @@ function FloatingTabBar({ state, navigation }: TabBarProps) {
       </View>
       {/* S333XSHOP teaser: present, dimmed, going nowhere yet. */}
       <View style={styles.circle}>
-        <Ionicons name="bag-outline" size={21} color="#3a3e45" />
+        <Ionicons name="bag-outline" size={16} color="#4a4f57" />
+        <Text style={styles.circleLabel}>S333XSHOP</Text>
       </View>
     </View>
   );
@@ -130,8 +131,10 @@ const styles = StyleSheet.create({
   },
   tabOn: { backgroundColor: 'rgba(255, 255, 255, 0.11)' },
   circle: {
-    width: 54,
+    minWidth: 74,
     height: 54,
+    paddingHorizontal: 10,
+    gap: 3,
     borderRadius: 27,
     backgroundColor: 'rgba(21, 24, 29, 0.97)',
     borderWidth: StyleSheet.hairlineWidth,
@@ -143,5 +146,11 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 10 },
     elevation: 14,
+  },
+  circleLabel: {
+    color: '#4a4f57',
+    fontSize: 6.5,
+    fontWeight: '700',
+    letterSpacing: 0.8,
   },
 });
