@@ -1,13 +1,20 @@
 import { Image } from 'expo-image';
 import { useRef, useState } from 'react';
-import { Modal, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  Modal,
+  PanResponder,
+  Pressable,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 /**
- * Circle-crop framing for profile photos — same idea as the cover
- * framer: the whole image shows, a bright circle sits over it, dragging
- * slides the circle along the photo's longer side. What's inside the
- * circle is what every avatar in the app shows.
+ * Circle-crop framing for profile photos — same mechanics as the cover
+ * framer: the whole image shows, a bright circle window sits over it,
+ * dragging slides it along the photo's longer side. Only cheap dim
+ * strips move during the drag, so it stays smooth.
  */
 function FramerStage({
   uri,
@@ -84,32 +91,52 @@ function FramerStage({
           />
         ) : null}
         {displayHeight > 0 && diameter > 0 ? (
-          <>
-            {/* Dim everything, then punch the bright circle on top. */}
-            <View style={styles.dimAll} />
-            <View
-              style={[
-                styles.circle,
-                {
-                  top: circleTop,
-                  left: circleLeft,
-                  width: diameter,
-                  height: diameter,
-                  borderRadius: diameter / 2,
-                },
-              ]}>
-              <Image
-                source={{ uri }}
-                style={{
-                  width: layoutWidth,
-                  height: displayHeight,
-                  marginTop: -circleTop,
-                  marginLeft: -circleLeft,
-                }}
-                contentFit="cover"
+          vertical ? (
+            <>
+              <View style={[styles.dim, { top: 0, left: 0, right: 0, height: circleTop }]} />
+              <View
+                style={[
+                  styles.dim,
+                  {
+                    top: circleTop + diameter,
+                    left: 0,
+                    right: 0,
+                    height: Math.max(0, displayHeight - circleTop - diameter),
+                  },
+                ]}
               />
-            </View>
-          </>
+            </>
+          ) : (
+            <>
+              <View style={[styles.dim, { top: 0, bottom: 0, left: 0, width: circleLeft }]} />
+              <View
+                style={[
+                  styles.dim,
+                  {
+                    top: 0,
+                    bottom: 0,
+                    left: circleLeft + diameter,
+                    width: Math.max(0, layoutWidth - circleLeft - diameter),
+                  },
+                ]}
+              />
+            </>
+          )
+        ) : null}
+        {diameter > 0 ? (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.circle,
+              {
+                top: circleTop,
+                left: circleLeft,
+                width: diameter,
+                height: diameter,
+                borderRadius: diameter / 2,
+              },
+            ]}
+          />
         ) : null}
       </View>
       <Text style={styles.hint}>
@@ -134,7 +161,7 @@ export function AvatarFramer({ visible, uri, onCancel, onSave }: Props) {
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onCancel}>
-      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <SafeAreaView style={styles.safe}>
         <View style={styles.header}>
           <Pressable onPress={onCancel} hitSlop={12}>
             <Text style={styles.cancel}>Cancel</Text>
@@ -175,17 +202,12 @@ const styles = StyleSheet.create({
   save: { color: '#fff', fontSize: 15, fontWeight: '700' },
   body: { flex: 1, justifyContent: 'center', paddingHorizontal: 14 },
   stage: { borderRadius: 10, overflow: 'hidden', backgroundColor: '#0f1114' },
-  dimAll: {
+  dim: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
     backgroundColor: 'rgba(6, 7, 9, 0.72)',
   },
   circle: {
     position: 'absolute',
-    overflow: 'hidden',
     borderWidth: 2,
     borderColor: '#ffffff',
   },
