@@ -73,6 +73,9 @@ export function AudioPlayerCard({ postId, title, url, coverUrl, coverFocus = 0.5
   const widthRef = useRef(0);
   const currentRef = useRef(false);
   const durationRef = useRef(0);
+  const waveRef = useRef<View>(null);
+  /** Screen X of the waveform's left edge, measured when a drag starts. */
+  const waveLeftRef = useRef(0);
 
   const isCurrent = current?.postId === postId;
   // `starting` keeps the button honest during the load gap after a tap.
@@ -86,18 +89,24 @@ export function AudioPlayerCard({ postId, title, url, coverUrl, coverFocus = 0.5
   currentRef.current = isCurrent;
   durationRef.current = duration;
 
+  // Positions come from screen coordinates (pageX/moveX) — locationX is
+  // relative to whichever tiny bar the finger is over, which glitches.
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => currentRef.current && durationRef.current > 0,
       onMoveShouldSetPanResponder: () => currentRef.current && durationRef.current > 0,
       onPanResponderGrant: (e) => {
-        setDragFraction(clampFraction(e.nativeEvent.locationX));
+        const pageX = e.nativeEvent.pageX;
+        waveRef.current?.measureInWindow((x) => {
+          waveLeftRef.current = x;
+          setDragFraction(clampFraction(pageX - x));
+        });
       },
-      onPanResponderMove: (e) => {
-        setDragFraction(clampFraction(e.nativeEvent.locationX));
+      onPanResponderMove: (_e, g) => {
+        setDragFraction(clampFraction(g.moveX - waveLeftRef.current));
       },
-      onPanResponderRelease: (e) => {
-        const fraction = clampFraction(e.nativeEvent.locationX);
+      onPanResponderRelease: (_e, g) => {
+        const fraction = clampFraction(g.moveX - waveLeftRef.current);
         setDragFraction(null);
         seekTo(fraction * durationRef.current);
       },
@@ -171,6 +180,7 @@ export function AudioPlayerCard({ postId, title, url, coverUrl, coverFocus = 0.5
 
       {/* Waveform scrubber: tap or drag anywhere to move through the track. */}
       <View
+        ref={waveRef}
         style={styles.wave}
         onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
         {...pan.panHandlers}>

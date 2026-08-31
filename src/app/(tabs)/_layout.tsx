@@ -17,52 +17,89 @@ export default function TabsLayout() {
     <View style={{ flex: 1 }}>
       <Tabs
         screenOptions={{
-        headerShown: false,
-        tabBarStyle: { backgroundColor: '#0b0c0e', borderTopColor: '#1a1d22' },
-        tabBarActiveTintColor: '#ffffff',
-        tabBarInactiveTintColor: '#6d7076',
-      }}>
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Feed',
-          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: 'Chat',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="chatbubbles" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="fanmail"
-        options={{
-          title: 'Fan Mail',
-          tabBarIcon: ({ color, size }) => <Ionicons name="mail" size={size} color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="shop"
-        options={{
-          // Teaser tab: always dimmed, never navigates.
-          tabBarIcon: ({ size }) => <Ionicons name="bag-outline" size={size} color="#3a3d43" />,
-          tabBarLabel: () => (
-            <View style={{ alignItems: 'center' }}>
-              <Text style={{ color: '#3a3d43', fontSize: 10, fontWeight: '600' }}>S333XSHOP</Text>
-              <Text style={{ color: '#3a3d43', fontSize: 8 }}>coming soon</Text>
-            </View>
-          ),
-        }}
-        listeners={{
-          tabPress: (e) => {
-            e.preventDefault();
+          headerShown: false,
+          tabBarStyle: {
+            backgroundColor: '#0d0f13',
+            borderTopWidth: 0,
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+            shadowColor: '#000',
+            shadowOpacity: 0.5,
+            shadowRadius: 14,
+            shadowOffset: { width: 0, height: -6 },
+            elevation: 14,
+            paddingTop: 6,
           },
-        }}
-      />
+          tabBarLabelStyle: {
+            fontSize: 9.5,
+            fontWeight: '700',
+            letterSpacing: 1.3,
+            textTransform: 'uppercase',
+          },
+          tabBarActiveTintColor: '#ffffff',
+          tabBarInactiveTintColor: '#565c63',
+        }}>
+        <Tabs.Screen
+          name="index"
+          options={{
+            title: 'Feed',
+            tabBarIcon: ({ color, size, focused }) => (
+              <Ionicons name={focused ? 'home' : 'home-outline'} size={size - 2} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="chat"
+          options={{
+            title: 'Chat',
+            tabBarIcon: ({ color, size, focused }) => (
+              <Ionicons
+                name={focused ? 'chatbubbles' : 'chatbubbles-outline'}
+                size={size - 2}
+                color={color}
+              />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="fanmail"
+          options={{
+            title: 'Fan Mail',
+            tabBarIcon: ({ color, size, focused }) => (
+              <Ionicons name={focused ? 'mail' : 'mail-outline'} size={size - 2} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
+          name="shop"
+          options={{
+            // Teaser tab: always dimmed, never navigates.
+            tabBarIcon: ({ size }) => (
+              <Ionicons name="bag-outline" size={size - 2} color="#33363c" />
+            ),
+            tabBarLabel: () => (
+              <View style={{ alignItems: 'center' }}>
+                <Text
+                  style={{
+                    color: '#33363c',
+                    fontSize: 9.5,
+                    fontWeight: '700',
+                    letterSpacing: 1.3,
+                  }}>
+                  S333XSHOP
+                </Text>
+                <Text style={{ color: '#33363c', fontSize: 7.5, letterSpacing: 0.5 }}>
+                  COMING SOON
+                </Text>
+              </View>
+            ),
+          }}
+          listeners={{
+            tabPress: (e) => {
+              e.preventDefault();
+            },
+          }}
+        />
       </Tabs>
       <MiniPlayer />
     </View>
