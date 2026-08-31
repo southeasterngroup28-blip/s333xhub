@@ -188,6 +188,13 @@ export function PickAudioButton({ disabled, label, onPicked, onError }: AudioPro
             onError(`"${file.name}" doesn't look like an audio file. Pick an MP3, M4A, or WAV.`);
             return;
           }
+          if (file.size > MAX_FILE_BYTES) {
+            const mb = Math.round(file.size / (1024 * 1024));
+            onError(
+              `That file is ${mb} MB — the cap is 50 MB. WAV files are huge; export it as MP3 or M4A and it'll fit easily.`
+            );
+            return;
+          }
           onPicked({
             file,
             mimeType: file.type || 'audio/mpeg',

@@ -131,6 +131,13 @@ export function PickAudioButton({ disabled, label, onPicked, onError }: AudioPro
       });
       if (result.canceled || result.assets.length === 0) return;
       const asset = result.assets[0];
+      if (asset.size && asset.size > MAX_FILE_BYTES) {
+        const mb = Math.round(asset.size / (1024 * 1024));
+        onError(
+          `That file is ${mb} MB — the cap is 50 MB. WAV files are huge; export it as MP3 or M4A and it'll fit easily.`
+        );
+        return;
+      }
       onPicked({
         uri: asset.uri,
         file: asset.file ?? undefined,
