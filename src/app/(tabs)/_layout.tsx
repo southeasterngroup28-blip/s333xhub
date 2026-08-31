@@ -1,5 +1,4 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Tabs } from 'expo-router';
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -16,8 +15,21 @@ const TAB_ICONS: Record<string, { on: keyof typeof Ionicons.glyphMap; off: keyof
   fanmail: { on: 'mail', off: 'mail-outline' },
 };
 
+// Just the slice of the navigation tab-bar props this dock actually uses.
+type TabBarProps = {
+  state: { index: number; routes: { key: string; name: string }[] };
+  navigation: {
+    emit: (event: {
+      type: 'tabPress';
+      target?: string;
+      canPreventDefault: true;
+    }) => { defaultPrevented: boolean };
+    navigate: (name: string) => void;
+  };
+};
+
 /** Floating dock: a pill of tabs + the dimmed S333XSHOP circle beside it. */
-function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
+function FloatingTabBar({ state, navigation }: TabBarProps) {
   const insets = useSafeAreaInsets();
 
   return (
