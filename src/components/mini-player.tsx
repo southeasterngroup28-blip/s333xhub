@@ -18,7 +18,7 @@ export function MiniPlayer() {
   return (
     <Animated.View
       entering={FadeInUp.duration(220)}
-      style={[styles.wrap, { bottom: 49 + insets.bottom + 8 }]}>
+      style={[styles.wrap, { bottom: insets.bottom + 76 }]}>
       {current.artworkUrl ? (
         <Image source={{ uri: current.artworkUrl }} style={styles.art} contentFit="cover" />
       ) : (

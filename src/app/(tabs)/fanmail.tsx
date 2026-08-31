@@ -255,7 +255,7 @@ const styles = StyleSheet.create({
   error: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
   muted: { color: '#55585f' },
-  list: { padding: 14, paddingBottom: 48 },
+  list: { padding: 14, paddingBottom: 150 },
   card: {
     backgroundColor: '#131519',
     borderRadius: 16,

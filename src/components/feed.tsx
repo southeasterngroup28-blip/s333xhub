@@ -10,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBackground } from '@/components/app-background';
 import { PostCard } from '@/components/post-card';
@@ -32,6 +32,7 @@ import { usePlayer } from '@/providers/player-provider';
 export function Feed() {
   const { profile } = useAuth();
   const { current: currentTrack } = usePlayer();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const [posts, setPosts] = useState<Post[]>([]);
   const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
@@ -200,8 +201,9 @@ export function Feed() {
 
       {profile?.role === 'artist' ? (
         <Pressable
-          // Hop above the mini player when a track is loaded.
-          style={[styles.fab, currentTrack && { bottom: 84 }]}
+          // Sit above the floating dock — and above the mini player too
+          // when a track is loaded.
+          style={[styles.fab, { bottom: insets.bottom + 86 + (currentTrack ? 62 : 0) }]}
           onPress={() => router.push('/compose')}>
           <Ionicons name="add" size={30} color="#0b0c0e" />
         </Pressable>
@@ -233,7 +235,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   feedError: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 8, fontSize: 13 },
-  list: { paddingBottom: 96, flexGrow: 1 },
+  list: { paddingBottom: 170, flexGrow: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
   empty: { color: '#555' },
   fab: {
