@@ -77,6 +77,12 @@ export default function SignInScreen() {
         </Pressable>
 
         <View style={styles.footer}>
+          <Link href="/(auth)/forgot-password">
+            <Text style={styles.footerLink}>Forgot password?</Text>
+          </Link>
+        </View>
+
+        <View style={styles.footer}>
           <Text style={styles.footerText}>New here? </Text>
           <Link href="/(auth)/sign-up">
             <Text style={styles.footerLink}>Create an account</Text>
