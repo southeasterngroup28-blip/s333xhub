@@ -66,7 +66,7 @@ function EqBar({ active, delay }: { active: boolean; delay: number }) {
 }
 
 export function AudioPlayerCard({ postId, title, url, coverUrl, coverFocus = 0.5 }: Props) {
-  const { current, status, playTrack, toggle, seekTo } = usePlayer();
+  const { current, status, starting, playTrack, toggle, seekTo } = usePlayer();
   const [barWidth, setBarWidth] = useState(0);
   /** While the thumb is being dragged, the waveform previews that spot. */
   const [dragFraction, setDragFraction] = useState<number | null>(null);
@@ -75,7 +75,8 @@ export function AudioPlayerCard({ postId, title, url, coverUrl, coverFocus = 0.5
   const durationRef = useRef(0);
 
   const isCurrent = current?.postId === postId;
-  const isPlaying = isCurrent && !!status?.playing;
+  // `starting` keeps the button honest during the load gap after a tap.
+  const isPlaying = isCurrent && (!!status?.playing || starting);
   const duration = isCurrent ? status?.duration ?? 0 : 0;
   const position = isCurrent ? status?.currentTime ?? 0 : 0;
   const progress = duration > 0 ? Math.min(1, position / duration) : 0;

@@ -9,11 +9,11 @@ import { usePlayer } from '@/providers/player-provider';
 
 /** Compact now-playing bar pinned above the tab bar while a track is loaded. */
 export function MiniPlayer() {
-  const { current, status, toggle } = usePlayer();
+  const { current, status, starting, toggle } = usePlayer();
   const insets = useSafeAreaInsets();
 
   if (!current) return null;
-  const playing = !!status?.playing;
+  const playing = !!status?.playing || starting;
 
   return (
     <Animated.View

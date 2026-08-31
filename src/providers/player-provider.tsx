@@ -17,6 +17,8 @@ type PlayerContextValue = {
   /** The track currently loaded (playing or paused), if any. */
   current: Track | null;
   status: AudioStatus | null;
+  /** True from tap-to-play until audio actually starts — show "playing" UI. */
+  starting: boolean;
   playTrack: (track: Track) => void;
   toggle: () => void;
   seekTo: (seconds: number) => void;
@@ -25,6 +27,7 @@ type PlayerContextValue = {
 const PlayerContext = createContext<PlayerContextValue>({
   current: null,
   status: null,
+  starting: false,
   playTrack: () => {},
   toggle: () => {},
   seekTo: () => {},
@@ -39,6 +42,12 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   const player = useMemo(() => createAudioPlayer(), []);
   const status = useAudioPlayerStatus(player);
   const [current, setCurrent] = useState<Track | null>(null);
+  const [starting, setStarting] = useState(false);
+
+  // The moment real audio flows, the optimistic phase ends.
+  useEffect(() => {
+    if (starting && status?.playing) setStarting(false);
+  }, [starting, status?.playing]);
 
   useEffect(() => {
     // playsInSilentMode: iPhones with the mute switch on would otherwise play nothing.
@@ -81,6 +90,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
 
   function playTrack(track: Track) {
     setCurrent(track);
+    setStarting(true);
     player.replace({ uri: track.url });
     player.play();
   }
@@ -99,7 +109,7 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   }
 
   return (
-    <PlayerContext.Provider value={{ current, status, playTrack, toggle, seekTo }}>
+    <PlayerContext.Provider value={{ current, status, starting, playTrack, toggle, seekTo }}>
       {children}
     </PlayerContext.Provider>
   );
