@@ -18,6 +18,8 @@ type AuthContextValue = {
   profileError: string | null;
   /** True until we've checked whether a saved login exists. */
   isLoading: boolean;
+  /** Re-fetches the cached profile (call after editing it, e.g. new avatar). */
+  refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -26,6 +28,7 @@ const AuthContext = createContext<AuthContextValue>({
   profile: null,
   profileError: null,
   isLoading: true,
+  refreshProfile: async () => {},
   signOut: async () => {},
 });
 
@@ -106,6 +109,15 @@ export function AuthProvider({ children }: PropsWithChildren) {
         profile,
         profileError,
         isLoading,
+        refreshProfile: async () => {
+          if (!session) return;
+          const { data } = await supabase
+            .from('profiles')
+            .select('id, display_name, role, status, avatar_path')
+            .eq('id', session.user.id)
+            .single();
+          if (data) setProfile(data as Profile);
+        },
         signOut: async () => {
           await supabase.auth.signOut();
         },

@@ -35,7 +35,7 @@ const PREF_LABELS: { key: keyof NotificationPrefs; label: string; hint: string }
 ];
 
 export default function SettingsScreen() {
-  const { session, profile, signOut } = useAuth();
+  const { session, profile, signOut, refreshProfile } = useAuth();
   const router = useRouter();
   const [blocked, setBlocked] = useState<{ id: string; name: string }[]>([]);
   const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
@@ -135,6 +135,7 @@ export default function SettingsScreen() {
                 setError(null);
                 try {
                   setAvatarPath(await setMyAvatar(picked[0]));
+                  refreshProfile().catch(() => {});
                 } catch (e) {
                   setError((e as { message?: string })?.message ?? 'Could not save the photo.');
                 } finally {
@@ -151,6 +152,7 @@ export default function SettingsScreen() {
                   try {
                     await removeMyAvatar();
                     setAvatarPath(null);
+                    refreshProfile().catch(() => {});
                   } catch (e) {
                     setError((e as { message?: string })?.message ?? 'Could not remove it.');
                   } finally {
