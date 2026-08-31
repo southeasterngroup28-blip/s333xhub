@@ -4,6 +4,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
+import { ProfileCardProvider } from '@/components/profile-card';
 import { AuthProvider, useAuth } from '@/providers/auth-provider';
 import { PlayerProvider } from '@/providers/player-provider';
 
@@ -51,9 +52,11 @@ export default function RootLayout() {
   return (
     <AuthProvider>
       <PlayerProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <RootNavigator />
-        </ThemeProvider>
+        <ProfileCardProvider>
+          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+            <RootNavigator />
+          </ThemeProvider>
+        </ProfileCardProvider>
       </PlayerProvider>
     </AuthProvider>
   );

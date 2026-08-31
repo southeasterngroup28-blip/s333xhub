@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppBackground } from '@/components/app-background';
 import { ChatRowSkeleton } from '@/components/skeleton';
+import { EmptyState } from '@/components/empty-state';
 import { fetchChatList, getOrCreateDm, setLeft, type ChatListItem } from '@/lib/chat';
 import { useAuth } from '@/providers/auth-provider';
 
@@ -123,9 +124,7 @@ export default function ChatListScreen() {
             ) : null
           }
           ListEmptyComponent={
-            <View style={styles.center}>
-              <Text style={styles.empty}>No chats yet.</Text>
-            </View>
+            <EmptyState icon="chatbubbles-outline" title="No chats yet" sub="The community chat appears here." />
           }
           contentContainerStyle={styles.list}
         />

@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { BrandMark } from '@/components/brand-mark';
 import { supabase } from '@/lib/supabase';
 
 export default function SignUpScreen() {

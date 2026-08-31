@@ -24,6 +24,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppBackground } from '@/components/app-background';
 import { Avatar } from '@/components/avatar';
+import { EmptyState } from '@/components/empty-state';
+import { useProfileCard } from '@/components/profile-card';
 import { GifPicker } from '@/components/gif-picker';
 import { PickPhotosButton } from '@/components/media-pickers';
 import { VoiceNoteBubble } from '@/components/voice-note';
@@ -63,6 +65,7 @@ export default function ChannelScreen() {
   const router = useRouter();
   const myUserId = session?.user.id;
   const isArtist = profile?.role === 'artist';
+  const { showProfile } = useProfileCard();
 
   const [info, setInfo] = useState<ChatListItem | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -408,12 +411,14 @@ export default function ChannelScreen() {
               return (
                 <View style={[styles.bubbleRow, mine && styles.bubbleRowMine]}>
                   {!mine ? (
-                    <Avatar
-                      path={item.sender?.avatar_path}
-                      focus={item.sender?.avatar_focus}
-                      name={item.sender?.display_name}
-                      size={26}
-                    />
+                    <Pressable onPress={() => showProfile(item.sender_id)} hitSlop={6}>
+                      <Avatar
+                        path={item.sender?.avatar_path}
+                        focus={item.sender?.avatar_focus}
+                        name={item.sender?.display_name}
+                        size={26}
+                      />
+                    </Pressable>
                   ) : null}
                   <Pressable
                     style={[styles.bubble, mine && styles.bubbleMine]}
@@ -465,9 +470,11 @@ export default function ChannelScreen() {
             onEndReachedThreshold={0.5}
             ListEmptyComponent={
               <View style={styles.centerInverted}>
-                <Text style={styles.empty}>
-                  {isGroup ? 'Say hi to the community!' : 'No messages yet.'}
-                </Text>
+                <EmptyState
+                  icon="chatbubbles-outline"
+                  title={isGroup ? 'The room is quiet' : 'No messages yet'}
+                  sub={isGroup ? 'Say hi to the community.' : 'Start the conversation.'}
+                />
               </View>
             }
           />

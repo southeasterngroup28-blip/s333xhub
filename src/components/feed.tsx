@@ -14,6 +14,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { AppBackground } from '@/components/app-background';
 import { PostCard } from '@/components/post-card';
+import { EmptyState } from '@/components/empty-state';
 import { PostSkeleton } from '@/components/skeleton';
 import { Top8Card } from '@/components/top8-card';
 import { fetchPosts, PAGE_SIZE, signedUrlsFor, type Post } from '@/lib/posts';
@@ -192,9 +193,11 @@ export function Feed() {
           onEndReachedThreshold={0.5}
           ListHeaderComponent={<Top8Card fans={topFans} viewerIsArtist={isArtist} />}
           ListEmptyComponent={
-            <View style={styles.center}>
-              <Text style={styles.empty}>No posts yet.</Text>
-            </View>
+            <EmptyState
+              icon="flash-outline"
+              title="Nothing dropped yet"
+              sub="When the artist posts, it lands here first."
+            />
           }
         />
       )}

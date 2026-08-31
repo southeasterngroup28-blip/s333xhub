@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { BrandMark } from '@/components/brand-mark';
 import { supabase } from '@/lib/supabase';
 
 /** Where the emailed reset link sends people to choose a new password. */
@@ -43,6 +44,7 @@ export default function ForgotPasswordScreen() {
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.container}>
+        <BrandMark />
         <Text style={styles.title}>S333XHUB</Text>
         <Text style={styles.subtitle}>Reset password</Text>
 

@@ -3,6 +3,7 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useProfileCard } from '@/components/profile-card';
 import { avatarUrl } from '@/lib/avatars';
 import type { TopFan } from '@/lib/social';
 
@@ -14,6 +15,7 @@ type Props = {
 /** The MySpace classic, distilled: the artist's hand-picked Top 3, atop the feed. */
 export function Top8Card({ fans, viewerIsArtist }: Props) {
   const router = useRouter();
+  const { showProfile } = useProfileCard();
   if (fans.length === 0 && !viewerIsArtist) return null;
 
   const slots = Array.from({ length: 3 }, (_, i) => fans.find((f) => f.position === i + 1) ?? null);
@@ -33,7 +35,11 @@ export function Top8Card({ fans, viewerIsArtist }: Props) {
         {slots.map((fan, index) => {
           const photo = avatarUrl(fan?.profile?.avatar_path);
           return (
-            <View key={index} style={styles.slot}>
+            <Pressable
+              key={index}
+              style={styles.slot}
+              disabled={!fan}
+              onPress={() => fan && showProfile(fan.user_id)}>
               <View style={[styles.avatar, fan && styles.avatarFilled]}>
                 {photo ? (
                   <Image
@@ -55,7 +61,7 @@ export function Top8Card({ fans, viewerIsArtist }: Props) {
               <Text style={styles.name} numberOfLines={1}>
                 {fan ? fan.profile?.display_name ?? '?' : 'you?'}
               </Text>
-            </View>
+            </Pressable>
           );
         })}
       </View>

@@ -14,6 +14,7 @@ import Animated, {
 import { AudioPlayerCard } from '@/components/audio-player-card';
 import { Avatar } from '@/components/avatar';
 import { pressFeedback, tapFeedback } from '@/lib/haptics';
+import { useProfileCard } from '@/components/profile-card';
 import { VideoPlayerCard } from '@/components/video-player-card';
 import { deletePost, fileReport, REPORT_REASONS } from '@/lib/moderation';
 import { timeAgo, type Post } from '@/lib/posts';
@@ -103,6 +104,7 @@ export function PostCard({
 }: Props) {
   const { width: windowWidth } = useWindowDimensions();
   const router = useRouter();
+  const { showProfile } = useProfileCard();
   const [menu, setMenu] = useState<MenuState>('closed');
   const [actionError, setActionError] = useState<string | null>(null);
   const [unlockNotice, setUnlockNotice] = useState(false);
@@ -208,7 +210,9 @@ export function PostCard({
         post.project === 's333xgod' ? styles.cardGod : styles.cardMazze,
       ]}>
       <View style={styles.header}>
-        <Avatar path={post.author?.avatar_path} focus={post.author?.avatar_focus} name={authorName} size={34} />
+        <Pressable onPress={() => showProfile(post.author_id)} hitSlop={6}>
+          <Avatar path={post.author?.avatar_path} focus={post.author?.avatar_focus} name={authorName} size={34} />
+        </Pressable>
         <View style={styles.who}>
           <View style={styles.nameRow}>
             <Text style={styles.author}>{authorName}</Text>

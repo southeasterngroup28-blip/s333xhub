@@ -16,6 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AppBackground } from '@/components/app-background';
 import { Avatar } from '@/components/avatar';
+import { EmptyState } from '@/components/empty-state';
+import { useProfileCard } from '@/components/profile-card';
 import { CommentSkeleton } from '@/components/skeleton';
 import { fileReport, REPORT_REASONS } from '@/lib/moderation';
 import { timeAgo } from '@/lib/posts';
@@ -33,6 +35,7 @@ export default function CommentsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { session, profile } = useAuth();
   const router = useRouter();
+  const { showProfile } = useProfileCard();
   const isArtist = profile?.role === 'artist';
   const myUserId = session?.user.id;
 
@@ -160,12 +163,14 @@ export default function CommentsScreen() {
                     if (!mine || isArtist) setActionTarget(item);
                   }}
                   delayLongPress={300}>
-                  <Avatar
-                    path={item.author?.avatar_path}
-                    focus={item.author?.avatar_focus}
-                    name={item.author?.display_name}
-                    size={30}
-                  />
+                  <Pressable onPress={() => showProfile(item.user_id)} hitSlop={6}>
+                    <Avatar
+                      path={item.author?.avatar_path}
+                      focus={item.author?.avatar_focus}
+                      name={item.author?.display_name}
+                      size={30}
+                    />
+                  </Pressable>
                   <View style={styles.bubble}>
                     <View style={styles.whoRow}>
                       <Text style={styles.who}>{item.author?.display_name ?? 'Deleted user'}</Text>
@@ -181,9 +186,11 @@ export default function CommentsScreen() {
               );
             }}
             ListEmptyComponent={
-              <View style={styles.center}>
-                <Text style={styles.empty}>No comments yet. Say something.</Text>
-              </View>
+              <EmptyState
+                icon="chatbubble-outline"
+                title="No comments yet"
+                sub="Be the first to say something."
+              />
             }
           />
         )}
