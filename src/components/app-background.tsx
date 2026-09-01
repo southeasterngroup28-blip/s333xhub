@@ -7,10 +7,14 @@ import { useAuth } from '@/providers/auth-provider';
 
 // One fetch shared across screens (refreshed at most once a minute).
 let cached: { userId: string; url: string | null; at: number } | null = null;
+// Every mounted background listens here so a change repaints ALL tabs,
+// not just screens opened later.
+const listeners = new Set<() => void>();
 
-/** Call after the background is changed in Settings so screens pick it up right away. */
+/** Call after the background is changed in Settings so screens repaint right away. */
 export function invalidateBackgroundCache() {
   cached = null;
+  listeners.forEach((notify) => notify());
 }
 
 /** The user's MySpace-style background, rendered edge-to-edge behind a screen. */
@@ -19,6 +23,15 @@ export function AppBackground() {
   const [url, setUrl] = useState<string | null>(
     cached && cached.userId === session?.user.id ? cached.url : null
   );
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  useEffect(() => {
+    const bump = () => setRefreshTick((t) => t + 1);
+    listeners.add(bump);
+    return () => {
+      listeners.delete(bump);
+    };
+  }, []);
 
   useEffect(() => {
     const userId = session?.user.id;
@@ -37,7 +50,7 @@ export function AppBackground() {
     return () => {
       cancelled = true;
     };
-  }, [session?.user.id]);
+  }, [session?.user.id, refreshTick]);
 
   if (!url) return null;
 
