@@ -3,9 +3,10 @@ import { Image } from 'expo-image';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBackground } from '@/components/app-background';
+import { EdgeGlass, FadeMask } from '@/components/edge-fade';
 import { countdownTo, useNow } from '@/lib/countdown';
 import { EmptyState } from '@/components/empty-state';
 import { ChatRowSkeleton } from '@/components/skeleton';
@@ -24,6 +25,7 @@ export default function ShopScreen() {
   const router = useRouter();
   const isArtist = profile?.role === 'artist';
   const now = useNow();
+  const insets = useSafeAreaInsets();
 
   const [drops, setDrops] = useState<Drop[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,26 +51,14 @@ export default function ShopScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <AppBackground />
-      <View style={styles.topBar}>
-        <Text style={styles.title}>S333XSHOP</Text>
-        {isArtist ? (
-          <Pressable
-            onPress={() => router.push('/drop-new' as never)}
-            hitSlop={12}
-            style={styles.newButton}>
-            <Ionicons name="add" size={22} color="#0b0c0e" />
-          </Pressable>
-        ) : null}
-      </View>
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {loading ? (
-        <View style={styles.list}>
+        <View style={[styles.list, styles.loadingPad]}>
           <ChatRowSkeleton />
           <ChatRowSkeleton />
         </View>
       ) : (
+        <FadeMask>
         <ScrollView contentContainerStyle={styles.list}>
           {drops.length === 0 ? (
             <EmptyState
@@ -168,7 +158,24 @@ export default function ShopScreen() {
             })
           )}
         </ScrollView>
+        </FadeMask>
       )}
+
+      <EdgeGlass />
+      <View style={[styles.topBar, { top: insets.top }]} pointerEvents="box-none">
+        <Text style={styles.title}>S333XSHOP</Text>
+        {isArtist ? (
+          <Pressable
+            onPress={() => router.push('/drop-new' as never)}
+            hitSlop={12}
+            style={styles.newButton}>
+            <Ionicons name="add" size={22} color="#0b0c0e" />
+          </Pressable>
+        ) : null}
+      </View>
+      {error ? (
+        <Text style={[styles.error, { top: insets.top + 48 }]}>{error}</Text>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -176,6 +183,10 @@ export default function ShopScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
   topBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
@@ -193,8 +204,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  error: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 },
-  list: { padding: 14, paddingBottom: 150, flexGrow: 1 },
+  error: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    textAlign: 'center',
+    color: '#f87171',
+    paddingHorizontal: 16,
+    fontSize: 13,
+  },
+  list: { padding: 14, paddingTop: 52, paddingBottom: 150, flexGrow: 1 },
+  loadingPad: { paddingTop: 52 },
   card: {
     backgroundColor: '#101216',
     borderRadius: 16,
