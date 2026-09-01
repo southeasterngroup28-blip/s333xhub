@@ -33,6 +33,21 @@ import { useAuth } from '@/providers/auth-provider';
 import { usePlayer } from '@/providers/player-provider';
 import { DISPLAY_FONT } from '@/constants/type';
 
+// Smoothstep alpha ramp for the scroll-fade mask: eases in and out so the
+// dissolve has no visible start or end edge.
+const EASED_STOPS = [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1] as const;
+const EASED_MASK = [
+  'rgba(0,0,0,0)',
+  'rgba(0,0,0,0.06)',
+  'rgba(0,0,0,0.22)',
+  'rgba(0,0,0,0.43)',
+  'rgba(0,0,0,0.65)',
+  'rgba(0,0,0,0.84)',
+  'rgba(0,0,0,0.97)',
+  'rgba(0,0,0,1)',
+] as const;
+const EASED_MASK_REVERSED = [...EASED_MASK].reverse() as unknown as typeof EASED_MASK;
+
 export function Feed() {
   const { profile } = useAuth();
   const { current: currentTrack } = usePlayer();
@@ -166,14 +181,24 @@ export function Feed() {
           <PostSkeleton />
         </View>
       ) : (
-        // Posts melt away as they scroll under the header instead of
-        // hard-clipping — the mask fades the list's top ~70px.
+        // Posts melt away as they scroll off-screen. The gradient uses an
+        // eased (smoothstep) alpha curve — a straight linear fade reads as
+        // a cheap cutoff; the ease is what makes it feel native.
         <MaskedView
           style={styles.maskWrap}
           maskElement={
             <View style={styles.maskFill}>
-              <LinearGradient colors={['transparent', 'black']} style={styles.maskFade} />
+              <LinearGradient
+                colors={EASED_MASK}
+                locations={EASED_STOPS}
+                style={styles.maskFadeTop}
+              />
               <View style={styles.maskSolid} />
+              <LinearGradient
+                colors={EASED_MASK_REVERSED}
+                locations={EASED_STOPS}
+                style={styles.maskFadeBottom}
+              />
             </View>
           }>
           <FlatList
@@ -233,7 +258,8 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
   maskWrap: { flex: 1 },
   maskFill: { flex: 1, backgroundColor: 'transparent' },
-  maskFade: { height: 70 },
+  maskFadeTop: { height: 110 },
+  maskFadeBottom: { height: 90 },
   maskSolid: { flex: 1, backgroundColor: 'black' },
   topBar: {
     flexDirection: 'row',
