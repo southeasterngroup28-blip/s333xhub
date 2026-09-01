@@ -24,11 +24,13 @@ import {
   dropImageUrl,
   dropStatus,
   fetchDrop,
+  fetchFulfillment,
   markShipped,
   publishDrop,
   remaining,
   type Claim,
   type Drop,
+  type Fulfillment,
 } from '@/lib/shop';
 import { useAuth } from '@/providers/auth-provider';
 import { countdownTo, useNow } from '@/lib/countdown';
@@ -41,6 +43,7 @@ export default function DropScreen() {
   const now = useNow();
 
   const [drop, setDrop] = useState<Drop | null>(null);
+  const [fulfillment, setFulfillment] = useState<Record<string, Fulfillment>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -54,7 +57,11 @@ export default function DropScreen() {
   const load = useCallback(async () => {
     if (!id) return;
     try {
-      setDrop(await fetchDrop(id));
+      const fresh = await fetchDrop(id);
+      setDrop(fresh);
+      if (fresh) {
+        setFulfillment(await fetchFulfillment(fresh.claims.map((c) => c.id)).catch(() => ({})));
+      }
       setError(null);
     } catch (e) {
       setError((e as { message?: string })?.message ?? 'Could not load the drop.');
@@ -212,7 +219,7 @@ export default function DropScreen() {
             <Text style={styles.mineTitle}>#{mine.edition_number} IS YOURS</Text>
             <Text style={styles.sub}>
               {mine.status === 'shipped'
-                ? 'Shipped — check your pushes for tracking.'
+                ? `Shipped${fulfillment[mine.id]?.tracking ? ` · tracking ${fulfillment[mine.id].tracking}` : ''} — it's on the way.`
                 : mine.status === 'in_works'
                   ? 'Being printed and hand-finished.'
                   : 'Claimed. It enters the works with the run.'}
@@ -265,9 +272,22 @@ export default function DropScreen() {
                   name={claim.owner?.display_name}
                   size={26}
                 />
-                <Text style={styles.claimName} numberOfLines={1}>
-                  {claim.owner?.display_name ?? 'Unknown'}
-                </Text>
+                <View style={styles.claimMeta}>
+                  <Text style={styles.claimName} numberOfLines={1}>
+                    {claim.owner?.display_name ?? 'Unknown'}
+                  </Text>
+                  {isArtist && fulfillment[claim.id]?.address ? (
+                    <Text style={styles.claimAddress} numberOfLines={2}>
+                      {fulfillment[claim.id].address}
+                    </Text>
+                  ) : null}
+                  {(isArtist || claim.user_id === session?.user.id) &&
+                  fulfillment[claim.id]?.tracking ? (
+                    <Text style={styles.claimTracking} numberOfLines={1}>
+                      {fulfillment[claim.id].tracking}
+                    </Text>
+                  ) : null}
+                </View>
                 {isArtist ? (
                   claim.status === 'shipped' ? (
                     <Text style={styles.shippedChip}>SHIPPED ✓</Text>
@@ -513,7 +533,10 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     width: 36,
   },
-  claimName: { color: '#fff', fontSize: 13, fontWeight: '600', flex: 1 },
+  claimMeta: { flex: 1 },
+  claimName: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  claimAddress: { color: '#8f99a3', fontSize: 10.5, marginTop: 1, lineHeight: 14 },
+  claimTracking: { color: '#7ed354', fontSize: 10, marginTop: 1 },
   shippedChip: { color: '#7ed354', fontSize: 10, fontWeight: '700', letterSpacing: 1 },
   shipButton: {
     backgroundColor: '#fff',

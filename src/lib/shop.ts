@@ -150,12 +150,25 @@ export async function markShipped(claimId: string, tracking: string): Promise<vo
   if (error) throw error;
 }
 
-/** Owner or artist: tracking info for one claim, if any. */
-export async function fetchTracking(claimId: string): Promise<string | null> {
-  const { data } = await supabase
+export type Fulfillment = { address: string | null; tracking: string | null };
+
+/**
+ * Shipping details for a drop's claims. RLS trims the result server-side:
+ * the artist gets every row, a fan gets only their own.
+ */
+export async function fetchFulfillment(claimIds: string[]): Promise<Record<string, Fulfillment>> {
+  if (claimIds.length === 0) return {};
+  const { data, error } = await supabase
     .from('drop_fulfillment')
-    .select('tracking')
-    .eq('claim_id', claimId)
-    .maybeSingle();
-  return data?.tracking ?? null;
+    .select('claim_id, address, tracking')
+    .in('claim_id', claimIds);
+  if (error) throw error;
+  const map: Record<string, Fulfillment> = {};
+  for (const row of data ?? []) {
+    map[row.claim_id as string] = {
+      address: (row.address as string | null) ?? null,
+      tracking: (row.tracking as string | null) ?? null,
+    };
+  }
+  return map;
 }
