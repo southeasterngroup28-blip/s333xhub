@@ -186,7 +186,7 @@ export default function DropScreen() {
         </View>
 
         <Text style={styles.kicker}>
-          3D-PRINTED · HAND-FINISHED · {drop.run_size} NUMBERED ·{' '}
+          HAND-FINISHED · {drop.run_size} NUMBERED ·{' '}
           {drop.project === 's333xgod' ? 'S333XGOD' : 'MAZZE'}
         </Text>
 
@@ -247,7 +247,7 @@ export default function DropScreen() {
               </Text>
             </Pressable>
             <Text style={styles.subCenter}>
-              Secure checkout by Stripe · Limit 1 per fan{'\n'}Printed & finished in-house · ships in 5–7 days
+              Secure checkout by Stripe · Limit 1 per fan{'\n'}Made in-house · ships in 5–7 days
             </Text>
           </>
         ) : null}
