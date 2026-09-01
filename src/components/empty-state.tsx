@@ -1,6 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { DISPLAY_FONT } from '@/constants/type';
+
 type Props = {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
@@ -35,8 +37,8 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#e8e9eb',
-    fontSize: 21,
-    fontFamily: 'SixCaps_400Regular',
+    fontSize: 15,
+    fontFamily: DISPLAY_FONT,
     letterSpacing: 1.5,
     textTransform: 'uppercase',
   },

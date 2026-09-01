@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { searchGifs, trendingGifs, type GifResult } from '@/lib/gifs';
+import { DISPLAY_FONT } from '@/constants/type';
 
 type Props = {
   visible: boolean;
@@ -94,7 +95,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 12,
   },
-  title: { color: '#fff', fontSize: 24, fontFamily: 'SixCaps_400Regular', letterSpacing: 3 },
+  title: { color: '#fff', fontSize: 17, fontFamily: DISPLAY_FONT, letterSpacing: 2 },
   close: { position: 'absolute', right: 16 },
   search: {
     backgroundColor: '#131519',

@@ -28,6 +28,7 @@ import {
 } from '@/lib/fanmail';
 import { timeAgo } from '@/lib/posts';
 import { useAuth } from '@/providers/auth-provider';
+import { DISPLAY_FONT } from '@/constants/type';
 
 type Draft = {
   kind: FanMailKind;
@@ -250,7 +251,7 @@ export default function FanMailScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
   topBar: { paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center' },
-  title: { color: '#f4f5f6', fontSize: 30, fontFamily: 'SixCaps_400Regular', letterSpacing: 4 },
+  title: { color: '#f4f5f6', fontSize: 22, fontFamily: DISPLAY_FONT, letterSpacing: 2 },
   notice: { color: '#4fc07a', paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 },
   error: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },

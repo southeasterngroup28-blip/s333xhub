@@ -58,6 +58,7 @@ import {
 import { timeAgo } from '@/lib/posts';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/auth-provider';
+import { DISPLAY_FONT } from '@/constants/type';
 
 export default function ChannelScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -629,8 +630,8 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: '#fff',
-    fontSize: 24,
-    fontFamily: 'SixCaps_400Regular',
+    fontSize: 17,
+    fontFamily: DISPLAY_FONT,
     letterSpacing: 1.5,
     flex: 1,
     textAlign: 'center',

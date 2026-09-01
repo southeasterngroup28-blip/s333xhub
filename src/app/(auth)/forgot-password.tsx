@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/components/brand-mark';
 import { supabase } from '@/lib/supabase';
+import { DISPLAY_FONT } from '@/constants/type';
 
 /** Where the emailed reset link sends people to choose a new password. */
 const RESET_PAGE_URL = 'https://southeasterngroup28-blip.github.io/s333xgod/reset-password.html';
@@ -103,8 +104,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', padding: 24 },
   title: {
     color: '#f4f5f6',
-    fontSize: 38,
-    fontFamily: 'SixCaps_400Regular',
+    fontSize: 36,
+    fontFamily: DISPLAY_FONT,
     letterSpacing: 4,
     textAlign: 'center',
     marginBottom: 4,

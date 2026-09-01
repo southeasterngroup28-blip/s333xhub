@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/components/brand-mark';
 import { supabase } from '@/lib/supabase';
+import { DISPLAY_FONT } from '@/constants/type';
 
 export default function SignUpScreen() {
   const [displayName, setDisplayName] = useState('');
@@ -148,8 +149,8 @@ const styles = StyleSheet.create({
   container: { flexGrow: 1, justifyContent: 'center', padding: 24 },
   title: {
     color: '#fff',
-    fontSize: 42,
-    fontFamily: 'SixCaps_400Regular',
+    fontSize: 30,
+    fontFamily: DISPLAY_FONT,
     letterSpacing: 1,
     textAlign: 'center',
     marginBottom: 4,

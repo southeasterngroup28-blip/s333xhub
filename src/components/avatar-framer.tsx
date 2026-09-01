@@ -1,5 +1,7 @@
 import { Image } from 'expo-image';
 import { useRef, useState } from 'react';
+
+import { DISPLAY_FONT } from '@/constants/type';
 import {
   Modal,
   PanResponder,
@@ -197,7 +199,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  title: { color: '#fff', fontSize: 21, fontFamily: 'SixCaps_400Regular', letterSpacing: 3 },
+  title: { color: '#fff', fontSize: 15, fontFamily: DISPLAY_FONT, letterSpacing: 2 },
   cancel: { color: '#8f99a3', fontSize: 15 },
   save: { color: '#fff', fontSize: 15, fontWeight: '700' },
   body: { flex: 1, justifyContent: 'center', paddingHorizontal: 14 },

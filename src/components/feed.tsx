@@ -29,6 +29,7 @@ import {
 } from '@/lib/social';
 import { useAuth } from '@/providers/auth-provider';
 import { usePlayer } from '@/providers/player-provider';
+import { DISPLAY_FONT } from '@/constants/type';
 
 export function Feed() {
   const { profile } = useAuth();
@@ -226,9 +227,9 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#f4f5f6',
-    fontSize: 30,
-    fontFamily: 'SixCaps_400Regular',
-    letterSpacing: 4,
+    fontSize: 22,
+    fontFamily: DISPLAY_FONT,
+    letterSpacing: 2,
   },
   topActions: {
     position: 'absolute',

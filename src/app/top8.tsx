@@ -12,6 +12,7 @@ import {
   type TopFan,
 } from '@/lib/social';
 import { useAuth } from '@/providers/auth-provider';
+import { DISPLAY_FONT } from '@/constants/type';
 
 export default function Top8ManagerScreen() {
   const { profile } = useAuth();
@@ -177,7 +178,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     marginBottom: 8,
   },
-  slotNumber: { color: '#c3cdd6', fontFamily: 'SixCaps_400Regular', fontSize: 21, width: 18 },
+  slotNumber: { color: '#c3cdd6', fontFamily: DISPLAY_FONT, fontSize: 15, width: 18 },
   slotName: { color: '#fff', fontSize: 14.5, fontWeight: '600', flex: 1 },
   assign: { flex: 1 },
   assignText: { color: '#8f99a3', fontSize: 13.5 },

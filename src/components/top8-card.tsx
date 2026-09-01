@@ -6,6 +6,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useProfileCard } from '@/components/profile-card';
 import { avatarUrl } from '@/lib/avatars';
 import type { TopFan } from '@/lib/social';
+import { DISPLAY_FONT } from '@/constants/type';
 
 type Props = {
   fans: TopFan[];
@@ -83,7 +84,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   head: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
-  title: { color: '#f4f5f6', fontFamily: 'SixCaps_400Regular', fontSize: 21, letterSpacing: 3 },
+  title: { color: '#f4f5f6', fontFamily: DISPLAY_FONT, fontSize: 15, letterSpacing: 2 },
   sub: { color: '#6d7076', fontSize: 11 },
   edit: { marginLeft: 'auto' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 12 },

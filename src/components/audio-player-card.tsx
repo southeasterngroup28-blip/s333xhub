@@ -14,6 +14,7 @@ import Animated, {
 
 import { pressFeedback } from '@/lib/haptics';
 import { usePlayer } from '@/providers/player-provider';
+import { DISPLAY_FONT } from '@/constants/type';
 
 type Props = {
   postId: string;
@@ -248,8 +249,8 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   trackTitle: { color: '#fff', fontSize: 15, fontWeight: '700', flexShrink: 1 },
   trackTitleBig: {
-    fontSize: 25,
-    fontFamily: 'SixCaps_400Regular',
+    fontSize: 18,
+    fontFamily: DISPLAY_FONT,
     fontWeight: 'normal',
     letterSpacing: 1,
     textShadowColor: 'rgba(0,0,0,0.6)',
