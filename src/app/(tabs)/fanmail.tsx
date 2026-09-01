@@ -9,10 +9,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 
 import { AppBackground } from '@/components/app-background';
+import { EdgeGlass, FadeMask } from '@/components/edge-fade';
 import {
   PickAudioButton,
   PickPhotosButton,
@@ -47,6 +48,7 @@ const KIND_ICON: Record<FanMailKind, keyof typeof Ionicons.glyphMap> = {
 export default function FanMailScreen() {
   const { profile } = useAuth();
   const isArtist = profile?.role === 'artist';
+  const insets = useSafeAreaInsets();
 
   const [items, setItems] = useState<FanMailItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,15 +107,9 @@ export default function FanMailScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <AppBackground />
-      <View style={styles.topBar}>
-        <Text style={styles.title}>FAN MAIL</Text>
-      </View>
-
-      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
-      {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {isArtist ? (
-        <View style={styles.list}>
+        <View style={[styles.list, styles.loadingPad]}>
           <View style={styles.card}>
             <View style={styles.row}>
               <View style={styles.kindIcon}>
@@ -130,7 +126,8 @@ export default function FanMailScreen() {
           </View>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.list}>
+        <FadeMask>
+        <ScrollView contentContainerStyle={[styles.list, styles.loadingPad]}>
           <View style={styles.card}>
             <Text style={styles.pitch}>
               Send the artist your pictures, videos, beats, or music — it goes straight to
@@ -243,20 +240,59 @@ export default function FanMailScreen() {
             </>
           ) : null}
         </ScrollView>
+        </FadeMask>
       )}
+
+      <EdgeGlass />
+      <View style={[styles.topBar, { top: insets.top }]} pointerEvents="box-none">
+        <Text style={styles.title}>FAN MAIL</Text>
+      </View>
+      {notice ? (
+        <Text style={[styles.notice, { top: insets.top + 48 }]}>{notice}</Text>
+      ) : null}
+      {error ? (
+        <Text style={[styles.error, { top: insets.top + 48 }]}>{error}</Text>
+      ) : null}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
-  topBar: { paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center' },
+  topBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
   title: { color: '#f4f5f6', fontSize: 22, fontFamily: DISPLAY_FONT, letterSpacing: 2 },
-  notice: { color: '#4fc07a', paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 },
-  error: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 },
+  notice: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    textAlign: 'center',
+    color: '#4fc07a',
+    paddingHorizontal: 16,
+    fontSize: 13,
+  },
+  error: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    textAlign: 'center',
+    color: '#f87171',
+    paddingHorizontal: 16,
+    fontSize: 13,
+  },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
   muted: { color: '#55585f' },
   list: { padding: 14, paddingBottom: 150 },
+  loadingPad: { paddingTop: 52 },
   card: {
     backgroundColor: '#131519',
     borderRadius: 16,

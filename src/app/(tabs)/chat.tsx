@@ -2,9 +2,10 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBackground } from '@/components/app-background';
+import { EdgeGlass, FadeMask } from '@/components/edge-fade';
 import { ChatRowSkeleton } from '@/components/skeleton';
 import { EmptyState } from '@/components/empty-state';
 import { fetchChatList, getOrCreateDm, setLeft, type ChatListItem } from '@/lib/chat';
@@ -14,6 +15,7 @@ import { DISPLAY_FONT } from '@/constants/type';
 export default function ChatListScreen() {
   const { session, profile } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [items, setItems] = useState<ChatListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -69,18 +71,14 @@ export default function ChatListScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <AppBackground />
-      <View style={styles.topBar}>
-        <Text style={styles.title}>Chat</Text>
-      </View>
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {loading ? (
-        <View style={styles.list}>
+        <View style={[styles.list, styles.loadingPad]}>
           <ChatRowSkeleton />
           <ChatRowSkeleton />
         </View>
       ) : (
+        <FadeMask>
         <FlatList
           data={items}
           keyExtractor={(item) => item.channelId}
@@ -129,19 +127,46 @@ export default function ChatListScreen() {
           }
           contentContainerStyle={styles.list}
         />
+        </FadeMask>
       )}
+
+      <EdgeGlass />
+      <View style={[styles.topBar, { top: insets.top }]} pointerEvents="box-none">
+        <Text style={styles.title}>Chat</Text>
+      </View>
+      {error ? (
+        <Text style={[styles.error, { top: insets.top + 48 }]}>{error}</Text>
+      ) : null}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
-  topBar: { paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center' },
+  topBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
   title: { color: '#f4f5f6', fontSize: 22, fontFamily: DISPLAY_FONT, letterSpacing: 2 },
-  list: { padding: 14, paddingBottom: 150, flexGrow: 1 },
+  list: { padding: 14, paddingTop: 52, paddingBottom: 150, flexGrow: 1 },
+  loadingPad: { paddingTop: 52 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
   empty: { color: '#555' },
-  error: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 8 },
+  error: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    textAlign: 'center',
+    color: '#f87171',
+    paddingHorizontal: 16,
+    fontSize: 13,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
