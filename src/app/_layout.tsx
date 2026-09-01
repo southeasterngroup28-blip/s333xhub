@@ -1,4 +1,5 @@
 import { useFonts } from 'expo-font';
+import { Anton_400Regular } from '@expo-google-fonts/anton';
 import { Butcherman_400Regular } from '@expo-google-fonts/butcherman';
 import { SixCaps_400Regular } from '@expo-google-fonts/six-caps';
 import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
@@ -14,7 +15,11 @@ SplashScreen.preventAutoHideAsync();
 
 function RootNavigator() {
   const { session, isLoading } = useAuth();
-  const [fontsLoaded] = useFonts({ SixCaps_400Regular, Butcherman_400Regular });
+  const [fontsLoaded] = useFonts({
+    Anton_400Regular,
+    SixCaps_400Regular,
+    Butcherman_400Regular,
+  });
 
   const ready = !isLoading && fontsLoaded;
 

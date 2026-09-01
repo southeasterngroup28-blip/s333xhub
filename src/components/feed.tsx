@@ -1,4 +1,6 @@
+import MaskedView from '@react-native-masked-view/masked-view';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import {
@@ -164,10 +166,20 @@ export function Feed() {
           <PostSkeleton />
         </View>
       ) : (
-        <FlatList
-          data={posts}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
+        // Posts melt away as they scroll under the header instead of
+        // hard-clipping — the mask fades the list's top ~70px.
+        <MaskedView
+          style={styles.maskWrap}
+          maskElement={
+            <View style={styles.maskFill}>
+              <LinearGradient colors={['transparent', 'black']} style={styles.maskFade} />
+              <View style={styles.maskSolid} />
+            </View>
+          }>
+          <FlatList
+            data={posts}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
             <PostCard
               post={item}
               mediaUrls={mediaUrls}
@@ -200,7 +212,8 @@ export function Feed() {
               sub="When the artist posts, it lands here first."
             />
           }
-        />
+          />
+        </MaskedView>
       )}
 
       {profile?.role === 'artist' ? (
@@ -218,6 +231,10 @@ export function Feed() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
+  maskWrap: { flex: 1 },
+  maskFill: { flex: 1, backgroundColor: 'transparent' },
+  maskFade: { height: 70 },
+  maskSolid: { flex: 1, backgroundColor: 'black' },
   topBar: {
     flexDirection: 'row',
     justifyContent: 'center',
