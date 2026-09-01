@@ -1,5 +1,6 @@
 import MaskedView from '@react-native-masked-view/masked-view';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
@@ -240,6 +241,33 @@ export function Feed() {
         </MaskedView>
       )}
 
+      {/* Progressive blur: a gradient-masked frost so content softens as it
+          nears the edges — strongest at the very edge, gone by mid-band. */}
+      <MaskedView
+        pointerEvents="none"
+        style={[styles.topBlur, { height: insets.top + 104 }]}
+        maskElement={
+          <LinearGradient
+            colors={EASED_MASK_REVERSED}
+            locations={EASED_STOPS}
+            style={styles.blurMaskFill}
+          />
+        }>
+        <BlurView intensity={38} tint="dark" style={styles.blurMaskFill} />
+      </MaskedView>
+      <MaskedView
+        pointerEvents="none"
+        style={[styles.bottomBlur, { height: insets.bottom + 112 }]}
+        maskElement={
+          <LinearGradient
+            colors={EASED_MASK}
+            locations={EASED_STOPS}
+            style={styles.blurMaskFill}
+          />
+        }>
+        <BlurView intensity={30} tint="dark" style={styles.blurMaskFill} />
+      </MaskedView>
+
       {/* Anchoring scrims: posts dissolve into deliberate darkness at both
           edges, never into the raw background photo. */}
       <LinearGradient
@@ -298,6 +326,9 @@ const styles = StyleSheet.create({
   loadingPad: { paddingTop: 52 },
   topScrim: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
   bottomScrim: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 10 },
+  topBlur: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 9 },
+  bottomBlur: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 9 },
+  blurMaskFill: { flex: 1 },
   topBar: {
     position: 'absolute',
     left: 0,
