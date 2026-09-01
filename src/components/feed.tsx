@@ -158,24 +158,9 @@ export function Feed() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <AppBackground />
-      <View style={styles.topBar}>
-        <Text style={styles.title}>S333XHUB</Text>
-        <View style={styles.topActions}>
-          {isArtist ? (
-            <Pressable onPress={() => router.push('/reports')} hitSlop={12}>
-              <Ionicons name="flag-outline" size={21} color="#666" />
-            </Pressable>
-          ) : null}
-          <Pressable onPress={() => router.push('/settings')} hitSlop={12}>
-            <Ionicons name="settings-outline" size={21} color="#666" />
-          </Pressable>
-        </View>
-      </View>
-
-      {feedError ? <Text style={styles.feedError}>{feedError}</Text> : null}
 
       {loading ? (
-        <View>
+        <View style={styles.loadingPad}>
           <PostSkeleton />
           <PostSkeleton />
           <PostSkeleton />
@@ -241,6 +226,26 @@ export function Feed() {
         </MaskedView>
       )}
 
+      {/* The header floats OVER the list; posts slide beneath it and
+          dissolve exactly in its zone — never in open space. */}
+      <View style={[styles.topBar, { top: insets.top }]} pointerEvents="box-none">
+        <Text style={styles.title}>S333XHUB</Text>
+        <View style={styles.topActions}>
+          {isArtist ? (
+            <Pressable onPress={() => router.push('/reports')} hitSlop={12}>
+              <Ionicons name="flag-outline" size={21} color="#8f99a3" />
+            </Pressable>
+          ) : null}
+          <Pressable onPress={() => router.push('/settings')} hitSlop={12}>
+            <Ionicons name="settings-outline" size={21} color="#8f99a3" />
+          </Pressable>
+        </View>
+      </View>
+
+      {feedError ? (
+        <Text style={[styles.feedError, { top: insets.top + 48 }]}>{feedError}</Text>
+      ) : null}
+
       {profile?.role === 'artist' ? (
         <Pressable
           // Sit above the floating dock — and above the mini player too
@@ -258,10 +263,15 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
   maskWrap: { flex: 1 },
   maskFill: { flex: 1, backgroundColor: 'transparent' },
-  maskFadeTop: { height: 110 },
+  maskFadeTop: { height: 68 },
   maskFadeBottom: { height: 90 },
   maskSolid: { flex: 1, backgroundColor: 'black' },
+  loadingPad: { paddingTop: 52 },
   topBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
@@ -281,8 +291,17 @@ const styles = StyleSheet.create({
     gap: 18,
     alignItems: 'center',
   },
-  feedError: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 8, fontSize: 13 },
-  list: { paddingBottom: 170, flexGrow: 1 },
+  feedError: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    textAlign: 'center',
+    color: '#f87171',
+    paddingHorizontal: 16,
+    fontSize: 13,
+  },
+  list: { paddingTop: 52, paddingBottom: 170, flexGrow: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
   empty: { color: '#555' },
   fab: {
