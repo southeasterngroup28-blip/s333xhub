@@ -43,6 +43,8 @@ function RootNavigator() {
         <Stack.Screen name="reports" />
         <Stack.Screen name="post/[id]" />
         <Stack.Screen name="top8" />
+        <Stack.Screen name="drop/[id]" />
+        <Stack.Screen name="drop-new" options={{ presentation: 'modal' }} />
       </Stack.Protected>
       <Stack.Protected guard={!session}>
         <Stack.Screen name="(auth)" />

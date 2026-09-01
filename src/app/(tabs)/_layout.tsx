@@ -67,11 +67,32 @@ function FloatingTabBar({ state, navigation }: TabBarProps) {
             );
           })}
       </View>
-      {/* S333XSHOP teaser: present, dimmed, going nowhere yet. */}
-      <View style={styles.circle}>
-        <Ionicons name="bag-outline" size={16} color="#4a4f57" />
-        <Text style={styles.circleLabel}>S333XSHOP</Text>
-      </View>
+      {/* S333XSHOP — awake. The drops live behind this bubble now. */}
+      {(() => {
+        const shopIndex = state.routes.findIndex((r) => r.name === 'shop');
+        const shopRoute = state.routes[shopIndex];
+        const focused = state.index === shopIndex;
+        return (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={focused ? { selected: true } : {}}
+            style={[styles.circle, focused && styles.circleOn]}
+            onPress={() => {
+              tapFeedback();
+              const event = navigation.emit({
+                type: 'tabPress',
+                target: shopRoute.key,
+                canPreventDefault: true,
+              });
+              if (!focused && !event.defaultPrevented) {
+                navigation.navigate('shop');
+              }
+            }}>
+            <Ionicons name={focused ? 'bag' : 'bag-outline'} size={16} color={focused ? '#ffffff' : '#8d97a0'} />
+            <Text style={[styles.circleLabel, focused && styles.circleLabelOn]}>S333XSHOP</Text>
+          </Pressable>
+        );
+      })()}
     </View>
   );
 }
@@ -147,10 +168,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 14,
   },
+  circleOn: { backgroundColor: 'rgba(255,255,255,0.11)' },
   circleLabel: {
-    color: '#4a4f57',
+    color: '#8d97a0',
     fontSize: 6.5,
     fontWeight: '700',
     letterSpacing: 0.8,
   },
+  circleLabelOn: { color: '#ffffff' },
 });
