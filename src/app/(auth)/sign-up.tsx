@@ -148,8 +148,8 @@ const styles = StyleSheet.create({
   container: { flexGrow: 1, justifyContent: 'center', padding: 24 },
   title: {
     color: '#fff',
-    fontSize: 30,
-    fontFamily: 'Anton_400Regular',
+    fontSize: 42,
+    fontFamily: 'SixCaps_400Regular',
     letterSpacing: 1,
     textAlign: 'center',
     marginBottom: 4,

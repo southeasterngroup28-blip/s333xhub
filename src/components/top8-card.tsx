@@ -83,7 +83,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   head: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
-  title: { color: '#f4f5f6', fontFamily: 'Anton_400Regular', fontSize: 15, letterSpacing: 2 },
+  title: { color: '#f4f5f6', fontFamily: 'SixCaps_400Regular', fontSize: 21, letterSpacing: 3 },
   sub: { color: '#6d7076', fontSize: 11 },
   edit: { marginLeft: 'auto' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 12 },

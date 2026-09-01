@@ -35,8 +35,8 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#e8e9eb',
-    fontSize: 15,
-    fontFamily: 'Anton_400Regular',
+    fontSize: 21,
+    fontFamily: 'SixCaps_400Regular',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
   },

@@ -226,9 +226,9 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#f4f5f6',
-    fontSize: 22,
-    fontFamily: 'Anton_400Regular',
-    letterSpacing: 3,
+    fontSize: 30,
+    fontFamily: 'SixCaps_400Regular',
+    letterSpacing: 4,
   },
   topActions: {
     position: 'absolute',

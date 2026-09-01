@@ -100,8 +100,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', padding: 24 },
   title: {
     color: '#f4f5f6',
-    fontSize: 38,
-    fontFamily: 'Anton_400Regular',
+    fontSize: 52,
+    fontFamily: 'SixCaps_400Regular',
     letterSpacing: 4,
     textAlign: 'center',
     marginBottom: 4,

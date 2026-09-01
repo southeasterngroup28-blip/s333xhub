@@ -248,8 +248,8 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   trackTitle: { color: '#fff', fontSize: 15, fontWeight: '700', flexShrink: 1 },
   trackTitleBig: {
-    fontSize: 18,
-    fontFamily: 'Anton_400Regular',
+    fontSize: 25,
+    fontFamily: 'SixCaps_400Regular',
     fontWeight: 'normal',
     letterSpacing: 1,
     textShadowColor: 'rgba(0,0,0,0.6)',

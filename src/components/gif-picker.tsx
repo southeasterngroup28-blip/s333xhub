@@ -94,7 +94,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 12,
   },
-  title: { color: '#fff', fontSize: 17, fontFamily: 'Anton_400Regular', letterSpacing: 2 },
+  title: { color: '#fff', fontSize: 24, fontFamily: 'SixCaps_400Regular', letterSpacing: 3 },
   close: { position: 'absolute', right: 16 },
   search: {
     backgroundColor: '#131519',

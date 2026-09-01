@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
   title: {
     color: '#f4f5f6',
     fontSize: 38,
-    fontFamily: 'Anton_400Regular',
+    fontFamily: 'SixCaps_400Regular',
     letterSpacing: 4,
     textAlign: 'center',
     marginBottom: 4,

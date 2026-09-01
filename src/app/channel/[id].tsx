@@ -629,8 +629,8 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: '#fff',
-    fontSize: 17,
-    fontFamily: 'Anton_400Regular',
+    fontSize: 24,
+    fontFamily: 'SixCaps_400Regular',
     letterSpacing: 1.5,
     flex: 1,
     textAlign: 'center',

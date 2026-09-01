@@ -136,7 +136,7 @@ export default function ChatListScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
   topBar: { paddingHorizontal: 16, paddingVertical: 12, alignItems: 'center' },
-  title: { color: '#f4f5f6', fontSize: 22, fontFamily: 'Anton_400Regular', letterSpacing: 3 },
+  title: { color: '#f4f5f6', fontSize: 30, fontFamily: 'SixCaps_400Regular', letterSpacing: 4 },
   list: { padding: 14, paddingBottom: 150, flexGrow: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
   empty: { color: '#555' },
