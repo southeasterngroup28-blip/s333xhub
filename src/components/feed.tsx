@@ -48,6 +48,20 @@ const EASED_MASK = [
 ] as const;
 const EASED_MASK_REVERSED = [...EASED_MASK].reverse() as unknown as typeof EASED_MASK;
 
+// Dark anchors behind the floating header and above the dock, eased with
+// the same curve so scrim and dissolve move as one.
+const TOP_SCRIM = [
+  'rgba(5,6,8,0.92)',
+  'rgba(5,6,8,0.86)',
+  'rgba(5,6,8,0.72)',
+  'rgba(5,6,8,0.52)',
+  'rgba(5,6,8,0.32)',
+  'rgba(5,6,8,0.15)',
+  'rgba(5,6,8,0.03)',
+  'rgba(5,6,8,0)',
+] as const;
+const BOTTOM_SCRIM = [...TOP_SCRIM].reverse() as unknown as typeof TOP_SCRIM;
+
 export function Feed() {
   const { profile } = useAuth();
   const { current: currentTrack } = usePlayer();
@@ -226,6 +240,21 @@ export function Feed() {
         </MaskedView>
       )}
 
+      {/* Anchoring scrims: posts dissolve into deliberate darkness at both
+          edges, never into the raw background photo. */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={TOP_SCRIM}
+        locations={EASED_STOPS}
+        style={[styles.topScrim, { height: insets.top + 118 }]}
+      />
+      <LinearGradient
+        pointerEvents="none"
+        colors={BOTTOM_SCRIM}
+        locations={EASED_STOPS}
+        style={[styles.bottomScrim, { height: insets.bottom + 128 }]}
+      />
+
       {/* The header floats OVER the list; posts slide beneath it and
           dissolve exactly in its zone — never in open space. */}
       <View style={[styles.topBar, { top: insets.top }]} pointerEvents="box-none">
@@ -267,6 +296,8 @@ const styles = StyleSheet.create({
   maskFadeBottom: { height: 90 },
   maskSolid: { flex: 1, backgroundColor: 'black' },
   loadingPad: { paddingTop: 52 },
+  topScrim: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
+  bottomScrim: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 10 },
   topBar: {
     position: 'absolute',
     left: 0,
