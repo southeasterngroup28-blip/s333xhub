@@ -12,9 +12,11 @@ import { EmptyState } from '@/components/empty-state';
 import { ChatRowSkeleton } from '@/components/skeleton';
 import { DISPLAY_FONT } from '@/constants/type';
 import {
+  activeClaims,
   dropImageUrl,
   dropStatus,
   fetchDrops,
+  priceLabel,
   remaining,
   type Drop,
 } from '@/lib/shop';
@@ -135,21 +137,21 @@ export default function ShopScreen() {
                         <Text style={styles.leftText}>
                           {left} OF {drop.run_size} LEFT
                         </Text>
-                        <Text style={styles.price}>${(drop.price_cents / 100).toFixed(0)}</Text>
+                        <Text style={styles.price}>{priceLabel(drop.price_cents)}</Text>
                       </>
                     ) : (
                       <>
                         <Text style={styles.footLabel}>
                           {drop.run_size} MADE · NEVER AGAIN
                         </Text>
-                        <Text style={styles.price}>${(drop.price_cents / 100).toFixed(0)}</Text>
+                        <Text style={styles.price}>{priceLabel(drop.price_cents)}</Text>
                       </>
                     )}
                   </View>
                   {status === 'live' ? (
                     <View style={styles.meter}>
                       <View
-                        style={[styles.meterFill, { width: `${(drop.claims.length / drop.run_size) * 100}%` }]}
+                        style={[styles.meterFill, { width: `${(activeClaims(drop).length / drop.run_size) * 100}%` }]}
                       />
                     </View>
                   ) : null}

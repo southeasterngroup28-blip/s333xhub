@@ -87,3 +87,38 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
     body: `If this policy changes in a meaningful way, we'll announce it in the app. Questions or requests about your data: ${SUPPORT_EMAIL}.`,
   },
 ];
+
+export const SHOP_TERMS_SECTIONS: LegalSection[] = [
+  {
+    heading: 'What you are buying',
+    body: `S333XSHOP sells physical, hand-finished collectible pieces made in-house by the Artist in numbered limited runs. Each piece is one of a fixed run (for example, #7 of 50) and runs are never reproduced. Every piece is made to order or in small batches — minor variations are part of what makes each one unique, not defects.`,
+  },
+  {
+    heading: 'Prices and payment',
+    body: `Prices are shown in US dollars and include standard shipping within the United States. Payment is processed securely by Stripe — we never see or store your card details. Applicable sales tax is calculated and added at checkout.`,
+  },
+  {
+    heading: 'Limits and the registry',
+    body: `Drops are limited to one piece per fan. Your edition number and display name appear in the drop's public registry inside the app — that visibility is part of owning a numbered piece.`,
+  },
+  {
+    heading: 'Shipping',
+    body: `Pieces ship from the Artist within 5–7 business days of your order (pieces still in production ship when the run is finished — the drop page says which). You'll get an in-app notification with a tracking number the moment yours ships. We currently ship within the United States only. Make sure your shipping address is correct at checkout; packages returned due to an incorrect address can be reshipped at your cost.`,
+  },
+  {
+    heading: 'Damaged, lost, or wrong items',
+    body: `If your piece arrives damaged, contact us at ${SUPPORT_EMAIL} within 7 days of delivery with photos of the piece and packaging — we'll replace it if the run allows, or refund you in full. If tracking shows your package lost in transit, we'll work with the carrier and make it right. If we somehow ship you the wrong number, we'll fix it at no cost to you.`,
+  },
+  {
+    heading: 'Returns and refunds',
+    body: `Because every piece is a numbered limited collectible, all sales are final — there are no returns or exchanges for change of mind. This does not affect the damaged/lost protections above, and nothing here limits your rights under applicable consumer law. Approved refunds go back to your original payment method; the refunded number returns to the run.`,
+  },
+  {
+    heading: 'Order issues and contact',
+    body: `For anything about an order — status, address changes before shipping, damage claims — email ${SUPPORT_EMAIL} with your order's drop number and edition number. We answer within 2 business days.`,
+  },
+  {
+    heading: 'Governing law',
+    body: `These shop terms are part of the ${APP_NAME} Terms of Service and are governed by the laws of ${GOVERNING_STATE}, USA.`,
+  },
+];

@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MiniPlayer } from '@/components/mini-player';
+import { SHOP_TAB_LIVE } from '@/lib/shop';
 import { tapFeedback } from '@/lib/haptics';
 import { registerPushToken } from '@/lib/notifications';
 
@@ -67,8 +68,13 @@ function FloatingTabBar({ state, navigation }: TabBarProps) {
             );
           })}
       </View>
-      {/* S333XSHOP — awake. The drops live behind this bubble now. */}
-      {(() => {
+      {/* S333XSHOP — live bubble, or the dimmed teaser on review day. */}
+      {!SHOP_TAB_LIVE ? (
+        <View style={styles.circle}>
+          <Ionicons name="bag-outline" size={16} color="#4a4f57" />
+          <Text style={[styles.circleLabel, { color: '#4a4f57' }]}>S333XSHOP</Text>
+        </View>
+      ) : (() => {
         const shopIndex = state.routes.findIndex((r) => r.name === 'shop');
         const shopRoute = state.routes[shopIndex];
         const focused = state.index === shopIndex;

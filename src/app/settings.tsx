@@ -18,6 +18,7 @@ import { AvatarFramer } from '@/components/avatar-framer';
 import { PickPhotosButton, type PickedImageDraft } from '@/components/media-pickers';
 import { invalidateBackgroundCache } from '@/components/app-background';
 import { removeMyAvatar, setMyAvatar } from '@/lib/avatars';
+import { fetchMyPieces, type MyPiece } from '@/lib/shop';
 import { clearMyBackground, setDefaultBackground, setMyBackground } from '@/lib/backgrounds';
 import { SUPPORT_EMAIL } from '@/lib/legal-content';
 import { deleteMyAccount, fetchBlockedUsers, unblockUser } from '@/lib/moderation';
@@ -50,6 +51,7 @@ export default function SettingsScreen() {
   const [avatarBusy, setAvatarBusy] = useState(false);
   /** Freshly picked photo awaiting circle-framing in the editor. */
   const [avatarDraft, setAvatarDraft] = useState<PickedImageDraft | null>(null);
+  const [pieces, setPieces] = useState<MyPiece[]>([]);
 
   // Local override so the preview updates instantly after a change.
   const shownAvatar = avatarPath === undefined ? profile?.avatar_path : avatarPath;
@@ -68,6 +70,9 @@ export default function SettingsScreen() {
       .catch(() => {});
     fetchNotificationPrefs()
       .then(setPrefs)
+      .catch(() => {});
+    fetchMyPieces()
+      .then(setPieces)
       .catch(() => {});
   }, []);
 
@@ -269,6 +274,41 @@ export default function SettingsScreen() {
           )}
         </View>
 
+        {pieces.length > 0 ? (
+          <>
+            <Text style={styles.sectionLabel}>MY PIECES</Text>
+            <View style={styles.card}>
+              {pieces.map((piece) => (
+                <Pressable
+                  key={piece.id}
+                  style={styles.pieceRow}
+                  onPress={() => piece.drop && router.push(`/drop/${piece.drop.id}` as never)}>
+                  <Text style={styles.pieceNum}>#{String(piece.edition_number).padStart(2, '0')}</Text>
+                  <View style={styles.pieceMeta}>
+                    <Text style={styles.pieceTitle} numberOfLines={1}>
+                      {piece.drop?.title ?? 'Drop'}
+                    </Text>
+                    <Text style={styles.pieceSub}>
+                      DROP {String(piece.drop?.drop_number ?? 0).padStart(3, '0')}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[
+                      styles.pieceStatus,
+                      piece.status === 'shipped' && styles.pieceStatusShipped,
+                    ]}>
+                    {piece.status === 'shipped'
+                      ? 'SHIPPED'
+                      : piece.status === 'in_works'
+                        ? 'IN THE WORKS'
+                        : 'CLAIMED'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
+        ) : null}
+
         <Text style={styles.sectionLabel}>ABOUT</Text>
         <View style={styles.card}>
           <Pressable style={styles.aboutRow} onPress={() => router.push('/legal/terms')}>
@@ -277,6 +317,12 @@ export default function SettingsScreen() {
           </Pressable>
           <Pressable style={styles.aboutRow} onPress={() => router.push('/legal/privacy')}>
             <Text style={styles.aboutLink}>Privacy Policy</Text>
+            <Ionicons name="chevron-forward" size={16} color="#444" />
+          </Pressable>
+          <Pressable
+            style={styles.aboutRow}
+            onPress={() => router.push('/legal/shop-terms' as never)}>
+            <Text style={styles.aboutLink}>Shop Terms & Shipping</Text>
             <Ionicons name="chevron-forward" size={16} color="#444" />
           </Pressable>
           <Text style={styles.supportNote}>Support: {SUPPORT_EMAIL}</Text>
@@ -375,6 +421,20 @@ const styles = StyleSheet.create({
   accountMeta: { flex: 1 },
   avatarActions: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 14 },
   avatarRemove: { color: '#f87171', fontSize: 13, fontWeight: '600' },
+  pieceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 9,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#1c2025',
+  },
+  pieceNum: { color: '#c3cdd6', fontWeight: '800', fontSize: 14, width: 38 },
+  pieceMeta: { flex: 1 },
+  pieceTitle: { color: '#fff', fontSize: 13.5, fontWeight: '600' },
+  pieceSub: { color: '#55585f', fontSize: 10, letterSpacing: 1, marginTop: 1 },
+  pieceStatus: { color: '#8f99a3', fontSize: 9.5, fontWeight: '700', letterSpacing: 1 },
+  pieceStatusShipped: { color: '#7ed354' },
   name: { color: '#fff', fontSize: 17, fontWeight: '700' },
   email: { color: '#888', fontSize: 14, marginTop: 2 },
   artistTag: { color: '#c3cdd6', fontSize: 12, fontWeight: '700', marginTop: 6 },

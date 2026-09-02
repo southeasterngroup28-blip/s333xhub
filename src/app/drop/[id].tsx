@@ -20,12 +20,15 @@ import { DISPLAY_FONT } from '@/constants/type';
 import { pressFeedback, successFeedback } from '@/lib/haptics';
 import {
   SHOP_PAYMENTS_LIVE,
+  activeClaims,
   deleteDrop,
   dropImageUrl,
   dropStatus,
   fetchDrop,
   fetchFulfillment,
   markShipped,
+  ownerClaims,
+  priceLabel,
   publishDrop,
   remaining,
   type Claim,
@@ -149,10 +152,12 @@ export default function DropScreen() {
   const status = dropStatus(drop);
   const image = dropImageUrl(drop.image_path);
   const left = remaining(drop);
-  const taken = new Set(drop.claims.map((c) => c.edition_number));
-  const mine = drop.claims.find((c) => c.user_id === session?.user.id) ?? null;
-  const gross = drop.claims.length * drop.price_cents;
-  const toShip = drop.claims.filter((c) => c.status !== 'shipped').length;
+  const active = activeClaims(drop);
+  const owners = ownerClaims(drop);
+  const taken = new Set(active.map((c) => c.edition_number));
+  const mine = active.find((c) => c.user_id === session?.user.id) ?? null;
+  const gross = owners.length * drop.price_cents;
+  const toShip = owners.filter((c) => c.status !== 'shipped').length;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -198,7 +203,7 @@ export default function DropScreen() {
         </Text>
 
         <View style={styles.priceRow}>
-          <Text style={styles.price}>${(drop.price_cents / 100).toFixed(0)}</Text>
+          <Text style={styles.price}>{priceLabel(drop.price_cents)}</Text>
           {status === 'live' ? (
             <Text style={styles.leftText}>{left} LEFT</Text>
           ) : status === 'upcoming' ? (
@@ -209,16 +214,20 @@ export default function DropScreen() {
         </View>
         {status === 'live' ? (
           <View style={styles.meter}>
-            <View style={[styles.meterFill, { width: `${(drop.claims.length / drop.run_size) * 100}%` }]} />
+            <View style={[styles.meterFill, { width: `${(active.length / drop.run_size) * 100}%` }]} />
           </View>
         ) : null}
 
         {/* ---------- fan side ---------- */}
         {mine ? (
           <View style={styles.mineCard}>
-            <Text style={styles.mineTitle}>#{mine.edition_number} IS YOURS</Text>
+            <Text style={styles.mineTitle}>
+              {mine.status === 'hold' ? `#${mine.edition_number} IS ON HOLD` : `#${mine.edition_number} IS YOURS`}
+            </Text>
             <Text style={styles.sub}>
-              {mine.status === 'shipped'
+              {mine.status === 'hold'
+                ? 'Reserved for you for a few minutes.'
+                : mine.status === 'shipped'
                 ? `Shipped${fulfillment[mine.id]?.tracking ? ` · tracking ${fulfillment[mine.id].tracking}` : ''} — it's on the way.`
                 : mine.status === 'in_works'
                   ? 'Being printed and hand-finished.'
@@ -250,20 +259,20 @@ export default function DropScreen() {
               disabled={pickedNumber == null}
               onPress={handleBuy}>
               <Text style={styles.buyText}>
-                {pickedNumber == null ? 'PICK A NUMBER' : `BUY #${pickedNumber} · $${(drop.price_cents / 100).toFixed(0)}`}
+                {pickedNumber == null ? 'PICK A NUMBER' : `BUY #${pickedNumber} · ${priceLabel(drop.price_cents)}`}
               </Text>
             </Pressable>
             <Text style={styles.subCenter}>
-              Secure checkout by Stripe · Limit 1 per fan{'\n'}Made in-house · ships in 5–7 days
+              Secure checkout by Stripe · Limit 1 per fan{'\n'}Price includes US shipping · made in-house · ships in 5–7 days
             </Text>
           </>
         ) : null}
 
         {/* ---------- the registry ---------- */}
-        {drop.claims.length > 0 ? (
+        {owners.length > 0 ? (
           <>
             <Text style={styles.sectionLabel}>THE REGISTRY</Text>
-            {drop.claims.map((claim) => (
+            {owners.map((claim) => (
               <View key={claim.id} style={styles.claimRow}>
                 <Text style={styles.claimNum}>#{String(claim.edition_number).padStart(2, '0')}</Text>
                 <Avatar
@@ -319,13 +328,20 @@ export default function DropScreen() {
         ) : null}
 
         {/* ---------- artist side ---------- */}
+        <Pressable
+          style={styles.termsRow}
+          onPress={() => router.push('/legal/shop-terms' as never)}>
+          <Text style={styles.termsText}>Shop terms, shipping and refunds</Text>
+          <Ionicons name="chevron-forward" size={13} color="#55585f" />
+        </Pressable>
+
         {isArtist ? (
           <>
             <Text style={styles.sectionLabel}>ARTIST</Text>
             <View style={styles.stats}>
               <View style={styles.stat}>
                 <Text style={styles.statBig}>
-                  {drop.claims.length}
+                  {owners.length}
                   <Text style={styles.statDim}>/{drop.run_size}</Text>
                 </Text>
                 <Text style={styles.statLabel}>SOLD</Text>
@@ -340,6 +356,14 @@ export default function DropScreen() {
               </View>
             </View>
 
+            {!drop.is_published ? (
+              <Pressable
+                style={styles.editRow}
+                onPress={() => router.push(`/drop-edit/${drop.id}` as never)}>
+                <Ionicons name="pencil" size={13} color="#8f99a3" />
+                <Text style={styles.editText}>Edit draft</Text>
+              </Pressable>
+            ) : null}
             {!drop.is_published ? (
               confirmPublish ? (
                 <View style={styles.confirmRow}>
@@ -582,4 +606,20 @@ const styles = StyleSheet.create({
   confirmNo: { color: '#8f99a3', fontSize: 13 },
   deleteRow: { alignItems: 'center', marginTop: 18 },
   deleteText: { color: '#f87171', fontSize: 13, fontWeight: '600' },
+  editRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 14,
+  },
+  editText: { color: '#8f99a3', fontSize: 13, fontWeight: '600' },
+  termsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: 24,
+  },
+  termsText: { color: '#55585f', fontSize: 12 },
 });

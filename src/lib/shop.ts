@@ -8,6 +8,18 @@ import { supabase } from '@/lib/supabase';
  */
 export const SHOP_PAYMENTS_LIVE = false;
 
+/**
+ * Submission-day switch: false turns the dock's shop bubble back into
+ * the dimmed "coming soon" teaser (App Review must never see a BUY
+ * button that can't complete — guideline 2.1).
+ */
+export const SHOP_TAB_LIVE = true;
+
+/** "$65" for whole-dollar prices, "$64.99" otherwise — never rounds. */
+export function priceLabel(cents: number): string {
+  return cents % 100 === 0 ? `$${cents / 100}` : `$${(cents / 100).toFixed(2)}`;
+}
+
 export type DropStatus = 'upcoming' | 'live' | 'sold_out';
 
 export type Claim = {
@@ -15,7 +27,8 @@ export type Claim = {
   drop_id: string;
   user_id: string;
   edition_number: number;
-  status: 'paid' | 'in_works' | 'shipped';
+  status: 'hold' | 'paid' | 'in_works' | 'shipped' | 'refunded';
+  expires_at: string | null;
   owner: { display_name: string; avatar_path: string | null; avatar_focus: number | null } | null;
 };
 
@@ -41,13 +54,30 @@ export function dropImageUrl(path: string | null): string | null {
   return supabase.storage.from('shop-media').getPublicUrl(path).data.publicUrl;
 }
 
+/** Claims that block a number: live holds + everything paid-and-beyond. */
+export function activeClaims(drop: Drop): Claim[] {
+  const now = Date.now();
+  return drop.claims.filter(
+    (c) =>
+      c.status !== 'refunded' &&
+      (c.status !== 'hold' || (c.expires_at != null && new Date(c.expires_at).getTime() > now))
+  );
+}
+
+/** Claims that are real ownership — what the registry and stats show. */
+export function ownerClaims(drop: Drop): Claim[] {
+  return drop.claims.filter(
+    (c) => c.status === 'paid' || c.status === 'in_works' || c.status === 'shipped'
+  );
+}
+
 export function dropStatus(drop: Drop): DropStatus {
   if (new Date(drop.drops_at).getTime() > Date.now()) return 'upcoming';
-  return drop.claims.length >= drop.run_size ? 'sold_out' : 'live';
+  return activeClaims(drop).length >= drop.run_size ? 'sold_out' : 'live';
 }
 
 export function remaining(drop: Drop): number {
-  return Math.max(0, drop.run_size - drop.claims.length);
+  return Math.max(0, drop.run_size - activeClaims(drop).length);
 }
 
 /** All drops (published for fans; drafts too for the artist), newest first. */
@@ -57,7 +87,7 @@ export async function fetchDrops(): Promise<Drop[]> {
     supabase
       .from('drop_claims')
       .select(
-        'id, drop_id, user_id, edition_number, status, owner:profiles!drop_claims_user_id_fkey(display_name, avatar_path, avatar_focus)'
+        'id, drop_id, user_id, edition_number, status, expires_at, owner:profiles!drop_claims_user_id_fkey(display_name, avatar_path, avatar_focus)'
       ),
   ]);
   if (error) throw error;
@@ -124,6 +154,44 @@ export async function createDrop(input: {
     .single();
   if (error) throw error;
   return data.id as string;
+}
+
+/** Artist: edit a DRAFT's basics (published drops stay immutable). */
+export async function updateDrop(
+  id: string,
+  patch: { title: string; priceCents: number; runSize: number; dropsAt: Date }
+): Promise<void> {
+  const { error } = await supabase
+    .from('drops')
+    .update({
+      title: patch.title,
+      price_cents: patch.priceCents,
+      run_size: patch.runSize,
+      drops_at: patch.dropsAt.toISOString(),
+    })
+    .eq('id', id)
+    .eq('is_published', false);
+  if (error) throw error;
+}
+
+export type MyPiece = {
+  id: string;
+  edition_number: number;
+  status: Claim['status'];
+  drop: { id: string; drop_number: number; title: string; image_path: string | null } | null;
+};
+
+/** Everything this fan owns, across every drop — for the My Pieces list. */
+export async function fetchMyPieces(): Promise<MyPiece[]> {
+  const userId = (await supabase.auth.getUser()).data.user!.id;
+  const { data, error } = await supabase
+    .from('drop_claims')
+    .select('id, edition_number, status, drop:drops(id, drop_number, title, image_path)')
+    .eq('user_id', userId)
+    .in('status', ['paid', 'in_works', 'shipped'])
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data as unknown as MyPiece[]) ?? [];
 }
 
 /** Artist: the go-live switch. Publishing fires the drop push to every fan. */

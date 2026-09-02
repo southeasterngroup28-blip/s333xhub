@@ -45,6 +45,7 @@ function RootNavigator() {
         <Stack.Screen name="top8" />
         <Stack.Screen name="drop/[id]" />
         <Stack.Screen name="drop-new" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="drop-edit/[id]" options={{ presentation: 'modal' }} />
       </Stack.Protected>
       <Stack.Protected guard={!session}>
         <Stack.Screen name="(auth)" />
@@ -52,6 +53,7 @@ function RootNavigator() {
       {/* Legal pages are readable signed-in or out (the signup checkbox links here). */}
       <Stack.Screen name="legal/terms" />
       <Stack.Screen name="legal/privacy" />
+      <Stack.Screen name="legal/shop-terms" />
     </Stack>
   );
 }
