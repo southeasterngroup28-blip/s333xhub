@@ -21,6 +21,7 @@ import {
 } from '@/components/media-pickers';
 import {
   fetchMyFanMail,
+  nextFanMailAt,
   submitFanMail,
   type FanMailItem,
   type FanMailKind,
@@ -55,6 +56,8 @@ export default function FanMailScreen() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const nextAt = nextFanMailAt(items);
 
   const load = useCallback(async () => {
     if (isArtist) {
@@ -124,9 +127,17 @@ export default function FanMailScreen() {
               Send the artist your pictures, videos, beats, or music — it goes straight to
               him, privately.
             </Text>
-            <Text style={styles.price}>Free · straight to his inbox</Text>
+            <Text style={styles.price}>Free · one per week · straight to his inbox</Text>
 
-            {draft ? (
+            {nextAt ? (
+              <View style={styles.cooldown}>
+                <Ionicons name="hourglass-outline" size={16} color="#8f99a3" />
+                <Text style={styles.cooldownText}>
+                  This week's submission is sent. Your next one unlocks{' '}
+                  {nextAt.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}.
+                </Text>
+              </View>
+            ) : draft ? (
               <View style={styles.draftRow}>
                 <Ionicons name={KIND_ICON[draft.kind]} size={18} color="#c3cdd6" />
                 <Text style={styles.draftName} numberOfLines={1}>
@@ -186,26 +197,30 @@ export default function FanMailScreen() {
               </View>
             )}
 
-            <TextInput
-              style={styles.noteInput}
-              placeholder="Say something about it… (optional)"
-              placeholderTextColor="#55585f"
-              value={note}
-              onChangeText={setNote}
-              maxLength={500}
-              multiline
-            />
+            {!nextAt ? (
+              <>
+                <TextInput
+                  style={styles.noteInput}
+                  placeholder="Say something about it… (optional)"
+                  placeholderTextColor="#55585f"
+                  value={note}
+                  onChangeText={setNote}
+                  maxLength={500}
+                  multiline
+                />
 
-            <Pressable
-              style={[styles.sendButton, (!draft || sending) && styles.sendDisabled]}
-              onPress={handleSubmit}
-              disabled={!draft || sending}>
-              {sending ? (
-                <ActivityIndicator color="#0b0c0e" />
-              ) : (
-                <Text style={styles.sendText}>Send to the artist</Text>
-              )}
-            </Pressable>
+                <Pressable
+                  style={[styles.sendButton, (!draft || sending) && styles.sendDisabled]}
+                  onPress={handleSubmit}
+                  disabled={!draft || sending}>
+                  {sending ? (
+                    <ActivityIndicator color="#0b0c0e" />
+                  ) : (
+                    <Text style={styles.sendText}>Send to the artist</Text>
+                  )}
+                </Pressable>
+              </>
+            ) : null}
           </View>
 
           {items.length > 0 ? (
@@ -294,6 +309,16 @@ const styles = StyleSheet.create({
   pitch: { color: '#cbcdd1', fontSize: 14, lineHeight: 21 },
   price: { color: '#c3cdd6', fontSize: 12.5, fontWeight: '600', marginTop: 8 },
   pickRow: { flexDirection: 'row', gap: 8, marginTop: 14, flexWrap: 'wrap' },
+  cooldown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#0f1114',
+    borderRadius: 10,
+    padding: 13,
+    marginTop: 14,
+  },
+  cooldownText: { color: '#8f99a3', fontSize: 12.5, lineHeight: 18, flex: 1 },
   draftRow: {
     flexDirection: 'row',
     alignItems: 'center',

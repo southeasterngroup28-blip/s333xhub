@@ -11,6 +11,22 @@ export const FAN_MAIL_PRICE_CENTS = 1000;
  */
 export const FAN_MAIL_IS_FREE = true;
 
+/** One submission per week (also enforced by the database). */
+export const FAN_MAIL_COOLDOWN_DAYS = 7;
+
+/**
+ * When this fan may send again, based on their own history —
+ * null means they're clear to send right now.
+ */
+export function nextFanMailAt(items: { created_at: string }[]): Date | null {
+  const latest = items[0];
+  if (!latest) return null;
+  const next = new Date(
+    new Date(latest.created_at).getTime() + FAN_MAIL_COOLDOWN_DAYS * 24 * 3600 * 1000
+  );
+  return next.getTime() > Date.now() ? next : null;
+}
+
 export type FanMailKind = 'picture' | 'video' | 'audio';
 
 export type FanMailItem = {
