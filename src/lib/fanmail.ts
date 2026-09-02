@@ -1,14 +1,15 @@
 import { filePayload } from '@/lib/posts';
 import { supabase } from '@/lib/supabase';
 
-/** $10 per submission. The charge activates with the App Store build. */
+/** Kept for the option of charging later; unused while fan mail is free. */
 export const FAN_MAIL_PRICE_CENTS = 1000;
 
 /**
- * Flips to true when RevenueCat goes live (step 7b, needs Apple).
- * While false, submissions are hard-blocked — no payment, no send.
+ * Owner decision 2026-09-01: fan mail is FREE. Submissions go straight
+ * through — no paywall. If a price ever comes back, flip this to false
+ * and re-wire the charge (RevenueCat).
  */
-export const FAN_MAIL_PAYMENTS_LIVE = false;
+export const FAN_MAIL_IS_FREE = true;
 
 export type FanMailKind = 'picture' | 'video' | 'audio';
 
