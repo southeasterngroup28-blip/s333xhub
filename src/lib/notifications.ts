@@ -57,13 +57,32 @@ export async function registerPushToken(): Promise<void> {
     const me = (await supabase.auth.getUser()).data.user?.id;
     if (!me || !token) return;
 
-    await supabase.from('push_tokens').upsert({
-      user_id: me,
-      token,
-      platform: Platform.OS === 'ios' ? 'ios' : 'android',
-      updated_at: new Date().toISOString(),
+    // The RPC evicts this token from any OTHER account first — a phone
+    // only ever receives pushes for whoever is currently signed in.
+    await supabase.rpc('register_push_token', {
+      p_token: token,
+      p_platform: Platform.OS === 'ios' ? 'ios' : 'android',
     });
   } catch {
     // Push registration must never break the app.
+  }
+}
+
+/**
+ * Forget this device on sign-out — a phone that signed out should stop
+ * buzzing for that account. Best-effort; never blocks the sign-out.
+ */
+export async function unregisterPushToken(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try {
+    const Device = await import('expo-device');
+    if (!Device.isDevice) return;
+    const Notifications = await import('expo-notifications');
+    const token = (await Notifications.getExpoPushTokenAsync()).data;
+    const me = (await supabase.auth.getUser()).data.user?.id;
+    if (!me || !token) return;
+    await supabase.from('push_tokens').delete().eq('user_id', me).eq('token', token);
+  } catch {
+    // Never block sign-out.
   }
 }

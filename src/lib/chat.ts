@@ -2,7 +2,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 
 import { base64ToArrayBuffer, filePayload } from '@/lib/posts';
 import { cleanMessage } from '@/lib/profanity';
-import { supabase } from '@/lib/supabase';
+import { supabase, requireUserId } from '@/lib/supabase';
 
 export type ChannelType = 'group' | 'dm';
 
@@ -105,7 +105,7 @@ export async function fetchMessages(channelId: string, before?: string): Promise
     .order('created_at', { ascending: false })
     .limit(MESSAGE_PAGE_SIZE);
   if (before) {
-    query = query.lt('created_at', before);
+    query = query.lte('created_at', before);
   }
   const { data, error } = await query;
   if (error) throw error;
@@ -130,7 +130,7 @@ export async function sendMessage(channelId: string, body: string): Promise<Mess
     .from('messages')
     .insert({
       channel_id: channelId,
-      sender_id: (await supabase.auth.getUser()).data.user!.id,
+      sender_id: await requireUserId(),
       body: cleaned,
     })
     .select(MESSAGE_COLUMNS)
@@ -145,7 +145,7 @@ export async function sendGifMessage(channelId: string, gifUrl: string): Promise
     .from('messages')
     .insert({
       channel_id: channelId,
-      sender_id: (await supabase.auth.getUser()).data.user!.id,
+      sender_id: await requireUserId(),
       body: '',
       kind: 'gif',
       media_url: gifUrl,
@@ -167,7 +167,7 @@ export async function sendMediaMessage(
   media: { uri?: string; file?: Blob; base64?: string; mimeType: string },
   durationSeconds?: number
 ): Promise<Message> {
-  const userId = (await supabase.auth.getUser()).data.user!.id;
+  const userId = await requireUserId();
   const ext = kind === 'voice' ? 'm4a' : media.mimeType.includes('png') ? 'png' : 'jpg';
   const path = `${userId}/${channelId}/${Date.now()}.${ext}`;
 
@@ -196,7 +196,7 @@ export async function sendMediaMessage(
 /** storage path → temporary viewing URL, for voice notes and pictures. */
 export async function chatMediaUrls(paths: string[]): Promise<Record<string, string>> {
   if (paths.length === 0) return {};
-  const { data, error } = await supabase.storage.from('chat-media').createSignedUrls(paths, 3600);
+  const { data, error } = await supabase.storage.from('chat-media').createSignedUrls(paths, 86400);
   if (error) throw error;
   const map: Record<string, string> = {};
   for (const row of data ?? []) {

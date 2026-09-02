@@ -44,10 +44,16 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   const [current, setCurrent] = useState<Track | null>(null);
   const [starting, setStarting] = useState(false);
 
-  // The moment real audio flows, the optimistic phase ends.
+  // The moment real audio flows, the optimistic phase ends. If nothing
+  // flows within 12s (dead URL, no network), stop pretending.
   useEffect(() => {
     if (starting && status?.playing) setStarting(false);
   }, [starting, status?.playing]);
+  useEffect(() => {
+    if (!starting) return;
+    const timer = setTimeout(() => setStarting(false), 12_000);
+    return () => clearTimeout(timer);
+  }, [starting]);
 
   useEffect(() => {
     // playsInSilentMode: iPhones with the mute switch on would otherwise play nothing.
@@ -99,9 +105,15 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     if (!current) return;
     if (status?.playing) {
       player.pause();
-    } else {
-      player.play();
+      return;
     }
+    // A finished track replays from the top - without this, play after
+    // the end is a dead button (the playhead never rewinds itself).
+    const dur = status?.duration ?? 0;
+    if (status?.didJustFinish || (dur > 0 && (status?.currentTime ?? 0) >= dur - 0.3)) {
+      player.seekTo(0);
+    }
+    player.play();
   }
 
   function seekTo(seconds: number) {

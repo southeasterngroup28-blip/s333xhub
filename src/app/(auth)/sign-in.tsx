@@ -70,7 +70,7 @@ export default function SignInScreen() {
 
         <Pressable
           style={[styles.button, submitting && styles.buttonDisabled]}
-          disabled={submitting || !email || !password}
+          disabled={submitting || !email.trim() || !password.trim()}
           onPress={handleSignIn}>
           {submitting ? (
             <ActivityIndicator color="#0b0c0e" />

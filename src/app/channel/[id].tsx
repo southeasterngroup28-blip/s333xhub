@@ -89,6 +89,27 @@ export default function ChannelScreen() {
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 500);
+  const recordingRef = useRef(false);
+  recordingRef.current = recording;
+
+  // Leaving the screen mid-recording must NEVER leave the mic hot or the
+  // app stuck in record mode (earpiece audio, held mic session).
+  useEffect(() => {
+    return () => {
+      if (recordingRef.current) {
+        try {
+          recorder.stop();
+        } catch {}
+      }
+      setAudioModeAsync({
+        allowsRecording: false,
+        playsInSilentMode: true,
+        shouldPlayInBackground: true,
+        interruptionMode: 'doNotMix',
+      }).catch(() => {});
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** Voice/photo files need short-lived viewing links. */
   const resolveChatMedia = useCallback(async (batch: Message[]) => {
@@ -102,12 +123,16 @@ export default function ChannelScreen() {
     }
   }, []);
 
-  // New messages arrive via realtime AND from our own send — dedupe by id.
+  // New messages arrive via realtime AND from our own send — dedupe by id
+  // and keep newest-first order even when fetches resolve out of order.
   const appendNew = useCallback(
     (incoming: Message) => {
-      setMessages((prev) =>
-        prev.some((m) => m.id === incoming.id) ? prev : [incoming, ...prev]
-      );
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === incoming.id)) return prev;
+        const next = [incoming, ...prev];
+        next.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+        return next;
+      });
       resolveChatMedia([incoming]);
     },
     [resolveChatMedia]
@@ -122,7 +147,14 @@ export default function ChannelScreen() {
         const [list, history] = await Promise.all([fetchChatList(myUserId), fetchMessages(id)]);
         if (cancelled) return;
         setInfo(list.find((item) => item.channelId === id) ?? null);
-        setMessages(history);
+        setMessages((prev) => {
+          // Realtime messages that landed while history was loading survive.
+          const ids = new Set(history.map((m) => m.id));
+          const extras = prev.filter((m) => !ids.has(m.id));
+          const merged = [...extras, ...history];
+          merged.sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
+          return merged;
+        });
         setEndReached(history.length < MESSAGE_PAGE_SIZE);
         resolveChatMedia(history);
         markRead(id, myUserId).catch(() => {});
@@ -154,9 +186,22 @@ export default function ChannelScreen() {
     loadingMore.current = true;
     try {
       const older = await fetchMessages(id, messages[messages.length - 1].created_at);
-      setMessages((prev) => [...prev, ...older]);
+      const seen = new Set(messages.map((m) => m.id));
+      const fresh = older.filter((m) => !seen.has(m.id));
+      setMessages((prev) => [...prev, ...fresh]);
       setEndReached(older.length < MESSAGE_PAGE_SIZE);
-      resolveChatMedia(older);
+      resolveChatMedia(fresh);
+      // If this whole page was blocked users, the list didn't visibly grow —
+      // keep walking back so history doesn't appear to stop dead.
+      if (
+        fresh.length > 0 &&
+        older.length >= MESSAGE_PAGE_SIZE &&
+        fresh.every((m) => blockedIds.has(m.sender_id))
+      ) {
+        setTimeout(() => loadOlder(), 0);
+      }
+    } catch {
+      // Network blip — the next scroll retries.
     } finally {
       loadingMore.current = false;
     }
@@ -297,9 +342,11 @@ export default function ChannelScreen() {
     }
   }
 
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function flashNotice(text: string) {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
     setNotice(text);
-    setTimeout(() => setNotice(null), 2500);
+    noticeTimer.current = setTimeout(() => setNotice(null), 2500);
   }
 
   async function handleReport(reason: string) {

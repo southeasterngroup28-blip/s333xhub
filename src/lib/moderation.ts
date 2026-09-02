@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { supabase, requireUserId } from '@/lib/supabase';
 
 export type ReportTargetType = 'post' | 'message' | 'user' | 'comment';
 
@@ -23,7 +23,7 @@ export async function fetchBlockedIds(): Promise<Set<string>> {
 }
 
 export async function blockUser(blockedId: string): Promise<void> {
-  const me = (await supabase.auth.getUser()).data.user!.id;
+  const me = await requireUserId();
   const { error } = await supabase
     .from('blocks')
     .insert({ blocker_id: me, blocked_id: blockedId });
@@ -32,7 +32,7 @@ export async function blockUser(blockedId: string): Promise<void> {
 }
 
 export async function unblockUser(blockedId: string): Promise<void> {
-  const me = (await supabase.auth.getUser()).data.user!.id;
+  const me = await requireUserId();
   const { error } = await supabase
     .from('blocks')
     .delete()
@@ -57,7 +57,7 @@ export async function fileReport(
   targetId: string,
   reason: string
 ): Promise<void> {
-  const me = (await supabase.auth.getUser()).data.user!.id;
+  const me = await requireUserId();
   const { error } = await supabase
     .from('reports')
     .insert({ reporter_id: me, target_type: targetType, target_id: targetId, reason });

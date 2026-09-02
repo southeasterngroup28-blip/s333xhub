@@ -1,5 +1,5 @@
 import { filePayload } from '@/lib/posts';
-import { supabase } from '@/lib/supabase';
+import { supabase, requireUserId } from '@/lib/supabase';
 
 /** Kept for the option of charging later; unused while fan mail is free. */
 export const FAN_MAIL_PRICE_CENTS = 1000;
@@ -46,7 +46,7 @@ export async function submitFanMail(
   item: { file?: Blob; uri?: string; mimeType: string; name: string },
   note: string
 ): Promise<void> {
-  const me = (await supabase.auth.getUser()).data.user!.id;
+  const me = await requireUserId();
   const extension = item.name.includes('.') ? item.name.split('.').pop()! : 'bin';
   const path = `${me}/${Date.now()}.${extension}`;
 
@@ -65,7 +65,14 @@ export async function submitFanMail(
     })
     .select('id')
     .single();
-  if (error) throw error;
+  if (error) {
+    // Rejected insert (e.g. the once-a-week rule) must not strand the upload.
+    supabase.storage.from('fan-mail').remove([path]).then(undefined, () => {});
+    if ((error.message ?? '').includes('row-level security')) {
+      throw new Error("You've already sent this week's submission - one per week.");
+    }
+    throw error;
+  }
 
   // Deliver to the artist's private inbox. Nothing displays in-app; if the
   // email function isn't deployed yet this fails silently and the row +
@@ -78,7 +85,7 @@ export async function submitFanMail(
 
 /** My own submissions (fans) — newest first. */
 export async function fetchMyFanMail(): Promise<FanMailItem[]> {
-  const me = (await supabase.auth.getUser()).data.user!.id;
+  const me = await requireUserId();
   const { data, error } = await supabase
     .from('fan_mail')
     .select('id, user_id, kind, storage_path, note, paid, created_at, reviewed_at, sender:profiles!fan_mail_user_id_fkey(display_name)')

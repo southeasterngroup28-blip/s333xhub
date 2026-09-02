@@ -1,5 +1,5 @@
 import { base64ToArrayBuffer, type PickedImage } from '@/lib/posts';
-import { supabase } from '@/lib/supabase';
+import { requireUserId, supabase } from '@/lib/supabase';
 
 /** avatar_path → a plain public URL (the avatars bucket is public). */
 export function avatarUrl(path: string | null | undefined): string | null {
@@ -9,7 +9,7 @@ export function avatarUrl(path: string | null | undefined): string | null {
 
 /** Uploads a new profile photo and points my profile at it. */
 export async function setMyAvatar(image: PickedImage, focus = 0.5): Promise<string> {
-  const userId = (await supabase.auth.getUser()).data.user!.id;
+  const userId = await requireUserId();
   const ext = image.mimeType === 'image/png' ? 'png' : 'jpg';
   // Timestamped name = old cached copies can't shadow the new photo.
   const path = `${userId}/${Date.now()}.${ext}`;
@@ -31,7 +31,11 @@ export async function setMyAvatar(image: PickedImage, focus = 0.5): Promise<stri
     .from('profiles')
     .update({ avatar_path: path, avatar_focus: focus })
     .eq('id', userId);
-  if (error) throw error;
+  if (error) {
+    // Don't strand the freshly uploaded file if the profile update failed.
+    supabase.storage.from('avatars').remove([path]).then(undefined, () => {});
+    throw error;
+  }
 
   // Best-effort cleanup of the photo being replaced.
   if (me?.avatar_path) {
@@ -41,7 +45,7 @@ export async function setMyAvatar(image: PickedImage, focus = 0.5): Promise<stri
 }
 
 export async function removeMyAvatar(): Promise<void> {
-  const userId = (await supabase.auth.getUser()).data.user!.id;
+  const userId = await requireUserId();
   const { data: me } = await supabase
     .from('profiles')
     .select('avatar_path')
@@ -49,7 +53,7 @@ export async function removeMyAvatar(): Promise<void> {
     .single();
   const { error } = await supabase
     .from('profiles')
-    .update({ avatar_path: null })
+    .update({ avatar_path: null, avatar_focus: 0.5 })
     .eq('id', userId);
   if (error) throw error;
   if (me?.avatar_path) {

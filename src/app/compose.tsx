@@ -23,7 +23,7 @@ import {
   PickVideoButton,
   type PickedImageDraft,
 } from '@/components/media-pickers';
-import { createPost, type PickedAudio, type PickedVideo, type Project } from '@/lib/posts';
+import { createPost, markFeedStale, type PickedAudio, type PickedVideo, type Project } from '@/lib/posts';
 import { useAuth } from '@/providers/auth-provider';
 
 const MAX_IMAGES = 4;
@@ -245,6 +245,7 @@ export default function ComposeScreen() {
         pollOptions: pollMode ? filledOptions : null,
         pollEndsAt: pollMode && pollHours ? new Date(Date.now() + pollHours * 3600000) : null,
       });
+      markFeedStale();
       goToFeed();
     } catch (e) {
       // Supabase errors carry a message but aren't Error instances.

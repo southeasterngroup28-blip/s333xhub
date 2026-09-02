@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAuth } from '@/providers/auth-provider';
+
 import { PickPhotosButton, type PickedImageDraft } from '@/components/media-pickers';
 import { DISPLAY_FONT } from '@/constants/type';
 import { createDrop } from '@/lib/shop';
@@ -27,6 +29,7 @@ const WHEN_OPTIONS = [
 
 export default function NewDropScreen() {
   const router = useRouter();
+  const { profile } = useAuth();
   const [title, setTitle] = useState('');
   const [project, setProject] = useState<'mazze' | 's333xgod'>('s333xgod');
   const [price, setPrice] = useState('65');
@@ -59,6 +62,11 @@ export default function NewDropScreen() {
       setError((e as { message?: string })?.message ?? 'Could not create the drop.');
       setSaving(false);
     }
+  }
+
+  // Artist-only surface; a deep-linked fan sees nothing, not a broken form.
+  if (profile?.role !== 'artist') {
+    return <SafeAreaView style={styles.safe} />;
   }
 
   return (

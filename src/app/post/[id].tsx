@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -65,9 +65,11 @@ export default function CommentsScreen() {
     load();
   }, [load]);
 
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function flash(text: string) {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
     setNotice(text);
-    setTimeout(() => setNotice(null), 2500);
+    noticeTimer.current = setTimeout(() => setNotice(null), 2500);
   }
 
   async function handleSend() {

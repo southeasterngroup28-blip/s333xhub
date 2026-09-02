@@ -35,3 +35,11 @@ if (hasWindow) {
     }
   });
 }
+
+/** The signed-in user's id — or a human-readable error, never a TypeError. */
+export async function requireUserId(): Promise<string> {
+  const { data } = await supabase.auth.getUser();
+  const id = data.user?.id;
+  if (!id) throw new Error('Your session expired - please sign in again.');
+  return id;
+}

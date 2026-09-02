@@ -20,7 +20,7 @@ import { PostCard } from '@/components/post-card';
 import { EmptyState } from '@/components/empty-state';
 import { PostSkeleton } from '@/components/skeleton';
 import { Top8Card } from '@/components/top8-card';
-import { fetchPosts, PAGE_SIZE, signedUrlsFor, type Post } from '@/lib/posts';
+import { consumeFeedStale, fetchPosts, PAGE_SIZE, signedUrlsFor, type Post } from '@/lib/posts';
 import { fetchMyPurchasedPostIds } from '@/lib/purchases';
 import {
   fetchPolls,
@@ -79,6 +79,9 @@ export function Feed() {
   const [refreshing, setRefreshing] = useState(false);
   const [endReached, setEndReached] = useState(false);
   const loadingMore = useRef(false);
+  /** Bumps on every fresh load; stale loadMore results get discarded. */
+  const fetchSeq = useRef(0);
+  const lastLoadAt = useRef(0);
 
   const isArtist = profile?.role === 'artist';
 
@@ -106,12 +109,15 @@ export function Feed() {
   );
 
   const loadFresh = useCallback(async () => {
+    const seq = ++fetchSeq.current;
+    lastLoadAt.current = Date.now();
     try {
       const purchased = isArtist
         ? new Set<string>()
         : await fetchMyPurchasedPostIds().catch(() => new Set<string>());
       setPurchasedIds(purchased);
       const fresh = await fetchPosts('all');
+      if (seq !== fetchSeq.current) return;
       setPosts(fresh);
       setFeedError(null);
       setEndReached(fresh.length < PAGE_SIZE);
@@ -137,19 +143,27 @@ export function Feed() {
     }
   }, [isArtist, resolveMedia]);
 
-  // Reload when the screen regains focus (e.g. after posting).
+  // Refresh on focus only when something changed (a new post was made)
+  // or the data is old - otherwise keep the fan's scroll position.
   useFocusEffect(
     useCallback(() => {
-      loadFresh();
+      if (consumeFeedStale() || Date.now() - lastLoadAt.current > 120_000) {
+        loadFresh();
+      }
     }, [loadFresh])
   );
 
   async function loadMore() {
     if (loadingMore.current || endReached || posts.length === 0) return;
     loadingMore.current = true;
+    const seq = fetchSeq.current;
     try {
       const older = await fetchPosts('all', posts[posts.length - 1].created_at);
-      setPosts((prev) => [...prev, ...older]);
+      if (seq !== fetchSeq.current) return; // a fresh load replaced the list
+      setPosts((prev) => {
+        const seen = new Set(prev.map((p) => p.id));
+        return [...prev, ...older.filter((p) => !seen.has(p.id))];
+      });
       setEndReached(older.length < PAGE_SIZE);
 
       const ids = older.map((p) => p.id);
@@ -165,6 +179,8 @@ export function Feed() {
       setPolls((prev) => ({ ...prev, ...pollStates }));
 
       await resolveMedia(older, purchasedIds);
+    } catch {
+      // Network blip - the next scroll retries pagination naturally.
     } finally {
       loadingMore.current = false;
     }

@@ -1,11 +1,15 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { useEffect } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 function formatSeconds(total: number): string {
   const s = Math.max(0, Math.round(total));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
+
+// One voice note at a time: starting a new one pauses whichever was playing.
+let pauseCurrentVoice: (() => void) | null = null;
 
 type Props = {
   /** Signed URL — undefined while it's still being fetched. */
@@ -35,11 +39,27 @@ function Loaded({ url, durationSeconds, mine }: Props & { url: string }) {
   const total = durationSeconds ?? (status.duration || 0);
   const shown = playing || status.currentTime > 0 ? status.currentTime : total;
 
+  // If this bubble unmounts (scrolled far away) while registered as the
+  // active voice, drop the stale pause handle.
+  useEffect(() => {
+    return () => {
+      pauseCurrentVoice = null;
+    };
+  }, []);
+
   function toggle() {
     if (playing) {
       player.pause();
+      pauseCurrentVoice = null;
       return;
     }
+    // Only one voice note plays at a time.
+    pauseCurrentVoice?.();
+    pauseCurrentVoice = () => {
+      try {
+        player.pause();
+      } catch {}
+    };
     // Replay from the start once it has finished.
     if (status.didJustFinish || (status.duration > 0 && status.currentTime >= status.duration)) {
       player.seekTo(0);

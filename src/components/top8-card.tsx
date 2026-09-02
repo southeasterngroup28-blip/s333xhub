@@ -48,7 +48,7 @@ export function Top8Card({ fans, viewerIsArtist }: Props) {
                     style={styles.photo}
                     contentFit="cover"
                     contentPosition={{
-                      left: `${(fan?.profile?.avatar_focus ?? 0.5) * 100}%`,
+                      left: '50%',
                       top: `${(fan?.profile?.avatar_focus ?? 0.5) * 100}%`,
                     }}
                     transition={150}

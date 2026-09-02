@@ -14,6 +14,7 @@ import { DISPLAY_FONT } from '@/constants/type';
 import {
   activeClaims,
   dropImageUrl,
+  serverNowMs,
   dropStatus,
   fetchDrops,
   priceLabel,
@@ -130,7 +131,7 @@ export default function ShopScreen() {
                     {status === 'upcoming' ? (
                       <>
                         <Text style={styles.footLabel}>DROPS IN</Text>
-                        <Text style={styles.count}>{countdownTo(drop.drops_at, now)}</Text>
+                        <Text style={styles.count}>{countdownTo(drop.drops_at, now + (serverNowMs() - Date.now()))}</Text>
                       </>
                     ) : status === 'live' ? (
                       <>

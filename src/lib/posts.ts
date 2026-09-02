@@ -44,7 +44,7 @@ export async function fetchPosts(filter: Project | 'all', before?: string): Prom
     query = query.eq('project', filter);
   }
   if (before) {
-    query = query.lt('created_at', before);
+    query = query.lte('created_at', before);
   }
 
   const { data, error } = await query;
@@ -58,7 +58,7 @@ export async function fetchPosts(filter: Project | 'all', before?: string): Prom
  */
 export async function signedUrlsFor(paths: string[]): Promise<Record<string, string>> {
   if (paths.length === 0) return {};
-  const { data, error } = await supabase.storage.from('post-media').createSignedUrls(paths, 3600);
+  const { data, error } = await supabase.storage.from('post-media').createSignedUrls(paths, 21600);
   if (error) throw error;
   const map: Record<string, string> = {};
   for (const item of data ?? []) {
@@ -98,6 +98,12 @@ export type PickedAudio = {
 /** HARD business rule: videos over 45s are rejected to control bandwidth cost. */
 export const VIDEO_MAX_SECONDS = 45;
 /** Supabase per-file upload ceiling on the current plan. */
+// The feed refreshes on focus only when this says so (or it's been a while)
+// - otherwise returning from a post keeps your scroll position.
+let feedStale = true;
+export function markFeedStale() { feedStale = true; }
+export function consumeFeedStale(): boolean { const v = feedStale; feedStale = false; return v; }
+
 export const MAX_FILE_BYTES = 50 * 1024 * 1024;
 
 export type PickedVideo = {
@@ -169,6 +175,7 @@ export async function createPost(input: NewPost): Promise<void> {
     .single();
   if (postError) throw postError;
 
+  try {
   if (pollOptions) {
     const { createPollForPost } = await import('@/lib/social');
     await createPollForPost(post.id, pollOptions, input.pollEndsAt ?? null);
@@ -251,6 +258,11 @@ export async function createPost(input: NewPost): Promise<void> {
       position: i,
     });
     if (mediaError) throw mediaError;
+  }
+  } catch (e) {
+    // A half-made post must never haunt the feed - roll it back, then rethrow.
+    await supabase.from('posts').delete().eq('id', post.id).then(undefined, () => {});
+    throw e;
   }
 }
 

@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -27,17 +27,28 @@ export function GifPicker({ visible, onClose, onPick }: Props) {
   const [results, setResults] = useState<GifResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const searchSeq = useRef(0);
 
-  // Trending on open, search 400ms after the user stops typing.
+  // Trending on open, search 400ms after the user stops typing. Responses
+  // arriving out of order are discarded - only the latest search wins.
   useEffect(() => {
     if (!visible) return;
     setLoading(true);
     setError(null);
+    const seq = ++searchSeq.current;
     const timer = setTimeout(() => {
       (term.trim() ? searchGifs(term.trim()) : trendingGifs())
-        .then(setResults)
-        .catch((e) => setError((e as { message?: string })?.message ?? 'GIF search failed.'))
-        .finally(() => setLoading(false));
+        .then((r) => {
+          if (seq !== searchSeq.current) return;
+          setResults(r);
+        })
+        .catch((e) => {
+          if (seq !== searchSeq.current) return;
+          setError((e as { message?: string })?.message ?? 'GIF search failed.');
+        })
+        .finally(() => {
+          if (seq === searchSeq.current) setLoading(false);
+        });
     }, term.trim() ? 400 : 0);
     return () => clearTimeout(timer);
   }, [visible, term]);

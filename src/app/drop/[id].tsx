@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -37,6 +37,7 @@ import {
 } from '@/lib/shop';
 import { useAuth } from '@/providers/auth-provider';
 import { countdownTo, useNow } from '@/lib/countdown';
+import { serverNowMs } from '@/lib/shop';
 
 export default function DropScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -56,6 +57,14 @@ export default function DropScreen() {
   /** Which claim is getting a tracking number typed in. */
   const [shipTarget, setShipTarget] = useState<string | null>(null);
   const [trackingDraft, setTrackingDraft] = useState('');
+
+  // If someone else takes the selected number, drop the selection.
+  useEffect(() => {
+    if (pickedNumber == null || !drop) return;
+    const takenNow = activeClaims(drop).some((c) => c.edition_number === pickedNumber);
+    if (takenNow) setPickedNumber(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drop]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -84,9 +93,11 @@ export default function DropScreen() {
     else router.replace('/(tabs)/shop' as never);
   }
 
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function flash(text: string) {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
     setNotice(text);
-    setTimeout(() => setNotice(null), 3000);
+    noticeTimer.current = setTimeout(() => setNotice(null), 3000);
   }
 
   async function handleBuy() {
@@ -207,7 +218,7 @@ export default function DropScreen() {
           {status === 'live' ? (
             <Text style={styles.leftText}>{left} LEFT</Text>
           ) : status === 'upcoming' ? (
-            <Text style={styles.count}>{countdownTo(drop.drops_at, now)}</Text>
+            <Text style={styles.count}>{countdownTo(drop.drops_at, now + (serverNowMs() - Date.now()))}</Text>
           ) : (
             <Text style={styles.soldText}>NEVER AGAIN</Text>
           )}
@@ -315,7 +326,12 @@ export default function DropScreen() {
                       </Pressable>
                     </View>
                   ) : (
-                    <Pressable style={styles.shipButton} onPress={() => setShipTarget(claim.id)}>
+                    <Pressable
+                      style={styles.shipButton}
+                      onPress={() => {
+                        setTrackingDraft('');
+                        setShipTarget(claim.id);
+                      }}>
                       <Text style={styles.shipButtonText}>MARK SHIPPED</Text>
                     </Pressable>
                   )

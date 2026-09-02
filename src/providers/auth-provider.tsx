@@ -1,6 +1,8 @@
 import type { Session } from '@supabase/supabase-js';
 import { createContext, useContext, useEffect, useState, type PropsWithChildren } from 'react';
+import { AppState } from 'react-native';
 
+import { unregisterPushToken } from '@/lib/notifications';
 import { supabase } from '@/lib/supabase';
 
 export type Profile = {
@@ -42,6 +44,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [retrySeq, setRetrySeq] = useState(0);
+
+  // If the profile fetch gave up (dead network at launch), try again the
+  // next time the app comes to the foreground - no restart required.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setRetrySeq((n) => n + 1);
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -101,7 +113,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
       cancelled = true;
       clearTimeout(kickoff);
     };
-  }, [session?.user.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user.id, retrySeq]);
 
   return (
     <AuthContext.Provider
@@ -120,6 +133,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
           if (data) setProfile(data as Profile);
         },
         signOut: async () => {
+          // Stop this device buzzing for the account being signed out.
+          await unregisterPushToken().catch(() => {});
           await supabase.auth.signOut();
         },
       }}>

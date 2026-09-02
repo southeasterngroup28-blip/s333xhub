@@ -1,5 +1,5 @@
 import { base64ToArrayBuffer, type PickedImage } from '@/lib/posts';
-import { supabase } from '@/lib/supabase';
+import { supabase, requireUserId } from '@/lib/supabase';
 
 /**
  * Flip to true when Stripe is wired (LLC + business bank done).
@@ -56,7 +56,7 @@ export function dropImageUrl(path: string | null): string | null {
 
 /** Claims that block a number: live holds + everything paid-and-beyond. */
 export function activeClaims(drop: Drop): Claim[] {
-  const now = Date.now();
+  const now = serverNowMs();
   return drop.claims.filter(
     (c) =>
       c.status !== 'refunded' &&
@@ -72,7 +72,7 @@ export function ownerClaims(drop: Drop): Claim[] {
 }
 
 export function dropStatus(drop: Drop): DropStatus {
-  if (new Date(drop.drops_at).getTime() > Date.now()) return 'upcoming';
+  if (new Date(drop.drops_at).getTime() > serverNowMs()) return 'upcoming';
   return activeClaims(drop).length >= drop.run_size ? 'sold_out' : 'live';
 }
 
@@ -92,6 +92,7 @@ export async function fetchDrops(): Promise<Drop[]> {
   ]);
   if (error) throw error;
   if (claimsError) throw claimsError;
+  syncServerClock();
 
   const byDrop = new Map<string, Claim[]>();
   for (const claim of (claims as unknown as Claim[]) ?? []) {
@@ -106,8 +107,40 @@ export async function fetchDrops(): Promise<Drop[]> {
 }
 
 export async function fetchDrop(id: string): Promise<Drop | null> {
-  const all = await fetchDrops();
-  return all.find((d) => d.id === id) ?? null;
+  const [{ data: drop, error }, { data: claims, error: claimsError }] = await Promise.all([
+    supabase.from('drops').select(DROP_COLUMNS).eq('id', id).maybeSingle(),
+    supabase
+      .from('drop_claims')
+      .select(
+        'id, drop_id, user_id, edition_number, status, expires_at, owner:profiles!drop_claims_user_id_fkey(display_name, avatar_path, avatar_focus)'
+      )
+      .eq('drop_id', id),
+  ]);
+  if (error) throw error;
+  if (claimsError) throw claimsError;
+  if (!drop) return null;
+  syncServerClock();
+  return {
+    ...(drop as unknown as Omit<Drop, 'claims'>),
+    claims: ((claims as unknown as Claim[]) ?? []).sort(
+      (a, b) => a.edition_number - b.edition_number
+    ),
+  };
+}
+
+// ---- server clock: countdowns and hold expiries follow the DATABASE's
+// ---- clock, not the phone's (device clocks drift).
+let clockOffsetMs = 0;
+export function serverNowMs(): number {
+  return Date.now() + clockOffsetMs;
+}
+function syncServerClock(): void {
+  supabase
+    .rpc('server_now')
+    .then(({ data }) => {
+      if (data) clockOffsetMs = new Date(data as string).getTime() - Date.now();
+    })
+    .then(undefined, () => {});
 }
 
 /** Artist: create a drop as a draft (publish is the go-live moment). */
@@ -142,7 +175,7 @@ export async function createDrop(input: {
   const { data, error } = await supabase
     .from('drops')
     .insert({
-      drop_number: nextNumber,
+      drop_number: nextNumber,  // eslint-disable-line
       title: input.title,
       project: input.project,
       price_cents: input.priceCents,
@@ -152,7 +185,13 @@ export async function createDrop(input: {
     })
     .select('id')
     .single();
-  if (error) throw error;
+  if (error) {
+    // Don't strand the uploaded artwork if the row insert failed.
+    if (imagePath) {
+      supabase.storage.from('shop-media').remove([imagePath]).then(undefined, () => {});
+    }
+    throw error;
+  }
   return data.id as string;
 }
 
@@ -161,7 +200,7 @@ export async function updateDrop(
   id: string,
   patch: { title: string; priceCents: number; runSize: number; dropsAt: Date }
 ): Promise<void> {
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('drops')
     .update({
       title: patch.title,
@@ -170,8 +209,12 @@ export async function updateDrop(
       drops_at: patch.dropsAt.toISOString(),
     })
     .eq('id', id)
-    .eq('is_published', false);
+    .eq('is_published', false)
+    .select('id');
   if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error('Published drops are locked - only drafts can be edited.');
+  }
 }
 
 export type MyPiece = {
@@ -183,7 +226,7 @@ export type MyPiece = {
 
 /** Everything this fan owns, across every drop — for the My Pieces list. */
 export async function fetchMyPieces(): Promise<MyPiece[]> {
-  const userId = (await supabase.auth.getUser()).data.user!.id;
+  const userId = await requireUserId();
   const { data, error } = await supabase
     .from('drop_claims')
     .select('id, edition_number, status, drop:drops(id, drop_number, title, image_path)')
@@ -205,16 +248,12 @@ export async function deleteDrop(id: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Artist: mark a claim shipped (fires the tracking push to its owner). */
+/** Artist: mark a claim shipped — one atomic step server-side. */
 export async function markShipped(claimId: string, tracking: string): Promise<void> {
-  const { error: fulfillError } = await supabase
-    .from('drop_fulfillment')
-    .upsert({ claim_id: claimId, tracking, shipped_at: new Date().toISOString() });
-  if (fulfillError) throw fulfillError;
-  const { error } = await supabase
-    .from('drop_claims')
-    .update({ status: 'shipped' })
-    .eq('id', claimId);
+  const { error } = await supabase.rpc('mark_claim_shipped', {
+    p_claim: claimId,
+    p_tracking: tracking,
+  });
   if (error) throw error;
 }
 
@@ -225,18 +264,20 @@ export type Fulfillment = { address: string | null; tracking: string | null };
  * the artist gets every row, a fan gets only their own.
  */
 export async function fetchFulfillment(claimIds: string[]): Promise<Record<string, Fulfillment>> {
-  if (claimIds.length === 0) return {};
-  const { data, error } = await supabase
-    .from('drop_fulfillment')
-    .select('claim_id, address, tracking')
-    .in('claim_id', claimIds);
-  if (error) throw error;
   const map: Record<string, Fulfillment> = {};
-  for (const row of data ?? []) {
-    map[row.claim_id as string] = {
-      address: (row.address as string | null) ?? null,
-      tracking: (row.tracking as string | null) ?? null,
-    };
+  // Chunked: a big run's worth of UUIDs won't fit in one querystring.
+  for (let i = 0; i < claimIds.length; i += 100) {
+    const { data, error } = await supabase
+      .from('drop_fulfillment')
+      .select('claim_id, address, tracking')
+      .in('claim_id', claimIds.slice(i, i + 100));
+    if (error) throw error;
+    for (const row of data ?? []) {
+      map[row.claim_id as string] = {
+        address: (row.address as string | null) ?? null,
+        tracking: (row.tracking as string | null) ?? null,
+      };
+    }
   }
   return map;
 }

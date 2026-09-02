@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Animated, {
   FadeInDown,
@@ -114,6 +114,10 @@ export function PostCard({
   const [reactionCounts, setReactionCounts] = useState<Record<string, number>>({});
   const [pollState, setPollState] = useState<PollState | undefined>(undefined);
 
+  // Ref mirror so rapid double-taps read fresh state, not a stale closure.
+  const myReactionsRef = useRef(myReactions);
+  myReactionsRef.current = myReactions;
+
   useEffect(() => {
     setMyReactions(new Set(reactions?.mine ?? []));
     setReactionCounts({ ...(reactions?.counts ?? {}) });
@@ -124,7 +128,7 @@ export function PostCard({
   }, [post.id, poll]);
 
   async function handleReaction(emoji: (typeof REACTION_EMOJIS)[number]) {
-    const isOn = myReactions.has(emoji);
+    const isOn = myReactionsRef.current.has(emoji);
     // Optimistic flip; revert on failure.
     setMyReactions((prev) => {
       const next = new Set(prev);
@@ -177,7 +181,7 @@ export function PostCard({
   const locked = post.is_locked && !viewerIsArtist && !unlocked;
 
   // Card width minus the card's horizontal padding.
-  const imageWidth = Math.min(windowWidth, 800) - 32 - 32;
+  const imageWidth = Math.min(windowWidth, 800) - 60;
 
   const media = [...post.post_media].sort((a, b) => a.position - b.position);
   const authorName = post.author?.display_name ?? 'Unknown';
@@ -278,9 +282,9 @@ export function PostCard({
         </Text>
       ) : null}
 
-      {post.body ? <Text style={styles.body}>{post.body}</Text> : null}
+      {post.body && !locked ? <Text style={styles.body}>{post.body}</Text> : null}
 
-      {post.kind === 'poll' && pollState ? (
+      {post.kind === 'poll' && pollState && !locked ? (
         <View style={styles.poll}>
           {pollState.options.map((option) => {
             const pct =

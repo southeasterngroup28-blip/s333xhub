@@ -49,7 +49,7 @@ export default function Top8ManagerScreen() {
     return () => clearTimeout(timer);
   }, [query, pickingSlot]);
 
-  if (profile && profile.role !== 'artist') {
+  if (!profile || profile.role !== 'artist') {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.center}>

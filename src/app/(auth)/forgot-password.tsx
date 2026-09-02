@@ -91,7 +91,9 @@ export default function ForgotPasswordScreen() {
           </>
         )}
 
-        <Pressable onPress={() => router.back()} style={styles.back}>
+        <Pressable
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/(auth)/sign-in' as never))}
+          style={styles.back}>
           <Text style={styles.backText}>Back to sign in</Text>
         </Pressable>
       </KeyboardAvoidingView>

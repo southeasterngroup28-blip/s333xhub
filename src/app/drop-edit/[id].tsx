@@ -11,6 +11,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { useAuth } from '@/providers/auth-provider';
+
 import { DISPLAY_FONT } from '@/constants/type';
 import { fetchDrop, updateDrop } from '@/lib/shop';
 
@@ -25,6 +27,7 @@ const WHEN_OPTIONS = [
 export default function EditDropScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const { profile } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [originalDropsAt, setOriginalDropsAt] = useState<string | null>(null);
@@ -75,6 +78,11 @@ export default function EditDropScreen() {
       setError((e as { message?: string })?.message ?? 'Could not save.');
       setSaving(false);
     }
+  }
+
+  // Artist-only surface; a deep-linked fan sees nothing, not a broken form.
+  if (profile?.role !== 'artist') {
+    return <SafeAreaView style={styles.safe} />;
   }
 
   return (

@@ -69,7 +69,7 @@ export default function ReportsScreen() {
     }
   }
 
-  if (profile && profile.role !== 'artist') {
+  if (!profile || profile.role !== 'artist') {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.center}>

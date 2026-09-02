@@ -3,6 +3,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useRef,
   useState,
   type PropsWithChildren,
 } from 'react';
@@ -40,8 +41,10 @@ function memberSince(createdAt: string): string {
 export function ProfileCardProvider({ children }: PropsWithChildren) {
   const [open, setOpen] = useState(false);
   const [profile, setProfile] = useState<CardProfile | null>(null);
+  const requestSeq = useRef(0);
 
   const showProfile = useCallback((userId: string) => {
+    const seq = ++requestSeq.current;
     setProfile(null);
     setOpen(true);
     (async () => {
@@ -53,6 +56,7 @@ export function ProfileCardProvider({ children }: PropsWithChildren) {
           .maybeSingle(),
         supabase.from('top_fans').select('position').eq('user_id', userId).maybeSingle(),
       ]);
+      if (seq !== requestSeq.current) return; // a newer tap superseded this one
       if (!p) {
         setOpen(false);
         return;

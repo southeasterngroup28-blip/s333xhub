@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -41,6 +41,8 @@ export default function SettingsScreen() {
   const router = useRouter();
   const [blocked, setBlocked] = useState<{ id: string; name: string }[]>([]);
   const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
+  /** Once the user touches a switch, the late-arriving fetch must not undo it. */
+  const prefsDirty = useRef(false);
   const [confirmDelete, setConfirmDelete] = useState(0); // 0 = idle, 1 = first confirm shown
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +71,9 @@ export default function SettingsScreen() {
       .then(setBlocked)
       .catch(() => {});
     fetchNotificationPrefs()
-      .then(setPrefs)
+      .then((fetched) => {
+        if (!prefsDirty.current) setPrefs(fetched);
+      })
       .catch(() => {});
     fetchMyPieces()
       .then(setPieces)
@@ -77,6 +81,7 @@ export default function SettingsScreen() {
   }, []);
 
   async function togglePref(key: keyof NotificationPrefs, value: boolean) {
+    prefsDirty.current = true;
     const previous = prefs;
     const next = { ...prefs, [key]: value };
     setPrefs(next);

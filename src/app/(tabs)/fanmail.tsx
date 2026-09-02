@@ -14,6 +14,7 @@ import { useFocusEffect } from 'expo-router';
 
 import { AppBackground } from '@/components/app-background';
 import { EdgeGlass, FadeMask } from '@/components/edge-fade';
+import { ChatRowSkeleton } from '@/components/skeleton';
 import {
   PickAudioButton,
   PickPhotosButton,
@@ -119,6 +120,10 @@ export default function FanMailScreen() {
             </View>
           </View>
         </View>
+      ) : loading ? (
+        <View style={[styles.list, styles.loadingPad]}>
+          <ChatRowSkeleton />
+        </View>
       ) : (
         <FadeMask>
         <ScrollView contentContainerStyle={[styles.list, styles.loadingPad]}>
@@ -134,7 +139,7 @@ export default function FanMailScreen() {
                 <Ionicons name="hourglass-outline" size={16} color="#8f99a3" />
                 <Text style={styles.cooldownText}>
                   This week's submission is sent. Your next one unlocks{' '}
-                  {nextAt.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric' })}.
+                  {nextAt.toLocaleString(undefined, { weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.
                 </Text>
               </View>
             ) : draft ? (

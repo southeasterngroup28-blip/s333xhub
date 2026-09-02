@@ -1,5 +1,5 @@
 import { Image } from 'expo-image';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { DISPLAY_FONT } from '@/constants/type';
 import {
@@ -160,6 +160,11 @@ type Props = {
 
 export function AvatarFramer({ visible, uri, onCancel, onSave }: Props) {
   const focusRef = useRef(0.5);
+
+  // A new photo starts centered - never inherit the last photo's framing.
+  useEffect(() => {
+    focusRef.current = 0.5;
+  }, [uri]);
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onCancel}>

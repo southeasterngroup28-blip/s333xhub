@@ -74,15 +74,26 @@ export function AudioPlayerCard({ postId, title, url, coverUrl, coverFocus = 0.5
   const widthRef = useRef(0);
   const currentRef = useRef(false);
   const durationRef = useRef(0);
-  const waveRef = useRef<View>(null);
-  /** Screen X of the waveform's left edge, measured when a drag starts. */
-  const waveLeftRef = useRef(0);
+  /** Where we just seeked to — shown until the player's clock catches up. */
+  const pendingSeekRef = useRef<number | null>(null);
 
   const isCurrent = current?.postId === postId;
-  // `starting` keeps the button honest during the load gap after a tap.
+  // `starting` keeps the button honest during the load gap after a tap —
+  // and hides the PREVIOUS track's leftover clock while the new one loads.
   const isPlaying = isCurrent && (!!status?.playing || starting);
-  const duration = isCurrent ? status?.duration ?? 0 : 0;
-  const position = isCurrent ? status?.currentTime ?? 0 : 0;
+  const duration = isCurrent && !starting ? status?.duration ?? 0 : 0;
+  const rawPosition = isCurrent && !starting ? status?.currentTime ?? 0 : 0;
+
+  // After a seek, the status lags a beat — keep showing the seek target
+  // until playback reaches it (no snap-back flicker).
+  let position = rawPosition;
+  if (pendingSeekRef.current != null) {
+    if (Math.abs(rawPosition - pendingSeekRef.current) < 1) {
+      pendingSeekRef.current = null;
+    } else {
+      position = pendingSeekRef.current;
+    }
+  }
   const progress = duration > 0 ? Math.min(1, position / duration) : 0;
   const shownFraction = dragFraction ?? progress;
 
@@ -90,25 +101,27 @@ export function AudioPlayerCard({ postId, title, url, coverUrl, coverFocus = 0.5
   currentRef.current = isCurrent;
   durationRef.current = duration;
 
-  // Positions come from screen coordinates (pageX/moveX) — locationX is
-  // relative to whichever tiny bar the finger is over, which glitches.
+  // Bars are pointerEvents:none, so locationX is always relative to the
+  // wave container itself. Drags claim the gesture only when clearly
+  // horizontal — vertical swipes still scroll the feed.
   const pan = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => currentRef.current && durationRef.current > 0,
-      onMoveShouldSetPanResponder: () => currentRef.current && durationRef.current > 0,
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_e, g) =>
+        currentRef.current &&
+        durationRef.current > 0 &&
+        Math.abs(g.dx) > 6 &&
+        Math.abs(g.dx) > Math.abs(g.dy),
       onPanResponderGrant: (e) => {
-        const pageX = e.nativeEvent.pageX;
-        waveRef.current?.measureInWindow((x) => {
-          waveLeftRef.current = x;
-          setDragFraction(clampFraction(pageX - x));
-        });
+        setDragFraction(clampFraction(e.nativeEvent.locationX));
       },
-      onPanResponderMove: (_e, g) => {
-        setDragFraction(clampFraction(g.moveX - waveLeftRef.current));
+      onPanResponderMove: (e) => {
+        setDragFraction(clampFraction(e.nativeEvent.locationX));
       },
-      onPanResponderRelease: (_e, g) => {
-        const fraction = clampFraction(g.moveX - waveLeftRef.current);
+      onPanResponderRelease: (e) => {
+        const fraction = clampFraction(e.nativeEvent.locationX);
         setDragFraction(null);
+        pendingSeekRef.current = fraction * durationRef.current;
         seekTo(fraction * durationRef.current);
       },
       onPanResponderTerminate: () => setDragFraction(null),
@@ -119,6 +132,14 @@ export function AudioPlayerCard({ postId, title, url, coverUrl, coverFocus = 0.5
     const width = widthRef.current;
     if (width <= 0) return 0;
     return Math.max(0, Math.min(1, x / width));
+  }
+
+  /** Plain tap on the waveform = jump straight there. */
+  function handleWaveTap(locationX: number) {
+    if (!currentRef.current || durationRef.current <= 0) return;
+    const fraction = clampFraction(locationX);
+    pendingSeekRef.current = fraction * durationRef.current;
+    seekTo(fraction * durationRef.current);
   }
 
   function handlePress() {
@@ -179,26 +200,29 @@ export function AudioPlayerCard({ postId, title, url, coverUrl, coverFocus = 0.5
         </View>
       </View>
 
-      {/* Waveform scrubber: tap or drag anywhere to move through the track. */}
-      <View
-        ref={waveRef}
-        style={styles.wave}
-        onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
-        {...pan.panHandlers}>
-        {Array.from({ length: WAVE_BARS }, (_, i) => {
-          const lit = isCurrent && shownFraction >= (i + 0.5) / WAVE_BARS;
-          return (
-            <View
-              key={i}
-              style={[
-                styles.waveBar,
-                { height: barHeight(i) },
-                lit ? styles.waveBarLit : null,
-              ]}
-            />
-          );
-        })}
-      </View>
+      {/* Waveform scrubber: tap to jump, drag horizontally to scrub —
+          vertical swipes pass through to the feed's scroll. */}
+      <Pressable onPress={(e) => handleWaveTap(e.nativeEvent.locationX)}>
+        <View
+          style={styles.wave}
+          onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
+          {...pan.panHandlers}>
+          {Array.from({ length: WAVE_BARS }, (_, i) => {
+            const lit = isCurrent && shownFraction >= (i + 0.5) / WAVE_BARS;
+            return (
+              <View
+                key={i}
+                pointerEvents="none"
+                style={[
+                  styles.waveBar,
+                  { height: barHeight(i) },
+                  lit ? styles.waveBarLit : null,
+                ]}
+              />
+            );
+          })}
+        </View>
+      </Pressable>
     </View>
   );
 }
