@@ -35,6 +35,8 @@ export default function SignUpScreen() {
       options: {
         // Saved onto the auth user; the database trigger copies it into profiles.
         data: { display_name: displayName.trim() },
+        emailRedirectTo:
+          'https://southeasterngroup28-blip.github.io/s333xgod/confirm-email.html',
       },
     });
     setSubmitting(false);

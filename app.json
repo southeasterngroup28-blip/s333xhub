@@ -63,6 +63,12 @@
         "projectId": "ac256b7f-e3df-4361-9ed7-b853e2ccd2c9"
       }
     },
-    "owner": "southeasterngroup28"
+    "owner": "southeasterngroup28",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/ac256b7f-e3df-4361-9ed7-b853e2ccd2c9"
+    }
   }
 }

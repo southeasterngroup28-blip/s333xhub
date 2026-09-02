@@ -8,10 +8,12 @@ import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { ProfileCardProvider } from '@/components/profile-card';
+import { installCrashReporting } from '@/lib/crash';
 import { AuthProvider, useAuth } from '@/providers/auth-provider';
 import { PlayerProvider, usePlayer } from '@/providers/player-provider';
 
 SplashScreen.preventAutoHideAsync();
+installCrashReporting();
 
 function RootNavigator() {
   const { session, isLoading } = useAuth();

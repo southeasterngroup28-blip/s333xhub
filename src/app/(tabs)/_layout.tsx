@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,6 +8,7 @@ import { MiniPlayer } from '@/components/mini-player';
 import { SHOP_TAB_LIVE } from '@/lib/shop';
 import { tapFeedback } from '@/lib/haptics';
 import { registerPushToken } from '@/lib/notifications';
+import { installPushNavigation } from '@/lib/push-navigation';
 
 /** Icons for the pill; shop renders as the detached teaser circle. */
 const TAB_ICONS: Record<string, { on: keyof typeof Ionicons.glyphMap; off: keyof typeof Ionicons.glyphMap }> = {
@@ -104,10 +105,18 @@ function FloatingTabBar({ state, navigation }: TabBarProps) {
 }
 
 export default function TabsLayout() {
-  // File this device's push address once signed in. No-op on web/Expo Go;
-  // becomes real with the development build.
+  const router = useRouter();
+
+  // File this device's push address once signed in, and route notification
+  // taps to the exact post/chat/drop they announce.
   useEffect(() => {
     registerPushToken();
+    let cleanup: (() => void) | undefined;
+    installPushNavigation(router).then((fn) => {
+      cleanup = fn;
+    });
+    return () => cleanup?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
