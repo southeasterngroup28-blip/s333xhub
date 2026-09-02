@@ -25,12 +25,6 @@ type Props = {
   coverFocus?: number;
 };
 
-const WAVE_BARS = 36;
-/** Deterministic pseudo-waveform so every track keeps its own shape. */
-function barHeight(index: number): number {
-  return 7 + ((index * 37) % 19);
-}
-
 function formatTime(totalSeconds: number): string {
   if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '0:00';
   const minutes = Math.floor(totalSeconds / 60);
@@ -102,17 +96,12 @@ export function AudioPlayerCard({ postId, title, url, coverUrl, coverFocus = 0.5
   currentRef.current = isCurrent;
   durationRef.current = duration;
 
-  // Bars are pointerEvents:none, so locationX is always relative to the
-  // wave container itself. Drags claim the gesture only when clearly
-  // horizontal — vertical swipes still scroll the feed.
+  // The seek bar claims the touch the moment your finger lands on it —
+  // that instant thumb-jump is what makes it feel like Spotify's bar.
   const pan = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (_e, g) =>
-        currentRef.current &&
-        durationRef.current > 0 &&
-        Math.abs(g.dx) > 6 &&
-        Math.abs(g.dx) > Math.abs(g.dy),
+      onStartShouldSetPanResponder: () => currentRef.current && durationRef.current > 0,
+      onMoveShouldSetPanResponder: () => currentRef.current && durationRef.current > 0,
       onPanResponderGrant: (e) => {
         setDragFraction(clampFraction(e.nativeEvent.locationX));
       },
@@ -133,14 +122,6 @@ export function AudioPlayerCard({ postId, title, url, coverUrl, coverFocus = 0.5
     const width = widthRef.current;
     if (width <= 0) return 0;
     return Math.max(0, Math.min(1, x / width));
-  }
-
-  /** Plain tap on the waveform = jump straight there. */
-  function handleWaveTap(locationX: number) {
-    if (!currentRef.current || durationRef.current <= 0) return;
-    const fraction = clampFraction(locationX);
-    pendingSeekRef.current = fraction * durationRef.current;
-    seekTo(fraction * durationRef.current);
   }
 
   function handlePress() {
@@ -192,38 +173,46 @@ export function AudioPlayerCard({ postId, title, url, coverUrl, coverFocus = 0.5
                 </View>
               ) : null}
             </View>
-            <Text style={styles.time}>
-              {isCurrent
-                ? `${formatTime(dragFraction != null ? dragFraction * duration : position)} / ${formatTime(duration)}`
-                : 'Tap to play'}
-            </Text>
+            {!isCurrent ? <Text style={styles.time}>Tap to play</Text> : null}
           </View>
         </View>
       </View>
 
-      {/* Waveform scrubber: tap to jump, drag horizontally to scrub —
-          vertical swipes pass through to the feed's scroll. */}
-      <Pressable onPress={(e) => handleWaveTap(e.nativeEvent.locationX)}>
-        <View
-          style={styles.wave}
-          onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
-          {...pan.panHandlers}>
-          {Array.from({ length: WAVE_BARS }, (_, i) => {
-            const lit = isCurrent && shownFraction >= (i + 0.5) / WAVE_BARS;
-            return (
-              <View
-                key={i}
-                pointerEvents="none"
-                style={[
-                  styles.waveBar,
-                  { height: barHeight(i) },
-                  lit ? styles.waveBarLit : null,
-                ]}
-              />
-            );
-          })}
+      {/* Seek bar: thin track, round thumb, grabs on touch. */}
+      <View
+        style={styles.seekTouch}
+        onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
+        {...pan.panHandlers}>
+        <View style={styles.track} pointerEvents="none">
+          <View style={[styles.fill, { width: `${shownFraction * 100}%` }]} />
         </View>
-      </Pressable>
+        {isCurrent ? (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.thumb,
+              dragFraction != null && styles.thumbActive,
+              {
+                left: Math.max(
+                  0,
+                  Math.min(
+                    barWidth - (dragFraction != null ? 16 : 12),
+                    shownFraction * barWidth - (dragFraction != null ? 8 : 6)
+                  )
+                ),
+              },
+            ]}
+          />
+        ) : null}
+      </View>
+      {isCurrent ? (
+        <View style={styles.timesRow} pointerEvents="none">
+          <Text style={styles.timeStamp}>
+            {formatTime(dragFraction != null ? dragFraction * duration : position)}
+          </Text>
+          <Text style={styles.timeStamp}>{formatTime(duration)}</Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -284,13 +273,23 @@ const styles = StyleSheet.create({
   time: { color: '#99a1a9', fontSize: 12, marginTop: 2 },
   eq: { flexDirection: 'row', alignItems: 'flex-end', gap: 2.5, height: 16 },
   eqBar: { width: 3, borderRadius: 2, backgroundColor: '#c3cdd6' },
-  wave: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2.5,
-    paddingVertical: 10,
-    height: 46,
+  seekTouch: { height: 30, justifyContent: 'center', marginTop: 4 },
+  track: { height: 4, borderRadius: 2, backgroundColor: '#2a2f36', overflow: 'hidden' },
+  fill: { height: 4, borderRadius: 2, backgroundColor: '#ffffff' },
+  thumb: {
+    position: 'absolute',
+    top: 9,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
-  waveBar: { flex: 1, borderRadius: 2, backgroundColor: '#262b31' },
-  waveBarLit: { backgroundColor: '#c3cdd6' },
+  thumbActive: { top: 7, width: 16, height: 16, borderRadius: 8 },
+  timesRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -2 },
+  timeStamp: { color: '#8f99a3', fontSize: 11, fontVariant: ['tabular-nums'] },
 });
