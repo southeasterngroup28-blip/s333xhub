@@ -22,6 +22,10 @@ type PlayerContextValue = {
   playTrack: (track: Track) => void;
   toggle: () => void;
   seekTo: (seconds: number) => void;
+  /** Pause without unloading (voice notes / videos borrow the speakers). */
+  pause: () => void;
+  /** Full stop: silence + clear the loaded track (sign-out, etc.). */
+  stop: () => void;
 };
 
 const PlayerContext = createContext<PlayerContextValue>({
@@ -31,6 +35,8 @@ const PlayerContext = createContext<PlayerContextValue>({
   playTrack: () => {},
   toggle: () => {},
   seekTo: () => {},
+  pause: () => {},
+  stop: () => {},
 });
 
 export function usePlayer() {
@@ -120,8 +126,23 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     player.seekTo(seconds);
   }
 
+  function pause() {
+    try {
+      player.pause();
+    } catch {}
+  }
+
+  function stop() {
+    try {
+      player.pause();
+    } catch {}
+    setCurrent(null);
+    setStarting(false);
+  }
+
   return (
-    <PlayerContext.Provider value={{ current, status, starting, playTrack, toggle, seekTo }}>
+    <PlayerContext.Provider
+      value={{ current, status, starting, playTrack, toggle, seekTo, pause, stop }}>
       {children}
     </PlayerContext.Provider>
   );

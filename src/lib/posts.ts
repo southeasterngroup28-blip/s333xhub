@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase';
+import { requireUserId, supabase } from '@/lib/supabase';
 
 export type Project = 'mazze' | 's333xgod';
 
@@ -56,13 +56,30 @@ export async function fetchPosts(filter: Project | 'all', before?: string): Prom
  * The photo bucket is private. This swaps storage paths for short-lived
  * signed links (1 hour) that the <Image> components can actually load.
  */
+// Signed URLs get a fresh ?token= on every call, which busts the image
+// cache and re-downloads everything. Memoize per path until near expiry.
+const signedUrlMemo = new Map<string, { url: string; expiresAt: number }>();
+
 export async function signedUrlsFor(paths: string[]): Promise<Record<string, string>> {
   if (paths.length === 0) return {};
-  const { data, error } = await supabase.storage.from('post-media').createSignedUrls(paths, 21600);
-  if (error) throw error;
+  const now = Date.now();
   const map: Record<string, string> = {};
+  const missing: string[] = [];
+  for (const path of paths) {
+    const hit = signedUrlMemo.get(path);
+    if (hit && hit.expiresAt > now + 10 * 60 * 1000) map[path] = hit.url;
+    else missing.push(path);
+  }
+  if (missing.length === 0) return map;
+  const { data, error } = await supabase.storage
+    .from('post-media')
+    .createSignedUrls(missing, 21600);
+  if (error) throw error;
   for (const item of data ?? []) {
-    if (item.path && item.signedUrl) map[item.path] = item.signedUrl;
+    if (item.path && item.signedUrl) {
+      map[item.path] = item.signedUrl;
+      signedUrlMemo.set(item.path, { url: item.signedUrl, expiresAt: now + 21600 * 1000 });
+    }
   }
   return map;
 }
@@ -155,7 +172,7 @@ export async function createPost(input: NewPost): Promise<void> {
   const { data: post, error: postError } = await supabase
     .from('posts')
     .insert({
-      author_id: (await supabase.auth.getUser()).data.user!.id,
+      author_id: await requireUserId(),
       project,
       kind: pollOptions
         ? 'poll'

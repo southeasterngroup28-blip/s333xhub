@@ -14,12 +14,19 @@ export async function fetchEffectiveBackgroundUrl(myUserId: string): Promise<str
   ]);
   const path = mine.data?.background_path ?? fallback.data?.value ?? null;
   if (!path) return null;
+  // Stable URL per path: a fresh token every call would make expo-image
+  // re-download the full background on every screen focus.
+  const hit = bgUrlMemo.get(path);
+  if (hit && hit.expiresAt > Date.now() + 30 * 60 * 1000) return hit.url;
   const { data, error } = await supabase.storage
     .from('backgrounds')
     .createSignedUrl(path, 60 * 60 * 24);
   if (error) return null;
+  bgUrlMemo.set(path, { url: data.signedUrl, expiresAt: Date.now() + 60 * 60 * 24 * 1000 });
   return data.signedUrl;
 }
+
+const bgUrlMemo = new Map<string, { url: string; expiresAt: number }>();
 
 async function uploadBackground(image: PickedImage): Promise<string> {
   const me = await requireUserId();

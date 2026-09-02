@@ -1,7 +1,4 @@
-import MaskedView from '@react-native-masked-view/masked-view';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import {
@@ -16,6 +13,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBackground } from '@/components/app-background';
+import { EdgeGlass, FadeMask } from '@/components/edge-fade';
 import { PostCard } from '@/components/post-card';
 import { EmptyState } from '@/components/empty-state';
 import { PostSkeleton } from '@/components/skeleton';
@@ -34,34 +32,6 @@ import { useAuth } from '@/providers/auth-provider';
 import { usePlayer } from '@/providers/player-provider';
 import { DISPLAY_FONT } from '@/constants/type';
 
-// Smoothstep alpha ramp for the scroll-fade mask: eases in and out so the
-// dissolve has no visible start or end edge.
-const EASED_STOPS = [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1] as const;
-const EASED_MASK = [
-  'rgba(0,0,0,0)',
-  'rgba(0,0,0,0.06)',
-  'rgba(0,0,0,0.22)',
-  'rgba(0,0,0,0.43)',
-  'rgba(0,0,0,0.65)',
-  'rgba(0,0,0,0.84)',
-  'rgba(0,0,0,0.97)',
-  'rgba(0,0,0,1)',
-] as const;
-const EASED_MASK_REVERSED = [...EASED_MASK].reverse() as unknown as typeof EASED_MASK;
-
-// Dark anchors behind the floating header and above the dock, eased with
-// the same curve so scrim and dissolve move as one.
-const TOP_SCRIM = [
-  'rgba(5,6,8,0.92)',
-  'rgba(5,6,8,0.86)',
-  'rgba(5,6,8,0.72)',
-  'rgba(5,6,8,0.52)',
-  'rgba(5,6,8,0.32)',
-  'rgba(5,6,8,0.15)',
-  'rgba(5,6,8,0.03)',
-  'rgba(5,6,8,0)',
-] as const;
-const BOTTOM_SCRIM = [...TOP_SCRIM].reverse() as unknown as typeof TOP_SCRIM;
 
 export function Feed() {
   const { profile } = useAuth();
@@ -197,26 +167,7 @@ export function Feed() {
           <PostSkeleton />
         </View>
       ) : (
-        // Posts melt away as they scroll off-screen. The gradient uses an
-        // eased (smoothstep) alpha curve — a straight linear fade reads as
-        // a cheap cutoff; the ease is what makes it feel native.
-        <MaskedView
-          style={styles.maskWrap}
-          maskElement={
-            <View style={styles.maskFill}>
-              <LinearGradient
-                colors={EASED_MASK}
-                locations={EASED_STOPS}
-                style={styles.maskFadeTop}
-              />
-              <View style={styles.maskSolid} />
-              <LinearGradient
-                colors={EASED_MASK_REVERSED}
-                locations={EASED_STOPS}
-                style={styles.maskFadeBottom}
-              />
-            </View>
-          }>
+        <FadeMask>
           <FlatList
             data={posts}
             keyExtractor={(item) => item.id}
@@ -254,50 +205,10 @@ export function Feed() {
             />
           }
           />
-        </MaskedView>
+        </FadeMask>
       )}
 
-      {/* Progressive blur: a gradient-masked frost so content softens as it
-          nears the edges — strongest at the very edge, gone by mid-band. */}
-      <MaskedView
-        pointerEvents="none"
-        style={[styles.topBlur, { height: insets.top + 104 }]}
-        maskElement={
-          <LinearGradient
-            colors={EASED_MASK_REVERSED}
-            locations={EASED_STOPS}
-            style={styles.blurMaskFill}
-          />
-        }>
-        <BlurView intensity={38} tint="dark" style={styles.blurMaskFill} />
-      </MaskedView>
-      <MaskedView
-        pointerEvents="none"
-        style={[styles.bottomBlur, { height: insets.bottom + 112 }]}
-        maskElement={
-          <LinearGradient
-            colors={EASED_MASK}
-            locations={EASED_STOPS}
-            style={styles.blurMaskFill}
-          />
-        }>
-        <BlurView intensity={30} tint="dark" style={styles.blurMaskFill} />
-      </MaskedView>
-
-      {/* Anchoring scrims: posts dissolve into deliberate darkness at both
-          edges, never into the raw background photo. */}
-      <LinearGradient
-        pointerEvents="none"
-        colors={TOP_SCRIM}
-        locations={EASED_STOPS}
-        style={[styles.topScrim, { height: insets.top + 118 }]}
-      />
-      <LinearGradient
-        pointerEvents="none"
-        colors={BOTTOM_SCRIM}
-        locations={EASED_STOPS}
-        style={[styles.bottomScrim, { height: insets.bottom + 128 }]}
-      />
+      <EdgeGlass />
 
       {/* The header floats OVER the list; posts slide beneath it and
           dissolve exactly in its zone — never in open space. */}
@@ -334,17 +245,7 @@ export function Feed() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
-  maskWrap: { flex: 1 },
-  maskFill: { flex: 1, backgroundColor: 'transparent' },
-  maskFadeTop: { height: 68 },
-  maskFadeBottom: { height: 90 },
-  maskSolid: { flex: 1, backgroundColor: 'black' },
   loadingPad: { paddingTop: 52 },
-  topScrim: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
-  bottomScrim: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 10 },
-  topBlur: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 9 },
-  bottomBlur: { position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 9 },
-  blurMaskFill: { flex: 1 },
   topBar: {
     position: 'absolute',
     left: 0,

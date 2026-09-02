@@ -85,6 +85,7 @@ function FramerStage({
             source={{ uri }}
             style={{ width: layoutWidth, height: displayHeight || layoutWidth }}
             contentFit="cover"
+            draggable={false}
             onLoad={(e) => {
               if (!natural && e.source?.width && e.source?.height) {
                 setNatural({ w: e.source.width, h: e.source.height });

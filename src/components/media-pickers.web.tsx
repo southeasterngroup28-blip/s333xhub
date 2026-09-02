@@ -54,6 +54,10 @@ export function PickPhotosButton({ disabled, label, maxCount, onPicked, onError 
           const files = Array.from(e.currentTarget.files ?? []).slice(0, maxCount);
           e.currentTarget.value = '';
           if (files.length === 0) return;
+          if (files.some((f) => f.size > MAX_FILE_BYTES)) {
+            onError('One of those photos is over the 50 MB limit - pick a smaller one.');
+            return;
+          }
           try {
             const images: PickedImageDraft[] = await Promise.all(
               files.map(async (file) => {

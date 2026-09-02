@@ -199,3 +199,76 @@ begin
   return new;
 end;
 $$;
+
+-- ------------------------------------------------------------
+-- FIX 8 (CRITICAL): Postgres grants EXECUTE to PUBLIC on new
+-- functions by default — the "service-only" money functions were
+-- actually callable by any signed-in fan over the REST API
+-- (free claims, refunding other people's pieces, spoofed pushes).
+-- Lock them to the server, and lock all FUTURE functions by default.
+-- ------------------------------------------------------------
+revoke execute on function public.claim_edition(uuid, uuid, int) from public, anon, authenticated;
+revoke execute on function public.refund_claim(uuid) from public, anon, authenticated;
+revoke execute on function public.purge_expired_holds(uuid) from public, anon, authenticated;
+revoke execute on function public.send_expo_push(jsonb) from public, anon, authenticated;
+grant execute on function public.claim_edition(uuid, uuid, int) to service_role;
+grant execute on function public.refund_claim(uuid) to service_role;
+grant execute on function public.purge_expired_holds(uuid) to service_role;
+grant execute on function public.send_expo_push(jsonb) to service_role;
+-- start_checkout_hold stays granted to authenticated (it self-checks auth.uid()).
+grant execute on function public.start_checkout_hold(uuid, int) to authenticated;
+
+-- New functions created from now on start locked instead of public.
+alter default privileges in schema public revoke execute on functions from public;
+
+-- ------------------------------------------------------------
+-- FIX 9: a push failure must NEVER abort the write it rides on.
+-- If pg_net breaks, posting/chatting/publishing keeps working and
+-- the miss is logged as a warning instead of an error.
+-- ------------------------------------------------------------
+create or replace function public.send_expo_push(messages jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  total int := coalesce(jsonb_array_length(messages), 0);
+  i int := 0;
+begin
+  begin
+    while i < total loop
+      perform net.http_post(
+        url := 'https://exp.host/--/api/v2/push/send',
+        headers := jsonb_build_object('Content-Type', 'application/json'),
+        body := (
+          select jsonb_agg(value)
+          from jsonb_array_elements(messages) with ordinality as t(value, ord)
+          where ord > i and ord <= i + 90
+        )
+      );
+      i := i + 90;
+    end loop;
+  exception when others then
+    raise warning 'push send failed: %', sqlerrm;
+  end;
+end;
+$$;
+revoke execute on function public.send_expo_push(jsonb) from public, anon, authenticated;
+grant execute on function public.send_expo_push(jsonb) to service_role;
+
+-- ------------------------------------------------------------
+-- FIX 10: closed polls are closed. Votes could still be DELETED
+-- after a poll ended, changing the final result.
+-- ------------------------------------------------------------
+drop policy "remove your vote" on public.poll_votes;
+create policy "remove your vote while open"
+  on public.poll_votes for delete to authenticated
+  using (
+    user_id = auth.uid()
+    and exists (
+      select 1 from public.polls pl
+      where pl.post_id = poll_votes.post_id
+        and (pl.ends_at is null or pl.ends_at > now())
+    )
+  );

@@ -60,6 +60,7 @@ function EqBar({ active, delay }: { active: boolean; delay: number }) {
       cancelAnimation(height);
       height.value = withTiming(4, { duration: 150 });
     }
+    return () => cancelAnimation(height);
   }, [active, delay, height]);
 
   const style = useAnimatedStyle(() => ({ height: height.value }));

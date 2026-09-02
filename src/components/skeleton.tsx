@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { StyleSheet, View, type DimensionValue } from 'react-native';
 import Animated, {
+  cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -23,6 +24,7 @@ export function Skeleton({
 
   useEffect(() => {
     pulse.value = withRepeat(withTiming(1, { duration: 750 }), -1, true);
+    return () => cancelAnimation(pulse);
   }, [pulse]);
 
   const animated = useAnimatedStyle(() => ({ opacity: pulse.value }));

@@ -194,13 +194,26 @@ export async function sendMediaMessage(
 }
 
 /** storage path → temporary viewing URL, for voice notes and pictures. */
+const chatUrlMemo = new Map<string, { url: string; expiresAt: number }>();
+
 export async function chatMediaUrls(paths: string[]): Promise<Record<string, string>> {
   if (paths.length === 0) return {};
-  const { data, error } = await supabase.storage.from('chat-media').createSignedUrls(paths, 86400);
-  if (error) throw error;
+  const now = Date.now();
   const map: Record<string, string> = {};
+  const missing: string[] = [];
+  for (const path of paths) {
+    const hit = chatUrlMemo.get(path);
+    if (hit && hit.expiresAt > now + 30 * 60 * 1000) map[path] = hit.url;
+    else missing.push(path);
+  }
+  if (missing.length === 0) return map;
+  const { data, error } = await supabase.storage.from('chat-media').createSignedUrls(missing, 86400);
+  if (error) throw error;
   for (const row of data ?? []) {
-    if (row.path && row.signedUrl) map[row.path] = row.signedUrl;
+    if (row.path && row.signedUrl) {
+      map[row.path] = row.signedUrl;
+      chatUrlMemo.set(row.path, { url: row.signedUrl, expiresAt: now + 86400 * 1000 });
+    }
   }
   return map;
 }

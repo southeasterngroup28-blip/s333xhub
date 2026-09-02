@@ -1,9 +1,14 @@
 import MaskedView from '@react-native-masked-view/masked-view';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { StyleSheet, View, type ViewStyle } from 'react-native';
+import { Platform, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { PropsWithChildren } from 'react';
+
+// masked-view's web fallback renders ONLY the mask element — wrapping a
+// list in it on web would show a black panel instead of the content. On
+// web we skip masking entirely and rely on the scrims for the edge look.
+const IS_WEB = Platform.OS === 'web';
 
 // Smoothstep alpha ramp shared by every edge treatment in the app —
 // eases in and out so no fade ever shows a visible start or end line.
@@ -38,6 +43,9 @@ export function FadeMask({
   bottom = 90,
   style,
 }: PropsWithChildren<{ top?: number; bottom?: number; style?: ViewStyle }>) {
+  if (IS_WEB) {
+    return <View style={[styles.flex, style]}>{children}</View>;
+  }
   return (
     <MaskedView
       style={[styles.flex, style]}
@@ -63,6 +71,25 @@ export function FadeMask({
  */
 export function EdgeGlass() {
   const insets = useSafeAreaInsets();
+  if (IS_WEB) {
+    // Scrims only — the masked blur layers would render as black bands.
+    return (
+      <>
+        <LinearGradient
+          pointerEvents="none"
+          colors={SCRIM}
+          locations={EASED_STOPS}
+          style={[styles.top, { height: insets.top + 118, zIndex: 10 }]}
+        />
+        <LinearGradient
+          pointerEvents="none"
+          colors={SCRIM_REVERSED}
+          locations={EASED_STOPS}
+          style={[styles.bottom, { height: insets.bottom + 128, zIndex: 10 }]}
+        />
+      </>
+    );
+  }
   return (
     <>
       <MaskedView

@@ -9,17 +9,24 @@ import { useColorScheme } from 'react-native';
 
 import { ProfileCardProvider } from '@/components/profile-card';
 import { AuthProvider, useAuth } from '@/providers/auth-provider';
-import { PlayerProvider } from '@/providers/player-provider';
+import { PlayerProvider, usePlayer } from '@/providers/player-provider';
 
 SplashScreen.preventAutoHideAsync();
 
 function RootNavigator() {
   const { session, isLoading } = useAuth();
+  const { current: loadedTrack, stop: stopPlayer } = usePlayer();
   const [fontsLoaded] = useFonts({
     Anton_400Regular,
     SixCaps_400Regular,
     Butcherman_400Regular,
   });
+
+  // Signing out silences and unloads whatever was playing — music must
+  // never keep playing over the login screen or leak into the next account.
+  useEffect(() => {
+    if (!session && loadedTrack) stopPlayer();
+  }, [session, loadedTrack, stopPlayer]);
 
   const ready = !isLoading && fontsLoaded;
 

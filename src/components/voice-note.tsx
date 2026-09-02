@@ -1,7 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+
+import { usePlayer } from '@/providers/player-provider';
 
 function formatSeconds(total: number): string {
   const s = Math.max(0, Math.round(total));
@@ -18,13 +20,37 @@ type Props = {
   mine?: boolean;
 };
 
-/** A play/pause voice-note row inside a chat bubble. */
+/**
+ * A play/pause voice-note row. The actual audio player is only created
+ * on first tap — a chat full of voice notes must not hold dozens of
+ * live buffering players for messages nobody is listening to.
+ */
 export function VoiceNoteBubble({ url, durationSeconds, mine }: Props) {
+  const [activated, setActivated] = useState(false);
+
   if (!url) {
     return (
       <View style={styles.row}>
         <ActivityIndicator color="#8f99a3" size="small" />
         <Text style={styles.time}>voice note…</Text>
+      </View>
+    );
+  }
+  if (!activated) {
+    return (
+      <View style={styles.row}>
+        <Pressable
+          style={[styles.button, mine && styles.buttonMine]}
+          onPress={() => setActivated(true)}
+          hitSlop={8}>
+          <Ionicons name="play" size={16} color="#0b0c0e" />
+        </Pressable>
+        <View style={styles.bars}>
+          {Array.from({ length: 14 }, (_, i) => (
+            <View key={i} style={[styles.bar, { height: 6 + ((i * 7) % 12) }]} />
+          ))}
+        </View>
+        <Text style={styles.time}>{formatSeconds(durationSeconds ?? 0)}</Text>
       </View>
     );
   }
@@ -34,13 +60,39 @@ export function VoiceNoteBubble({ url, durationSeconds, mine }: Props) {
 function Loaded({ url, durationSeconds, mine }: Props & { url: string }) {
   const player = useAudioPlayer(url);
   const status = useAudioPlayerStatus(player);
+  const { pause: pauseMusic } = usePlayer();
+  const [autoplayed, setAutoplayed] = useState(false);
 
   const playing = status.playing;
   const total = durationSeconds ?? (status.duration || 0);
   const shown = playing || status.currentTime > 0 ? status.currentTime : total;
 
-  // If this bubble unmounts (scrolled far away) while registered as the
-  // active voice, drop the stale pause handle.
+  function startPlayback() {
+    // The music player and other voice notes step aside.
+    pauseMusic();
+    pauseCurrentVoice?.();
+    pauseCurrentVoice = () => {
+      try {
+        player.pause();
+      } catch {}
+    };
+    if (status.didJustFinish || (status.duration > 0 && status.currentTime >= status.duration)) {
+      player.seekTo(0);
+    }
+    player.play();
+  }
+
+  // First tap created this component — begin playing as soon as ready.
+  useEffect(() => {
+    if (!autoplayed && status.isLoaded) {
+      setAutoplayed(true);
+      startPlayback();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoplayed, status.isLoaded]);
+
+  // If this bubble unmounts while registered as the active voice, drop
+  // the stale pause handle.
   useEffect(() => {
     return () => {
       pauseCurrentVoice = null;
@@ -53,18 +105,7 @@ function Loaded({ url, durationSeconds, mine }: Props & { url: string }) {
       pauseCurrentVoice = null;
       return;
     }
-    // Only one voice note plays at a time.
-    pauseCurrentVoice?.();
-    pauseCurrentVoice = () => {
-      try {
-        player.pause();
-      } catch {}
-    };
-    // Replay from the start once it has finished.
-    if (status.didJustFinish || (status.duration > 0 && status.currentTime >= status.duration)) {
-      player.seekTo(0);
-    }
-    player.play();
+    startPlayback();
   }
 
   return (

@@ -1,7 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+
+import { usePlayer } from '@/providers/player-provider';
 
 type Props = {
   url: string;
@@ -36,12 +38,19 @@ export function VideoPlayerCard({ url, width, sourceWidth, sourceHeight }: Props
 }
 
 function ActiveVideo({ url, size }: { url: string; size: { width: number; height: number } }) {
+  const { pause: pauseMusic } = usePlayer();
   const player = useVideoPlayer(url, (p) => {
     p.loop = false;
     // Keep the audio player's lock-screen card intact.
     p.showNowPlayingNotification = false;
     p.play();
   });
+
+  // A video with sound shouldn't play on top of the music.
+  useEffect(() => {
+    pauseMusic();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return <VideoView player={player} style={[styles.video, size]} nativeControls contentFit="contain" />;
 }

@@ -35,6 +35,11 @@ export function PickPhotosButton({ disabled, label, maxCount, onPicked, onError 
         base64: true,
       });
       if (result.canceled) return;
+      const oversized = result.assets.find((a) => a.fileSize && a.fileSize > MAX_FILE_BYTES);
+      if (oversized) {
+        onError('One of those photos is over the 50 MB limit - pick a smaller one.');
+        return;
+      }
       onPicked(
         result.assets
           .filter((a) => a.base64)
@@ -78,8 +83,13 @@ export function PickVideoButton({ disabled, label, onPicked, onError }: VideoPro
       if (result.canceled || result.assets.length === 0) return;
       const asset = result.assets[0];
 
-      // expo-image-picker reports video duration in milliseconds.
-      const durationSeconds = (asset.duration ?? 0) / 1000;
+      // expo-image-picker reports video duration in milliseconds. A null
+      // duration would read as 0s and silently bypass the 45s hard cap.
+      if (asset.duration == null) {
+        onError("Couldn't read that video's length - re-export it and try again.");
+        return;
+      }
+      const durationSeconds = asset.duration / 1000;
       if (durationSeconds > VIDEO_MAX_SECONDS) {
         onError(
           `That video is ${Math.round(durationSeconds)} seconds — the cap is ${VIDEO_MAX_SECONDS}. Trim it and try again.`

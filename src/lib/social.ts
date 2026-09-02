@@ -145,6 +145,10 @@ export async function fetchTopFans(): Promise<TopFan[]> {
 }
 
 export async function setTopFan(position: number, userId: string): Promise<void> {
+  // Clear both collision paths first: whoever held this slot, and this
+  // fan's old slot - otherwise moving a fan between slots hits the
+  // unique constraints.
+  await supabase.from('top_fans').delete().or(`user_id.eq.${userId},position.eq.${position}`);
   const { error } = await supabase
     .from('top_fans')
     .upsert({ position, user_id: userId, updated_at: new Date().toISOString() });

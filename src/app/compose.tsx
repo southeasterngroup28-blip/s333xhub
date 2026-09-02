@@ -112,6 +112,7 @@ function CoverFramer({
             source={{ uri }}
             style={{ width: layoutWidth, height: displayHeight || rectHeight }}
             contentFit="cover"
+            draggable={false}
             onLoad={(e) => {
               if (!natural && e.source?.width && e.source?.height) {
                 setNatural({ w: e.source.width, h: e.source.height });
@@ -187,6 +188,8 @@ export default function ComposeScreen() {
   const [pollOptions, setPollOptions] = useState<string[]>(['', '']);
   const [pollHours, setPollHours] = useState<number | null>(24);
   const [posting, setPosting] = useState(false);
+  /** Hard re-entrancy guard - two taps in one frame both see posting=false. */
+  const postingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   // The database blocks non-artists anyway; this is just a friendly guard.
@@ -229,6 +232,8 @@ export default function ComposeScreen() {
 
   async function handlePost() {
     setError(null);
+    if (postingRef.current) return;
+    postingRef.current = true;
     setPosting(true);
     try {
       const filledOptions = pollOptions.map((o) => o.trim()).filter(Boolean);
@@ -253,6 +258,7 @@ export default function ComposeScreen() {
         (e as { message?: string })?.message ?? 'Something went wrong. Try again.';
       setError(message);
       setPosting(false);
+      postingRef.current = false;
     }
   }
 
@@ -376,6 +382,7 @@ export default function ComposeScreen() {
                 onPress={() => {
                   setAudio(null);
                   setCover(null);
+                    setTrackTitle('');
                 }}
                 disabled={posting}>
                 <Ionicons name="close" size={18} color="#888" />
