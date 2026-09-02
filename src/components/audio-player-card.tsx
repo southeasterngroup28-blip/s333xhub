@@ -96,20 +96,34 @@ export function AudioPlayerCard({ postId, title, url, coverUrl, coverFocus = 0.5
   currentRef.current = isCurrent;
   durationRef.current = duration;
 
-  // The seek bar claims the touch the moment your finger lands on it —
-  // that instant thumb-jump is what makes it feel like Spotify's bar.
+  /** The bar's left edge in screen coords, captured at touch-down. */
+  const leftEdgeRef = useRef(0);
+  const dragFracRef = useRef(0);
+
+  // The seek bar claims the touch the moment your finger lands on it, and
+  // KEEPS it — the scroll view is refused when it tries to steal the
+  // gesture, so a drag can wander anywhere on screen and keep scrubbing
+  // (finger position is tracked in screen coordinates, not view-local).
   const pan = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => currentRef.current && durationRef.current > 0,
       onMoveShouldSetPanResponder: () => currentRef.current && durationRef.current > 0,
+      onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: (e) => {
-        setDragFraction(clampFraction(e.nativeEvent.locationX));
-      },
-      onPanResponderMove: (e) => {
-        setDragFraction(clampFraction(e.nativeEvent.locationX));
-      },
-      onPanResponderRelease: (e) => {
+        // locationX is view-local and pageX is screen-global: their
+        // difference IS the bar's left edge, measured synchronously.
+        leftEdgeRef.current = e.nativeEvent.pageX - e.nativeEvent.locationX;
         const fraction = clampFraction(e.nativeEvent.locationX);
+        dragFracRef.current = fraction;
+        setDragFraction(fraction);
+      },
+      onPanResponderMove: (_e, g) => {
+        const fraction = clampFraction(g.moveX - leftEdgeRef.current);
+        dragFracRef.current = fraction;
+        setDragFraction(fraction);
+      },
+      onPanResponderRelease: () => {
+        const fraction = dragFracRef.current;
         setDragFraction(null);
         pendingSeekRef.current = fraction * durationRef.current;
         seekTo(fraction * durationRef.current);
