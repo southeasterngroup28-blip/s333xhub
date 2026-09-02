@@ -11,7 +11,6 @@
       "bundleIdentifier": "com.s333xhub.app",
       "infoPlist": {
         "UIBackgroundModes": [
-          "audio",
           "audio"
         ],
         "ITSAppUsesNonExemptEncryption": false
