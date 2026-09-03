@@ -8,6 +8,8 @@ import { MiniPlayer } from '@/components/mini-player';
 import { SHOP_TAB_LIVE } from '@/lib/shop';
 import { tapFeedback } from '@/lib/haptics';
 import { registerPushToken } from '@/lib/notifications';
+import { configurePayments } from '@/lib/payments';
+import { useAuth } from '@/providers/auth-provider';
 import { installPushNavigation } from '@/lib/push-navigation';
 
 /** Icons for the pill; shop renders as the detached teaser circle. */
@@ -106,6 +108,12 @@ function FloatingTabBar({ state, navigation }: TabBarProps) {
 
 export default function TabsLayout() {
   const router = useRouter();
+  const { session } = useAuth();
+
+  // Billing identity follows the signed-in account.
+  useEffect(() => {
+    if (session?.user.id) configurePayments(session.user.id);
+  }, [session?.user.id]);
 
   // File this device's push address once signed in, and route notification
   // taps to the exact post/chat/drop they announce.

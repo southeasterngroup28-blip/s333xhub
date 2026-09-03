@@ -18,6 +18,7 @@ import { AvatarFramer } from '@/components/avatar-framer';
 import { PickPhotosButton, type PickedImageDraft } from '@/components/media-pickers';
 import { invalidateBackgroundCache } from '@/components/app-background';
 import { removeMyAvatar, setMyAvatar } from '@/lib/avatars';
+import { restorePurchases } from '@/lib/payments';
 import { fetchMyPieces, type MyPiece } from '@/lib/shop';
 import { clearMyBackground, setDefaultBackground, setMyBackground } from '@/lib/backgrounds';
 import { SUPPORT_EMAIL } from '@/lib/legal-content';
@@ -54,6 +55,8 @@ export default function SettingsScreen() {
   /** Freshly picked photo awaiting circle-framing in the editor. */
   const [avatarDraft, setAvatarDraft] = useState<PickedImageDraft | null>(null);
   const [pieces, setPieces] = useState<MyPiece[]>([]);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreNotice, setRestoreNotice] = useState<string | null>(null);
 
   // Local override so the preview updates instantly after a change.
   const shownAvatar = avatarPath === undefined ? profile?.avatar_path : avatarPath;
@@ -313,6 +316,32 @@ export default function SettingsScreen() {
             </View>
           </>
         ) : null}
+
+        <Text style={styles.sectionLabel}>PURCHASES</Text>
+        <View style={styles.card}>
+          <Pressable
+            style={styles.aboutRow}
+            disabled={restoring}
+            onPress={async () => {
+              setRestoring(true);
+              try {
+                const count = await restorePurchases();
+                setRestoreNotice(
+                  count > 0
+                    ? `All set — ${count} unlock${count === 1 ? '' : 's'} on this account.`
+                    : 'No purchases found for this account yet.'
+                );
+              } catch (e) {
+                setError((e as { message?: string })?.message ?? 'Could not restore.');
+              } finally {
+                setRestoring(false);
+              }
+            }}>
+            <Text style={styles.aboutLink}>{restoring ? 'Restoring…' : 'Restore purchases'}</Text>
+            <Ionicons name="refresh" size={16} color="#444" />
+          </Pressable>
+          {restoreNotice ? <Text style={styles.bgNotice}>{restoreNotice}</Text> : null}
+        </View>
 
         <Text style={styles.sectionLabel}>ABOUT</Text>
         <View style={styles.card}>

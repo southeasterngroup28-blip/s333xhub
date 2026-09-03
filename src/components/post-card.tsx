@@ -13,7 +13,8 @@ import Animated, {
 
 import { AudioPlayerCard } from '@/components/audio-player-card';
 import { Avatar } from '@/components/avatar';
-import { pressFeedback, tapFeedback } from '@/lib/haptics';
+import { pressFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
+import { PaymentsNotLiveError, purchasePost } from '@/lib/payments';
 import { useProfileCard } from '@/components/profile-card';
 import { VideoPlayerCard } from '@/components/video-player-card';
 import { deletePost, fileReport, REPORT_REASONS } from '@/lib/moderation';
@@ -42,6 +43,8 @@ type Props = {
   poll?: PollState;
   /** Called after the artist deletes this post, so the feed can refresh. */
   onDeleted?: () => void;
+  /** Called the moment this viewer's purchase of this post is recorded. */
+  onUnlocked?: () => void;
 };
 
 /** One reaction chip that pops when tapped. */
@@ -101,13 +104,35 @@ export function PostCard({
   commentCount,
   poll,
   onDeleted,
+  onUnlocked,
 }: Props) {
   const { width: windowWidth } = useWindowDimensions();
   const router = useRouter();
   const { showProfile } = useProfileCard();
   const [menu, setMenu] = useState<MenuState>('closed');
   const [actionError, setActionError] = useState<string | null>(null);
-  const [unlockNotice, setUnlockNotice] = useState(false);
+  const [unlockNotice, setUnlockNotice] = useState<string | null>(null);
+  const [unlocking, setUnlocking] = useState(false);
+
+  async function handleUnlock() {
+    if (unlocking) return;
+    pressFeedback();
+    setUnlocking(true);
+    setUnlockNotice(null);
+    try {
+      await purchasePost(post);
+      successFeedback();
+      onUnlocked?.();
+    } catch (e) {
+      setUnlockNotice(
+        e instanceof PaymentsNotLiveError
+          ? 'Purchases arrive with the App Store version.'
+          : ((e as { message?: string })?.message ?? 'The purchase did not go through.')
+      );
+    } finally {
+      setUnlocking(false);
+    }
+  }
 
   // Local optimistic copies of reaction and poll state (synced from props).
   const [myReactions, setMyReactions] = useState<Set<string>>(new Set());
@@ -340,18 +365,14 @@ export function PostCard({
               {post.title ?? 'Exclusive drop'}
             </Text>
             <Pressable
-              style={styles.unlockPill}
-              onPress={() => {
-                pressFeedback();
-                setUnlockNotice(true);
-              }}>
+              style={[styles.unlockPill, unlocking && styles.unlockPillBusy]}
+              disabled={unlocking}
+              onPress={handleUnlock}>
               <Text style={styles.unlockPillText}>
-                Unlock · ${((post.price_cents ?? 0) / 100).toFixed(2)}
+                {unlocking ? 'Unlocking…' : `Unlock · $${((post.price_cents ?? 0) / 100).toFixed(2)}`}
               </Text>
             </Pressable>
-            {unlockNotice ? (
-              <Text style={styles.teaseSub}>Purchases arrive with the App Store version</Text>
-            ) : null}
+            {unlockNotice ? <Text style={styles.teaseSub}>{unlockNotice}</Text> : null}
           </View>
         </View>
       ) : null}
@@ -514,6 +535,7 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   unlockPillText: { color: '#14161a', fontWeight: '700', fontSize: 13 },
+  unlockPillBusy: { opacity: 0.6 },
   socialRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 12, flexWrap: 'wrap' },
   react: {
     flexDirection: 'row',

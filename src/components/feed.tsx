@@ -181,6 +181,11 @@ export function Feed() {
               commentCount={social.commentCounts[item.id]}
               poll={polls[item.id]}
               onDeleted={loadFresh}
+              onUnlocked={() => {
+                const next = new Set(purchasedIds).add(item.id);
+                setPurchasedIds(next);
+                resolveMedia([item], next);
+              }}
             />
           )}
           contentContainerStyle={styles.list}
