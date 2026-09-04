@@ -92,10 +92,46 @@ export async function deleteMessage(messageId: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Friendly copy for the paid-post delete guard (the DB refuses with PROTECTED_POST). */
+export function paidPostBlockedMessage(buyers?: number): string {
+  const who = buyers && buyers > 0 ? `${buyers} fan${buyers === 1 ? '' : 's'}` : 'Fans';
+  return `${who} paid for this post. Paid posts with buyers can't be deleted.`;
+}
+
+/** Artist: how many fans have paid to unlock a post (artist-only RPC). */
+export async function countPostBuyers(postId: string): Promise<number> {
+  const { data, error } = await supabase.rpc('count_post_buyers', { post: postId });
+  if (error) throw error;
+  return (data as number | null) ?? 0;
+}
+
 /** Artist: delete a post (its media rows cascade; files stay in storage for now). */
 export async function deletePost(postId: string): Promise<void> {
   const { error } = await supabase.from('posts').delete().eq('id', postId);
+  if (error) {
+    // The DB blocks deleting a paid post fans have bought — never surface the raw trigger error.
+    if (error.message?.includes('PROTECTED_POST')) throw new Error(paidPostBlockedMessage());
+    throw error;
+  }
+}
+
+/** Artist: bans (banned=true) or unbans a user — banned accounts see a suspended screen. */
+export async function banUser(targetUserId: string, banned: boolean): Promise<void> {
+  const { error } = await supabase.rpc('ban_user', { target_user: targetUserId, banned });
   if (error) throw error;
+}
+
+/** banned_at per user id, so the reports screen can show Ban vs Unban. */
+export async function fetchBannedAt(userIds: string[]): Promise<Map<string, string | null>> {
+  if (userIds.length === 0) return new Map();
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, banned_at')
+    .in('id', userIds);
+  if (error) throw error;
+  return new Map(
+    ((data as { id: string; banned_at: string | null }[]) ?? []).map((r) => [r.id, r.banned_at])
+  );
 }
 
 /** Fetches a short human-readable preview of whatever a report points at. */

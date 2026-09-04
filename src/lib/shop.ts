@@ -9,11 +9,12 @@ import { supabase, requireUserId } from '@/lib/supabase';
 export const SHOP_PAYMENTS_LIVE = false;
 
 /**
- * Submission-day switch: false turns the dock's shop bubble back into
- * the dimmed "coming soon" teaser (App Review must never see a BUY
- * button that can't complete — guideline 2.1).
+ * Submission-day switch: dev builds always see the live shop, but store
+ * builds keep the dimmed "coming soon" teaser (App Review must never see
+ * a BUY button that can't complete — guideline 2.1) until Stripe launch,
+ * when the EAS env var EXPO_PUBLIC_SHOP_TAB_LIVE=true flips it on.
  */
-export const SHOP_TAB_LIVE = true;
+export const SHOP_TAB_LIVE = __DEV__ || process.env.EXPO_PUBLIC_SHOP_TAB_LIVE === 'true';
 
 /** "$65" for whole-dollar prices, "$64.99" otherwise — never rounds. */
 export function priceLabel(cents: number): string {

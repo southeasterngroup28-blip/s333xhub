@@ -7,6 +7,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
+import { AccountSuspended } from '@/components/account-suspended';
 import { ProfileCardProvider } from '@/components/profile-card';
 import { installCrashReporting } from '@/lib/crash';
 import { AuthProvider, useAuth } from '@/providers/auth-provider';
@@ -16,7 +17,7 @@ SplashScreen.preventAutoHideAsync();
 installCrashReporting();
 
 function RootNavigator() {
-  const { session, isLoading } = useAuth();
+  const { session, profile, isLoading } = useAuth();
   const { current: loadedTrack, stop: stopPlayer } = usePlayer();
   const [fontsLoaded] = useFonts({
     Anton_400Regular,
@@ -40,6 +41,11 @@ function RootNavigator() {
 
   if (!ready) {
     return null;
+  }
+
+  // Banned accounts get a dead-end notice instead of the app.
+  if (session && profile?.banned_at) {
+    return <AccountSuspended />;
   }
 
   return (

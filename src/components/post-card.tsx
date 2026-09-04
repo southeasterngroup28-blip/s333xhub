@@ -17,7 +17,13 @@ import { pressFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import { PaymentsNotLiveError, purchasePost } from '@/lib/payments';
 import { useProfileCard } from '@/components/profile-card';
 import { VideoPlayerCard } from '@/components/video-player-card';
-import { deletePost, fileReport, REPORT_REASONS } from '@/lib/moderation';
+import {
+  countPostBuyers,
+  deletePost,
+  fileReport,
+  paidPostBlockedMessage,
+  REPORT_REASONS,
+} from '@/lib/moderation';
 import { timeAgo, type Post } from '@/lib/posts';
 import {
   REACTION_EMOJIS,
@@ -93,7 +99,7 @@ function formatEndsIn(endsAt: string | null): string {
   return `ends in ${Math.round(hours / 24)}d`;
 }
 
-type MenuState = 'closed' | 'confirm-delete' | 'report' | 'reported';
+type MenuState = 'closed' | 'confirm-delete' | 'protected' | 'report' | 'reported';
 
 export function PostCard({
   post,
@@ -110,6 +116,7 @@ export function PostCard({
   const router = useRouter();
   const { showProfile } = useProfileCard();
   const [menu, setMenu] = useState<MenuState>('closed');
+  const [buyerCount, setBuyerCount] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
   const [unlockNotice, setUnlockNotice] = useState<string | null>(null);
   const [unlocking, setUnlocking] = useState(false);
@@ -211,6 +218,25 @@ export function PostCard({
   const media = [...post.post_media].sort((a, b) => a.position - b.position);
   const authorName = post.author?.display_name ?? 'Unknown';
 
+  /** Opens the delete confirm — a paid post with buyers can't be deleted at all. */
+  async function openDeleteConfirm() {
+    if (!post.is_locked) {
+      setMenu('confirm-delete');
+      return;
+    }
+    try {
+      const buyers = await countPostBuyers(post.id);
+      if (buyers > 0) {
+        setBuyerCount(buyers);
+        setMenu('protected');
+        return;
+      }
+    } catch {
+      // Couldn't check — show the confirm anyway; the DB still refuses a protected delete.
+    }
+    setMenu('confirm-delete');
+  }
+
   async function handleDelete() {
     setMenu('closed');
     try {
@@ -260,9 +286,11 @@ export function PostCard({
         </View>
         <Pressable
           hitSlop={10}
-          onPress={() =>
-            setMenu(menu === 'closed' ? (viewerIsArtist ? 'confirm-delete' : 'report') : 'closed')
-          }>
+          onPress={() => {
+            if (menu !== 'closed') setMenu('closed');
+            else if (viewerIsArtist) openDeleteConfirm();
+            else setMenu('report');
+          }}>
           <Ionicons
             name={viewerIsArtist ? 'trash-outline' : 'flag-outline'}
             size={15}
@@ -279,6 +307,15 @@ export function PostCard({
           </Pressable>
           <Pressable style={styles.menuChip} onPress={() => setMenu('closed')}>
             <Text style={styles.menuText}>Cancel</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {menu === 'protected' ? (
+        <View style={styles.menuRow}>
+          <Text style={styles.menuLabel}>{paidPostBlockedMessage(buyerCount)}</Text>
+          <Pressable style={styles.menuChip} onPress={() => setMenu('closed')}>
+            <Text style={styles.menuText}>OK</Text>
           </Pressable>
         </View>
       ) : null}

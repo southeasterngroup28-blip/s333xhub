@@ -5,8 +5,10 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from '
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
+  banUser,
   deleteMessage,
   deletePost,
+  fetchBannedAt,
   fetchOpenReports,
   fetchReportTargetPreview,
   resolveReport,
@@ -16,7 +18,12 @@ import { timeAgo } from '@/lib/posts';
 import { deleteComment } from '@/lib/social';
 import { useAuth } from '@/providers/auth-provider';
 
-type ReportRow = Report & { preview: string };
+type ReportRow = Report & {
+  preview: string;
+  targetBannedAt: string | null;
+  /** False when a reported user has since deleted their account — nothing left to ban. */
+  targetExists: boolean;
+};
 
 export default function ReportsScreen() {
   const { profile } = useAuth();
@@ -24,12 +31,22 @@ export default function ReportsScreen() {
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** Report id whose Ban/Unban action is waiting on an inline confirm. */
+  const [confirmBanId, setConfirmBanId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       const reports = await fetchOpenReports();
+      const bannedAt = await fetchBannedAt(
+        reports.filter((r) => r.target_type === 'user').map((r) => r.target_id)
+      );
       const withPreviews = await Promise.all(
-        reports.map(async (r) => ({ ...r, preview: await fetchReportTargetPreview(r) }))
+        reports.map(async (r) => ({
+          ...r,
+          preview: await fetchReportTargetPreview(r),
+          targetBannedAt: bannedAt.get(r.target_id) ?? null,
+          targetExists: r.target_type !== 'user' || bannedAt.has(r.target_id),
+        }))
       );
       setRows(withPreviews);
       setError(null);
@@ -66,6 +83,19 @@ export default function ReportsScreen() {
       setRows((prev) => prev.filter((r) => r.id !== report.id));
     } catch (e) {
       setError((e as { message?: string })?.message ?? 'Could not delete the content.');
+    }
+  }
+
+  async function handleBan(report: ReportRow) {
+    const banning = !report.targetBannedAt;
+    setConfirmBanId(null);
+    try {
+      await banUser(report.target_id, banning);
+      await load();
+    } catch {
+      setError(
+        banning ? 'Could not ban that user. Try again.' : 'Could not unban that user. Try again.'
+      );
     }
   }
 
@@ -120,16 +150,37 @@ export default function ReportsScreen() {
               <Text style={styles.preview} numberOfLines={3}>
                 {item.preview}
               </Text>
-              <View style={styles.actions}>
-                {item.target_type !== 'user' ? (
-                  <Pressable style={styles.chip} onPress={() => handleDeleteContent(item)}>
-                    <Text style={styles.chipDanger}>Delete content</Text>
+              {confirmBanId === item.id ? (
+                // Inline confirm (RN Alert doesn't work on web) — same pattern as chat leave.
+                <View style={styles.actions}>
+                  <Text style={styles.confirmText}>
+                    {item.targetBannedAt ? 'Unban this user?' : 'Ban this user from the app?'}
+                  </Text>
+                  <Pressable style={styles.chip} onPress={() => handleBan(item)}>
+                    <Text style={styles.chipDanger}>{item.targetBannedAt ? 'Unban' : 'Ban'}</Text>
                   </Pressable>
-                ) : null}
-                <Pressable style={styles.chip} onPress={() => handleResolve(item)}>
-                  <Text style={styles.chipText}>Dismiss report</Text>
-                </Pressable>
-              </View>
+                  <Pressable style={styles.chip} onPress={() => setConfirmBanId(null)}>
+                    <Text style={styles.chipText}>Cancel</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <View style={styles.actions}>
+                  {item.target_type !== 'user' ? (
+                    <Pressable style={styles.chip} onPress={() => handleDeleteContent(item)}>
+                      <Text style={styles.chipDanger}>Delete content</Text>
+                    </Pressable>
+                  ) : item.targetExists ? (
+                    <Pressable style={styles.chip} onPress={() => setConfirmBanId(item.id)}>
+                      <Text style={styles.chipDanger}>
+                        {item.targetBannedAt ? 'Unban user' : 'Ban user'}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable style={styles.chip} onPress={() => handleResolve(item)}>
+                    <Text style={styles.chipText}>Dismiss report</Text>
+                  </Pressable>
+                </View>
+              )}
             </View>
           )}
           ListEmptyComponent={
@@ -164,7 +215,8 @@ const styles = StyleSheet.create({
   when: { color: '#555', fontSize: 12 },
   reason: { color: '#ccc', fontSize: 14 },
   preview: { color: '#777', fontSize: 13, marginTop: 6, fontStyle: 'italic' },
-  actions: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
+  confirmText: { color: '#ccc', flex: 1, fontSize: 13 },
   chip: { backgroundColor: '#222226', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7 },
   chipText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   chipDanger: { color: '#f87171', fontSize: 13, fontWeight: '600' },

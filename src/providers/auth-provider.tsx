@@ -12,6 +12,8 @@ export type Profile = {
   avatar_focus: number | null;
   role: 'fan' | 'artist';
   status: string | null;
+  /** Set when the artist has banned this account (shows the suspended screen). */
+  banned_at: string | null;
 };
 
 type AuthContextValue = {
@@ -84,7 +86,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         const result = await Promise.race([
           supabase
             .from('profiles')
-            .select('id, display_name, role, status, avatar_path, avatar_focus')
+            .select('id, display_name, role, status, avatar_path, avatar_focus, banned_at')
             .eq('id', session.user.id)
             .single(),
           new Promise<never>((_, reject) =>
@@ -127,7 +129,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
           if (!session) return;
           const { data } = await supabase
             .from('profiles')
-            .select('id, display_name, role, status, avatar_path, avatar_focus')
+            .select('id, display_name, role, status, avatar_path, avatar_focus, banned_at')
             .eq('id', session.user.id)
             .single();
           if (data) setProfile(data as Profile);

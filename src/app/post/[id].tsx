@@ -17,28 +17,50 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AppBackground } from '@/components/app-background';
 import { Avatar } from '@/components/avatar';
 import { EmptyState } from '@/components/empty-state';
+import { PostCard } from '@/components/post-card';
 import { useProfileCard } from '@/components/profile-card';
-import { CommentSkeleton } from '@/components/skeleton';
+import { CommentSkeleton, PostSkeleton } from '@/components/skeleton';
 import { fileReport, REPORT_REASONS } from '@/lib/moderation';
-import { timeAgo } from '@/lib/posts';
+import {
+  fetchPostById,
+  markFeedStale,
+  signedUrlsFor,
+  timeAgo,
+  type Post,
+} from '@/lib/posts';
 import { cleanMessage } from '@/lib/profanity';
+import { fetchMyPurchasedPostIds } from '@/lib/purchases';
 import {
   addComment,
   deleteComment,
   fetchComments,
+  fetchPolls,
+  fetchSocialSummary,
   setPinned,
   type Comment,
+  type PollState,
+  type ReactionSummary,
+  type SocialSummary,
 } from '@/lib/social';
 import { useAuth } from '@/providers/auth-provider';
 import { DISPLAY_FONT } from '@/constants/type';
 
-export default function CommentsScreen() {
+export default function PostScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { session, profile } = useAuth();
   const router = useRouter();
   const { showProfile } = useProfileCard();
   const isArtist = profile?.role === 'artist';
   const myUserId = session?.user.id;
+
+  const [post, setPost] = useState<Post | null>(null);
+  /** True when the post was deleted (or a bad deep link) — not a fetch error. */
+  const [postGone, setPostGone] = useState(false);
+  const [postLoading, setPostLoading] = useState(true);
+  const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
+  const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
+  const [reactions, setReactions] = useState<ReactionSummary | undefined>(undefined);
+  const [poll, setPoll] = useState<PollState | undefined>(undefined);
 
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,6 +70,69 @@ export default function CommentsScreen() {
   const [actionTarget, setActionTarget] = useState<Comment | null>(null);
   const [reporting, setReporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const resolveMedia = useCallback(
+    async (target: Post, purchased: Set<string>) => {
+      // Mirrors the feed: only request viewing links this viewer may
+      // actually see — but a locked post still gets its cover, which
+      // shows blurred as a teaser (the storage rules allow covers through).
+      const canSee = isArtist || !target.is_locked || purchased.has(target.id);
+      const paths = canSee
+        ? [
+            ...target.post_media.map((m) => m.storage_path),
+            ...(target.cover_path ? [target.cover_path] : []),
+          ]
+        : target.cover_path
+          ? [target.cover_path]
+          : [];
+      if (paths.length === 0) return;
+      const urls = await signedUrlsFor(paths);
+      setMediaUrls((prev) => ({ ...prev, ...urls }));
+    },
+    [isArtist]
+  );
+
+  const loadPost = useCallback(async () => {
+    if (!id) return;
+    try {
+      const purchased = isArtist
+        ? new Set<string>()
+        : await fetchMyPurchasedPostIds().catch(() => new Set<string>());
+      setPurchasedIds(purchased);
+
+      const fresh = await fetchPostById(id);
+      if (!fresh) {
+        // Deleted post — the deep-link-from-a-push path lands here too.
+        setPostGone(true);
+        return;
+      }
+      setPost(fresh);
+
+      const [summary, pollStates] = await Promise.all([
+        fetchSocialSummary([id]).catch(
+          (): SocialSummary => ({ reactions: {}, commentCounts: {} })
+        ),
+        fetchPolls(fresh.kind === 'poll' ? [id] : []).catch(
+          (): Record<string, PollState> => ({})
+        ),
+      ]);
+      setReactions(summary.reactions[id]);
+      setPoll(pollStates[id]);
+
+      await resolveMedia(fresh, purchased);
+    } catch (e) {
+      // A mangled deep link (non-uuid id) is Postgres 22P02 — treat it like a
+      // missing post rather than surfacing the raw database text.
+      const err = e as { code?: string; message?: string };
+      if (err?.code === '22P02' || /invalid input syntax for type uuid/i.test(err?.message ?? '')) {
+        setPostGone(true);
+      } else {
+        setError('Could not load this post.');
+      }
+    } finally {
+      setPostLoading(false);
+    }
+  }, [id, isArtist, resolveMedia]);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -62,14 +147,23 @@ export default function CommentsScreen() {
   }, [id]);
 
   useEffect(() => {
+    loadPost();
     load();
-  }, [load]);
+  }, [loadPost, load]);
 
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function flash(text: string) {
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
     setNotice(text);
     noticeTimer.current = setTimeout(() => setNotice(null), 2500);
+  }
+
+  function handlePostDeleted() {
+    // The card just deleted the post server-side; the feed must refetch,
+    // and there is nothing left to look at here.
+    markFeedStale();
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
   }
 
   async function handleSend() {
@@ -135,7 +229,7 @@ export default function CommentsScreen() {
           hitSlop={12}>
           <Ionicons name="chevron-back" size={24} color="#fff" />
         </Pressable>
-        <Text style={styles.headerTitle}>Comments</Text>
+        <Text style={styles.headerTitle}>Post</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -145,17 +239,61 @@ export default function CommentsScreen() {
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        {loading ? (
+        {postLoading || loading ? (
           <View style={styles.list}>
-            <CommentSkeleton />
-            <CommentSkeleton />
-            <CommentSkeleton />
+            <PostSkeleton />
+            <View style={styles.commentPad}>
+              <CommentSkeleton />
+              <CommentSkeleton />
+              <CommentSkeleton />
+            </View>
+          </View>
+        ) : postGone ? (
+          <View style={styles.goneWrap}>
+            <EmptyState
+              icon="eye-off-outline"
+              title="This post is gone"
+              sub="It may have been taken down. The feed has the latest."
+            />
+          </View>
+        ) : !post ? (
+          <View style={styles.goneWrap}>
+            <EmptyState
+              icon="cloud-offline-outline"
+              title="Couldn't load this post"
+              sub="Check your connection and try again."
+            />
           </View>
         ) : (
           <FlatList
             data={comments}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.list}
+            ListHeaderComponent={
+              <>
+                <PostCard
+                  post={post}
+                  mediaUrls={mediaUrls}
+                  viewerIsArtist={isArtist}
+                  unlocked={purchasedIds.has(post.id)}
+                  reactions={reactions}
+                  commentCount={comments.length}
+                  poll={poll}
+                  onDeleted={handlePostDeleted}
+                  onUnlocked={() => {
+                    const next = new Set(purchasedIds).add(post.id);
+                    setPurchasedIds(next);
+                    resolveMedia(post, next);
+                    // The feed's purchased set is stale now - make it refetch
+                    // on return so the unlock shows there too.
+                    markFeedStale();
+                  }}
+                />
+                {comments.length > 0 ? (
+                  <Text style={styles.commentsLabel}>COMMENTS</Text>
+                ) : null}
+              </>
+            }
             renderItem={({ item }) => {
               const mine = item.user_id === myUserId;
               const isArtistComment = item.author?.role === 'artist';
@@ -242,27 +380,29 @@ export default function CommentsScreen() {
           </View>
         ) : null}
 
-        <View style={styles.composer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Add a comment…"
-            placeholderTextColor="#55585f"
-            value={draft}
-            onChangeText={setDraft}
-            maxLength={500}
-            multiline
-          />
-          <Pressable
-            style={[styles.send, (!draft.trim() || sending) && styles.sendDisabled]}
-            onPress={handleSend}
-            disabled={!draft.trim() || sending}>
-            {sending ? (
-              <ActivityIndicator color="#0b0c0e" size="small" />
-            ) : (
-              <Ionicons name="arrow-up" size={18} color="#0b0c0e" />
-            )}
-          </Pressable>
-        </View>
+        {post ? (
+          <View style={styles.composer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Add a comment…"
+              placeholderTextColor="#55585f"
+              value={draft}
+              onChangeText={setDraft}
+              maxLength={500}
+              multiline
+            />
+            <Pressable
+              style={[styles.send, (!draft.trim() || sending) && styles.sendDisabled]}
+              onPress={handleSend}
+              disabled={!draft.trim() || sending}>
+              {sending ? (
+                <ActivityIndicator color="#0b0c0e" size="small" />
+              ) : (
+                <Ionicons name="arrow-up" size={18} color="#0b0c0e" />
+              )}
+            </Pressable>
+          </View>
+        ) : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -283,8 +423,20 @@ const styles = StyleSheet.create({
   error: { color: '#f87171', paddingHorizontal: 16, paddingVertical: 4, fontSize: 13 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 48 },
   empty: { color: '#55585f' },
-  list: { padding: 14, flexGrow: 1 },
-  comment: { flexDirection: 'row', gap: 9, marginBottom: 12 },
+  goneWrap: { flex: 1, justifyContent: 'center' },
+  // The PostCard brings its own 14px side margins; the comment rows pad
+  // themselves so both line up on the same edge.
+  list: { paddingVertical: 14, flexGrow: 1 },
+  commentPad: { paddingHorizontal: 14, paddingTop: 4 },
+  commentsLabel: {
+    color: '#6d7076',
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+  },
+  comment: { flexDirection: 'row', gap: 9, marginBottom: 12, paddingHorizontal: 14 },
   avatar: {
     width: 30,
     height: 30,

@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/components/brand-mark';
+import { ResendConfirmation } from '@/components/resend-confirmation';
 import { supabase } from '@/lib/supabase';
 import { DISPLAY_FONT } from '@/constants/type';
 
@@ -21,9 +22,12 @@ export default function SignInScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  /** Set when sign-in failed because the address isn't confirmed yet. */
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState<string | null>(null);
 
   async function handleSignIn() {
     setError(null);
+    setUnconfirmedEmail(null);
     setSubmitting(true);
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email: email.trim(),
@@ -31,7 +35,13 @@ export default function SignInScreen() {
     });
     setSubmitting(false);
     if (signInError) {
-      setError(signInError.message);
+      // Supabase reports an unconfirmed address as a plain sign-in failure.
+      if (signInError.message.toLowerCase().includes('email not confirmed')) {
+        setError('Confirm your email first — check your inbox.');
+        setUnconfirmedEmail(email.trim());
+      } else {
+        setError(signInError.message);
+      }
     }
     // On success the auth provider sees the new session and the app
     // automatically switches to the tabs — no navigation call needed.
@@ -67,6 +77,7 @@ export default function SignInScreen() {
         />
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
+        {unconfirmedEmail ? <ResendConfirmation email={unconfirmedEmail} /> : null}
 
         <Pressable
           style={[styles.button, submitting && styles.buttonDisabled]}

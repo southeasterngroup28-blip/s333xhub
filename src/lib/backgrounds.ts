@@ -5,7 +5,7 @@ const DEFAULT_KEY = 'default_background';
 
 /**
  * The background this user should see: their own if set, otherwise the
- * artist's app-wide default, otherwise none. Returns a 24h viewing URL.
+ * artist's app-wide default, otherwise none. Returns a 7-day viewing URL.
  */
 export async function fetchEffectiveBackgroundUrl(myUserId: string): Promise<string | null> {
   const [mine, fallback] = await Promise.all([
@@ -20,9 +20,9 @@ export async function fetchEffectiveBackgroundUrl(myUserId: string): Promise<str
   if (hit && hit.expiresAt > Date.now() + 30 * 60 * 1000) return hit.url;
   const { data, error } = await supabase.storage
     .from('backgrounds')
-    .createSignedUrl(path, 60 * 60 * 24);
+    .createSignedUrl(path, 60 * 60 * 24 * 7);
   if (error) return null;
-  bgUrlMemo.set(path, { url: data.signedUrl, expiresAt: Date.now() + 60 * 60 * 24 * 1000 });
+  bgUrlMemo.set(path, { url: data.signedUrl, expiresAt: Date.now() + 60 * 60 * 24 * 7 * 1000 });
   return data.signedUrl;
 }
 

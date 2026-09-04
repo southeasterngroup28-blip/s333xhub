@@ -29,6 +29,10 @@ export type Post = {
 
 export const PAGE_SIZE = 20;
 
+/** The exact columns the feed renders — the post detail screen reuses this. */
+const POST_SELECT =
+  'id, project, kind, body, title, is_locked, price_cents, cover_path, cover_focus, created_at, author_id, author:profiles!posts_author_id_fkey(display_name, avatar_path, avatar_focus), post_media(id, storage_path, media_type, width, height, position)';
+
 /**
  * Newest posts, optionally filtered to one project;
  * pass `before` (oldest loaded created_at) to get the next page.
@@ -36,7 +40,7 @@ export const PAGE_SIZE = 20;
 export async function fetchPosts(filter: Project | 'all', before?: string): Promise<Post[]> {
   let query = supabase
     .from('posts')
-    .select('id, project, kind, body, title, is_locked, price_cents, cover_path, cover_focus, created_at, author_id, author:profiles!posts_author_id_fkey(display_name, avatar_path, avatar_focus), post_media(id, storage_path, media_type, width, height, position)')
+    .select(POST_SELECT)
     .order('created_at', { ascending: false })
     .limit(PAGE_SIZE);
 
@@ -52,9 +56,20 @@ export async function fetchPosts(filter: Project | 'all', before?: string): Prom
   return (data as unknown as Post[]) ?? [];
 }
 
+/** One post by id, same shape the feed renders. Resolves null when it's gone. */
+export async function fetchPostById(id: string): Promise<Post | null> {
+  const { data, error } = await supabase
+    .from('posts')
+    .select(POST_SELECT)
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as unknown as Post) ?? null;
+}
+
 /**
- * The photo bucket is private. This swaps storage paths for short-lived
- * signed links (1 hour) that the <Image> components can actually load.
+ * The photo bucket is private. This swaps storage paths for signed
+ * links (7 days) that the <Image> components can actually load.
  */
 // Signed URLs get a fresh ?token= on every call, which busts the image
 // cache and re-downloads everything. Memoize per path until near expiry.
@@ -73,12 +88,12 @@ export async function signedUrlsFor(paths: string[]): Promise<Record<string, str
   if (missing.length === 0) return map;
   const { data, error } = await supabase.storage
     .from('post-media')
-    .createSignedUrls(missing, 21600);
+    .createSignedUrls(missing, 604800);
   if (error) throw error;
   for (const item of data ?? []) {
     if (item.path && item.signedUrl) {
       map[item.path] = item.signedUrl;
-      signedUrlMemo.set(item.path, { url: item.signedUrl, expiresAt: now + 21600 * 1000 });
+      signedUrlMemo.set(item.path, { url: item.signedUrl, expiresAt: now + 604800 * 1000 });
     }
   }
   return map;

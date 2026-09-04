@@ -13,11 +13,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/components/brand-mark';
+import { RESET_PAGE_URL } from '@/constants/links';
 import { supabase } from '@/lib/supabase';
 import { DISPLAY_FONT } from '@/constants/type';
-
-/** Where the emailed reset link sends people to choose a new password. */
-const RESET_PAGE_URL = 'https://southeasterngroup28-blip.github.io/s333xgod/reset-password.html';
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();

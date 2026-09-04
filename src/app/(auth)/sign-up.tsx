@@ -14,6 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/components/brand-mark';
+import { ResendConfirmation } from '@/components/resend-confirmation';
+import { CONFIRM_EMAIL_URL } from '@/constants/links';
 import { supabase } from '@/lib/supabase';
 import { DISPLAY_FONT } from '@/constants/type';
 
@@ -35,8 +37,7 @@ export default function SignUpScreen() {
       options: {
         // Saved onto the auth user; the database trigger copies it into profiles.
         data: { display_name: displayName.trim() },
-        emailRedirectTo:
-          'https://southeasterngroup28-blip.github.io/s333xgod/confirm-email.html',
+        emailRedirectTo: CONFIRM_EMAIL_URL,
       },
     });
     setSubmitting(false);
@@ -58,6 +59,7 @@ export default function SignUpScreen() {
           <Text style={styles.subtitle}>
             We sent a confirmation link to {email.trim()}. Tap it, then come back and sign in.
           </Text>
+          <ResendConfirmation email={email.trim()} />
           <Link href="/(auth)/sign-in" style={styles.footerLink}>
             Back to sign in
           </Link>
