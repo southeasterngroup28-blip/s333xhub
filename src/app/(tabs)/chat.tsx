@@ -328,13 +328,17 @@ const styles = StyleSheet.create({
   },
 
   // ---- rows ----
+  // Solid charcoal cards: hairline-only rows over the photo background are
+  // unreadable on device.
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: '#131519',
+    borderRadius: 16,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    marginBottom: 10,
   },
   rowText: { flex: 1, minWidth: 0 },
   line1: { flexDirection: 'row', alignItems: 'center', gap: 6 },

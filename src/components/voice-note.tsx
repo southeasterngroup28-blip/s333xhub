@@ -176,10 +176,12 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
+    // Solid over the photo background — the same fill as the chat bubbles.
+    backgroundColor: '#131519',
   },
   pillArtist: { borderColor: 'rgba(195,205,214,0.6)' },
   // Mine reads like my text bubbles: filled one shade up, no visible hairline.
-  pillMine: { backgroundColor: '#15171a', borderColor: '#15171a' },
+  pillMine: { backgroundColor: '#23262b', borderColor: '#23262b' },
   play: {
     width: 24,
     height: 24,

@@ -819,6 +819,17 @@ export default function ChannelScreen() {
 const HAIRLINE = 'rgba(255,255,255,0.16)';
 const SILVER = '#c3cdd6';
 const SILVER_LINE = 'rgba(195,205,214,0.6)';
+// Every surface over the photo background is SOLID — hairline-only
+// bubbles and pills are unreadable on device. Mine sits one shade up so
+// the two sides still read apart.
+const SURFACE = '#131519';
+const SURFACE_MINE = '#23262b';
+// Bare text over the photo: a soft dark shadow keeps it legible on bright frames.
+const TEXT_SHADOW = {
+  textShadowColor: 'rgba(0,0,0,0.6)',
+  textShadowOffset: { width: 0, height: 1 },
+  textShadowRadius: 4,
+};
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#000000' },
@@ -865,7 +876,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    backgroundColor: 'rgba(0,0,0,0.92)',
+    backgroundColor: SURFACE,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
     borderRadius: 999,
@@ -890,17 +901,18 @@ const styles = StyleSheet.create({
   },
   // Inverted list: paddingBottom is the VISUAL top (clears the header).
   list: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 66, flexGrow: 1 },
+  // Instagram-style day marker: small, centered, muted - a whisper between
+  // days, not a headline.
   dateline: {
-    color: '#fff',
-    fontSize: 20,
-    lineHeight: 24,
-    fontFamily: DISPLAY_FONT,
-    letterSpacing: 0.8,
-    paddingHorizontal: 2,
-    paddingBottom: 6,
-    marginTop: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.14)',
+    alignSelf: 'center',
+    color: '#8a8a92',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '500',
+    letterSpacing: 0.3,
+    marginTop: 14,
+    marginBottom: 4,
+    ...TEXT_SHADOW,
   },
   run: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginTop: 12 },
   runMine: { justifyContent: 'flex-end' },
@@ -916,7 +928,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   emblem: { width: 18, height: 14 },
-  name: { color: '#8a8a92', fontSize: 12, flexShrink: 1 },
+  name: { color: '#8a8a92', fontSize: 12, flexShrink: 1, ...TEXT_SHADOW },
   nameArtist: { color: SILVER, fontWeight: '600' },
   artistTag: {
     color: SILVER,
@@ -924,18 +936,19 @@ const styles = StyleSheet.create({
     lineHeight: 12,
     fontFamily: DISPLAY_FONT,
     letterSpacing: 2,
+    ...TEXT_SHADOW,
   },
-  whoTime: { color: '#55555c', fontSize: 11, fontVariant: ['tabular-nums'] },
+  whoTime: { color: '#55555c', fontSize: 11, fontVariant: ['tabular-nums'], ...TEXT_SHADOW },
   bubble: {
     borderWidth: 1,
     borderColor: HAIRLINE,
     borderRadius: 16,
     paddingVertical: 8,
     paddingHorizontal: 13,
-    backgroundColor: 'transparent',
+    backgroundColor: SURFACE,
   },
-  bubbleMine: { backgroundColor: '#15171a', borderColor: '#15171a' },
-  bubbleArtist: { borderColor: SILVER_LINE },
+  bubbleMine: { backgroundColor: SURFACE_MINE, borderColor: SURFACE_MINE },
+  bubbleArtist: { backgroundColor: SURFACE, borderColor: SILVER_LINE },
   bubbleText: { color: '#e6e8ea', fontSize: 15, lineHeight: 21 },
   bubbleTextMine: { color: '#f2f3f5' },
   stamp: {
@@ -944,13 +957,14 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
     marginTop: 2,
     marginHorizontal: 4,
+    ...TEXT_SHADOW,
   },
   tile: {
     borderWidth: 1,
     borderColor: HAIRLINE,
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#0a0a0c',
+    backgroundColor: SURFACE,
   },
   tileArtist: { borderColor: 'rgba(195,205,214,0.55)' },
   gif: { width: 200, height: 150 },
@@ -967,6 +981,7 @@ const styles = StyleSheet.create({
   actionTitle: { color: '#8a8a92', fontSize: 12, marginBottom: 8, paddingRight: 24 },
   actionRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   actionChip: {
+    backgroundColor: SURFACE,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
     borderRadius: 999,
@@ -982,6 +997,7 @@ const styles = StyleSheet.create({
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: SURFACE,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
     borderRadius: 999,
