@@ -68,58 +68,72 @@ export function FadeMask({
 /**
  * The frosted-glass + darkness layers for the screen edges. Render AFTER
  * the masked list (so it sits above it) and BEFORE the floating header.
+ * A screen with a fixed bar at the bottom (the chat composer) passes
+ * `bottom={false}` so the glass only sits under its floating header.
  */
-export function EdgeGlass() {
+export function EdgeGlass({ top = true, bottom = true }: { top?: boolean; bottom?: boolean } = {}) {
   const insets = useSafeAreaInsets();
   if (IS_WEB) {
     // Scrims only — the masked blur layers would render as black bands.
     return (
       <>
+        {top ? (
+          <LinearGradient
+            pointerEvents="none"
+            colors={SCRIM}
+            locations={EASED_STOPS}
+            style={[styles.top, { height: insets.top + 118, zIndex: 10 }]}
+          />
+        ) : null}
+        {bottom ? (
+          <LinearGradient
+            pointerEvents="none"
+            colors={SCRIM_REVERSED}
+            locations={EASED_STOPS}
+            style={[styles.bottom, { height: insets.bottom + 128, zIndex: 10 }]}
+          />
+        ) : null}
+      </>
+    );
+  }
+  return (
+    <>
+      {top ? (
+        <MaskedView
+          pointerEvents="none"
+          style={[styles.top, { height: insets.top + 104 }]}
+          maskElement={
+            <LinearGradient colors={EASED_MASK_REVERSED} locations={EASED_STOPS} style={styles.flex} />
+          }>
+          <BlurView intensity={38} tint="dark" style={styles.flex} />
+        </MaskedView>
+      ) : null}
+      {bottom ? (
+        <MaskedView
+          pointerEvents="none"
+          style={[styles.bottom, { height: insets.bottom + 112 }]}
+          maskElement={
+            <LinearGradient colors={EASED_MASK} locations={EASED_STOPS} style={styles.flex} />
+          }>
+          <BlurView intensity={30} tint="dark" style={styles.flex} />
+        </MaskedView>
+      ) : null}
+      {top ? (
         <LinearGradient
           pointerEvents="none"
           colors={SCRIM}
           locations={EASED_STOPS}
           style={[styles.top, { height: insets.top + 118, zIndex: 10 }]}
         />
+      ) : null}
+      {bottom ? (
         <LinearGradient
           pointerEvents="none"
           colors={SCRIM_REVERSED}
           locations={EASED_STOPS}
           style={[styles.bottom, { height: insets.bottom + 128, zIndex: 10 }]}
         />
-      </>
-    );
-  }
-  return (
-    <>
-      <MaskedView
-        pointerEvents="none"
-        style={[styles.top, { height: insets.top + 104 }]}
-        maskElement={
-          <LinearGradient colors={EASED_MASK_REVERSED} locations={EASED_STOPS} style={styles.flex} />
-        }>
-        <BlurView intensity={38} tint="dark" style={styles.flex} />
-      </MaskedView>
-      <MaskedView
-        pointerEvents="none"
-        style={[styles.bottom, { height: insets.bottom + 112 }]}
-        maskElement={
-          <LinearGradient colors={EASED_MASK} locations={EASED_STOPS} style={styles.flex} />
-        }>
-        <BlurView intensity={30} tint="dark" style={styles.flex} />
-      </MaskedView>
-      <LinearGradient
-        pointerEvents="none"
-        colors={SCRIM}
-        locations={EASED_STOPS}
-        style={[styles.top, { height: insets.top + 118, zIndex: 10 }]}
-      />
-      <LinearGradient
-        pointerEvents="none"
-        colors={SCRIM_REVERSED}
-        locations={EASED_STOPS}
-        style={[styles.bottom, { height: insets.bottom + 128, zIndex: 10 }]}
-      />
+      ) : null}
     </>
   );
 }

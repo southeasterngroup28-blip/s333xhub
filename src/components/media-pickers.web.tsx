@@ -1,6 +1,7 @@
 // Web versions of the attach buttons: real HTML <label>+<input type="file">.
 // The browser opens its file dialog natively when the label is tapped —
 // no simulated clicks, which iPhone Safari refuses to honor.
+import Ionicons from '@expo/vector-icons/Ionicons';
 import type { CSSProperties } from 'react';
 
 import {
@@ -31,19 +32,42 @@ function boxStyle(disabled?: boolean): CSSProperties {
   };
 }
 
+/** The chat composer's bare 30px icon — same label+input trick, no box. */
+function compactStyle(disabled?: boolean): CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 30,
+    height: 30,
+    flex: 'none',
+    cursor: disabled ? 'default' : 'pointer',
+    opacity: disabled ? 0.4 : 1,
+    userSelect: 'none',
+  };
+}
+
 type PhotoProps = {
   disabled?: boolean;
   label: string;
   maxCount: number;
   onPicked: (images: PickedImageDraft[]) => void;
   onError: (message: string) => void;
+  /** Bare 30px icon in the chat composer's dim gray — no box, no label. */
+  compact?: boolean;
 };
 
-export function PickPhotosButton({ disabled, label, maxCount, onPicked, onError }: PhotoProps) {
+export function PickPhotosButton({ disabled, label, maxCount, onPicked, onError, compact }: PhotoProps) {
   return (
-    <label style={boxStyle(disabled)}>
-      <span aria-hidden>📷</span>
-      <span>{label}</span>
+    <label style={compact ? compactStyle(disabled) : boxStyle(disabled)} aria-label={compact ? 'Send a photo' : undefined}>
+      {compact ? (
+        <Ionicons name="image-outline" size={20} color="#6c7078" />
+      ) : (
+        <>
+          <span aria-hidden>📷</span>
+          <span>{label}</span>
+        </>
+      )}
       <input
         type="file"
         accept="image/*"

@@ -1,20 +1,36 @@
-// Tapping a push should land you ON the thing — the post, the chat,
-// the drop, the shows list — not just open the app.
+// Tapping a push should land you ON the thing — the feed for a new post,
+// the chat, the drop, the shows list — not just open the app.
 import { Platform } from 'react-native';
 
-type Router = { push: (url: never) => void };
+import { markFeedStale } from '@/lib/posts';
+
+type Router = {
+  push: (url: never) => void;
+  navigate: (url: never) => void;
+};
 
 /** Screens a push is allowed to deep-open. */
 const ALLOWED = [/^\/post\/[\w-]+$/, /^\/channel\/[\w-]+$/, /^\/drop\/[\w-]+$/, /^\/shows$/];
+
+/**
+ * A new-post push carries `/post/<id>`. The post screen is comments-only
+ * now, so that tap lands on the FEED — where the post actually shows.
+ */
+const POST_URL = /^\/post\/[\w-]+$/;
 
 function openFromData(router: Router, data: unknown): void {
   const url = (data as { url?: string } | null)?.url;
   if (typeof url !== 'string') return;
   if (!ALLOWED.some((pattern) => pattern.test(url))) return;
+  const toFeed = POST_URL.test(url);
+  // Flag the feed before moving: it refetches on its next focus (or right
+  // away if it is already showing), so the new post sits on top.
+  if (toFeed) markFeedStale();
   // Small delay so navigation containers are mounted on cold start.
   setTimeout(() => {
     try {
-      router.push(url as never);
+      if (toFeed) router.navigate('/' as never);
+      else router.push(url as never);
     } catch {}
   }, 350);
 }

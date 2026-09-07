@@ -8,7 +8,7 @@ import {
 } from 'expo-audio';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -20,10 +20,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBackground } from '@/components/app-background';
 import { Avatar } from '@/components/avatar';
+import { EdgeGlass, FadeMask } from '@/components/edge-fade';
 import { EmptyState } from '@/components/empty-state';
 import { useProfileCard } from '@/components/profile-card';
 import { GifPicker } from '@/components/gif-picker';
@@ -46,6 +47,7 @@ import {
   type ChatListItem,
   type Message,
 } from '@/lib/chat';
+import { clockTime, dateline, dayKey } from '@/lib/chat-time';
 import { GIFS_READY } from '@/lib/gifs';
 import {
   blockUser,
@@ -55,15 +57,72 @@ import {
   REPORT_REASONS,
   unblockUser,
 } from '@/lib/moderation';
-import { timeAgo } from '@/lib/posts';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/auth-provider';
 import { DISPLAY_FONT } from '@/constants/type';
+
+// The artist's mark on the name line — the green skull is the one spot of
+// colour on the screen, which is exactly why it reads.
+const ARTIST_EMBLEM = require('../../../assets/images/emblem-mazze.png');
+
+/**
+ * A run: consecutive messages from one person, shown under one name line
+ * with the avatar once. A run breaks on a new author, a new day, or a
+ * pause longer than this — so the time on the name line stays honest.
+ */
+const RUN_GAP_MS = 15 * 60 * 1000;
+
+type Run = {
+  /** The run's first message id — stable while newer messages join it. */
+  id: string;
+  senderId: string;
+  sender: Message['sender'];
+  mine: boolean;
+  artist: boolean;
+  /** Oldest first, so the column reads top to bottom. */
+  messages: Message[];
+  /** Set when this run opens a new day. */
+  dateline: string | null;
+};
+
+/** Groups newest-first messages into newest-first runs (for the inverted list). */
+function buildRuns(newestFirst: Message[], myUserId?: string): Run[] {
+  const runs: Run[] = [];
+  let lastDay = '';
+  for (let i = newestFirst.length - 1; i >= 0; i--) {
+    const m = newestFirst[i];
+    const day = dayKey(m.created_at);
+    const last = runs[runs.length - 1];
+    const tail = last?.messages[last.messages.length - 1];
+    const joins =
+      last &&
+      tail &&
+      last.senderId === m.sender_id &&
+      day === lastDay &&
+      new Date(m.created_at).getTime() - new Date(tail.created_at).getTime() < RUN_GAP_MS;
+    if (joins) {
+      last.messages.push(m);
+      continue;
+    }
+    runs.push({
+      id: m.id,
+      senderId: m.sender_id,
+      sender: m.sender,
+      mine: m.sender_id === myUserId,
+      artist: m.sender?.role === 'artist',
+      messages: [m],
+      dateline: day !== lastDay ? dateline(m.created_at) : null,
+    });
+    lastDay = day;
+  }
+  return runs.reverse();
+}
 
 export default function ChannelScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { session, profile } = useAuth();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const myUserId = session?.user.id;
   const isArtist = profile?.role === 'artist';
   const { showProfile } = useProfileCard();
@@ -338,6 +397,8 @@ export default function ChannelScreen() {
       await setLeft(id, myUserId, true);
       goBack();
     } catch (e) {
+      // The confirm and the error share the slot under the header.
+      setConfirmLeave(false);
       setError((e as { message?: string })?.message ?? 'Could not leave.');
     }
   }
@@ -400,47 +461,125 @@ export default function ChannelScreen() {
   }
 
   const isGroup = info?.type === 'group';
-  const visibleMessages = messages.filter((m) => !blockedIds.has(m.sender_id));
+  const runs = useMemo(
+    () =>
+      buildRuns(
+        messages.filter((m) => !blockedIds.has(m.sender_id)),
+        myUserId
+      ),
+    [messages, blockedIds, myUserId]
+  );
+
+  // The Anton eyebrow under the title: the room and its size, or the DM.
+  const eyebrow = !info
+    ? ''
+    : isGroup
+      ? info.memberCount
+        ? `Community · ${info.memberCount}`
+        : 'Community'
+      : 'Direct message';
+
+  /** One message inside a run: bubble, pill, or hairline tile. */
+  function renderMessage(item: Message, run: Run) {
+    // The silver hairline marks the artist to everyone ELSE — their own
+    // messages read as "mine" (filled, no visible border) like anyone's.
+    const marked = run.artist && !run.mine;
+    const longPress = () => {
+      // Fans get actions on other people's messages;
+      // the artist also gets delete on anything.
+      if (!run.mine || isArtist) setActionTarget(item);
+    };
+    if (item.kind === 'gif' && item.media_url) {
+      return (
+        <Pressable key={item.id} onLongPress={longPress} delayLongPress={300}>
+          <View style={[styles.tile, marked && styles.tileArtist]}>
+            <Image source={{ uri: item.media_url }} style={styles.gif} contentFit="cover" />
+          </View>
+        </Pressable>
+      );
+    }
+    if (item.kind === 'image') {
+      const url = item.media_path ? mediaUrls[item.media_path] : undefined;
+      return (
+        <Pressable key={item.id} onLongPress={longPress} delayLongPress={300}>
+          <View style={[styles.tile, marked && styles.tileArtist]}>
+            {url ? (
+              <Image source={{ uri: url }} style={styles.photo} contentFit="cover" />
+            ) : (
+              <View style={[styles.photo, styles.mediaLoading]}>
+                <ActivityIndicator color="#8a8a92" size="small" />
+              </View>
+            )}
+          </View>
+        </Pressable>
+      );
+    }
+    if (item.kind === 'voice') {
+      return (
+        <Pressable key={item.id} onLongPress={longPress} delayLongPress={300}>
+          <VoiceNoteBubble
+            url={item.media_path ? mediaUrls[item.media_path] : undefined}
+            durationSeconds={item.duration_seconds}
+            mine={run.mine}
+            artist={marked}
+          />
+        </Pressable>
+      );
+    }
+    return (
+      <Pressable
+        key={item.id}
+        style={[styles.bubble, run.mine && styles.bubbleMine, marked && styles.bubbleArtist]}
+        onLongPress={longPress}
+        delayLongPress={300}>
+        <Text style={[styles.bubbleText, run.mine && styles.bubbleTextMine]}>{item.body}</Text>
+      </Pressable>
+    );
+  }
+
+  function renderRun({ item: run }: { item: Run }) {
+    const first = run.messages[0];
+    const last = run.messages[run.messages.length - 1];
+    return (
+      <View>
+        {run.dateline ? <Text style={styles.dateline}>{run.dateline}</Text> : null}
+        <View style={[styles.run, run.mine && styles.runMine]}>
+          {!run.mine ? (
+            <Pressable onPress={() => showProfile(run.senderId)} hitSlop={6} style={styles.avatar}>
+              <Avatar
+                path={run.sender?.avatar_path}
+                focus={run.sender?.avatar_focus}
+                name={run.sender?.display_name}
+                size={24}
+              />
+            </Pressable>
+          ) : null}
+          <View style={[styles.col, run.mine && styles.colMine]}>
+            {!run.mine ? (
+              <View style={styles.who}>
+                {run.artist ? (
+                  <Image source={ARTIST_EMBLEM} style={styles.emblem} contentFit="contain" />
+                ) : null}
+                <Text style={[styles.name, run.artist && styles.nameArtist]} numberOfLines={1}>
+                  {run.sender?.display_name ?? 'Deleted user'}
+                </Text>
+                {run.artist ? <Text style={styles.artistTag}>The artist</Text> : null}
+                <Text style={styles.whoTime}>{clockTime(first.created_at)}</Text>
+              </View>
+            ) : null}
+            {run.messages.map((m) => renderMessage(m, run))}
+            {run.mine ? <Text style={styles.stamp}>{clockTime(last.created_at)}</Text> : null}
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+  const composerDisabled = !draft.trim() || sending;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <AppBackground />
-      <View style={styles.header}>
-        <Pressable onPress={goBack} hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color="#fff" />
-        </Pressable>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {info?.title ?? 'Chat'}
-        </Text>
-        <View style={styles.headerActions}>
-          <Pressable onPress={toggleMute} hitSlop={12}>
-            <Ionicons
-              name={info?.mutedAt ? 'notifications-off' : 'notifications-outline'}
-              size={20}
-              color={info?.mutedAt ? '#c3cdd6' : '#999'}
-            />
-          </Pressable>
-          {isGroup ? (
-            <Pressable onPress={() => setConfirmLeave(true)} hitSlop={12}>
-              <Ionicons name="exit-outline" size={20} color="#999" />
-            </Pressable>
-          ) : null}
-        </View>
-      </View>
-
-      {confirmLeave ? (
-        <View style={styles.confirmBar}>
-          <Text style={styles.confirmText}>Leave the community chat?</Text>
-          <Pressable onPress={handleLeave}>
-            <Text style={styles.confirmYes}>Leave</Text>
-          </Pressable>
-          <Pressable onPress={() => setConfirmLeave(false)}>
-            <Text style={styles.confirmNo}>Cancel</Text>
-          </Pressable>
-        </View>
-      ) : null}
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <KeyboardAvoidingView
         style={styles.flex}
@@ -450,82 +589,27 @@ export default function ChannelScreen() {
             <ActivityIndicator color="#fff" />
           </View>
         ) : (
-          <FlatList
-            inverted
-            data={visibleMessages}
-            keyExtractor={(item) => item.id}
-            renderItem={({ item }) => {
-              const mine = item.sender_id === myUserId;
-              return (
-                <View style={[styles.bubbleRow, mine && styles.bubbleRowMine]}>
-                  {!mine ? (
-                    <Pressable onPress={() => showProfile(item.sender_id)} hitSlop={6}>
-                      <Avatar
-                        path={item.sender?.avatar_path}
-                        focus={item.sender?.avatar_focus}
-                        name={item.sender?.display_name}
-                        size={26}
-                      />
-                    </Pressable>
-                  ) : null}
-                  <Pressable
-                    style={[styles.bubble, mine && styles.bubbleMine]}
-                    onLongPress={() => {
-                      // Fans get actions on other people's messages;
-                      // the artist also gets delete on anything.
-                      if (!mine || isArtist) setActionTarget(item);
-                    }}
-                    delayLongPress={300}>
-                    {!mine ? (
-                      <Text style={styles.senderName}>
-                        {item.sender?.display_name ?? 'Deleted user'}
-                      </Text>
-                    ) : null}
-                    {item.kind === 'gif' && item.media_url ? (
-                      <Image source={{ uri: item.media_url }} style={styles.gifBubble} contentFit="cover" />
-                    ) : item.kind === 'image' ? (
-                      item.media_path && mediaUrls[item.media_path] ? (
-                        <Image
-                          source={{ uri: mediaUrls[item.media_path] }}
-                          style={styles.photoBubble}
-                          contentFit="cover"
-                        />
-                      ) : (
-                        <View style={[styles.photoBubble, styles.mediaLoading]}>
-                          <ActivityIndicator color="#8f99a3" size="small" />
-                        </View>
-                      )
-                    ) : item.kind === 'voice' ? (
-                      <VoiceNoteBubble
-                        url={item.media_path ? mediaUrls[item.media_path] : undefined}
-                        durationSeconds={item.duration_seconds}
-                        mine={mine}
-                      />
-                    ) : (
-                      <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>
-                        {item.body}
-                      </Text>
-                    )}
-                    <Text style={[styles.bubbleTime, mine && styles.bubbleTimeMine]}>
-                      {timeAgo(item.created_at)}
-                    </Text>
-                  </Pressable>
+          <FadeMask top={64} bottom={10}>
+            <FlatList
+              inverted
+              data={runs}
+              keyExtractor={(run) => run.id}
+              renderItem={renderRun}
+              contentContainerStyle={styles.list}
+              onEndReached={loadOlder}
+              onEndReachedThreshold={0.5}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                <View style={styles.centerInverted}>
+                  <EmptyState
+                    icon="chatbubbles-outline"
+                    title={isGroup ? 'The room is quiet' : 'No messages yet'}
+                    sub={isGroup ? 'Say hi to the community.' : 'Start the conversation.'}
+                  />
                 </View>
-              );
-            }}
-            contentContainerStyle={styles.list}
-            onEndReached={loadOlder}
-            onEndReachedThreshold={0.5}
-            ListEmptyComponent={
-              <View style={styles.centerInverted}>
-                <EmptyState
-                  icon="chatbubbles-outline"
-                  title={isGroup ? 'The room is quiet' : 'No messages yet'}
-                  sub={isGroup ? 'Say hi to the community.' : 'Start the conversation.'}
-                />
-              </View>
-            }
-          />
+              }
+            />
+          </FadeMask>
         )}
 
         {notice ? <Text style={styles.notice}>{notice}</Text> : null}
@@ -578,143 +662,224 @@ export default function ChannelScreen() {
               }}
               hitSlop={8}
               style={styles.actionClose}>
-              <Ionicons name="close" size={18} color="#888" />
+              <Ionicons name="close" size={18} color="#6c7078" />
             </Pressable>
           </View>
         ) : null}
 
-        {recording ? (
-          <View style={styles.composer}>
-            <Pressable onPress={() => finishRecording(false)} hitSlop={10} style={styles.mediaButton}>
-              <Ionicons name="trash-outline" size={20} color="#f87171" />
-            </Pressable>
-            <View style={styles.recordingRow}>
-              <View style={styles.recordingDot} />
-              <Text style={styles.recordingTime}>
-                {Math.floor((recorderState.durationMillis ?? 0) / 1000)}s / {VOICE_MAX_SECONDS}s
-              </Text>
-            </View>
-            <Pressable style={styles.sendButton} onPress={() => finishRecording(true)}>
-              <Ionicons name="arrow-up" size={20} color="#000" />
-            </Pressable>
-          </View>
-        ) : (
-          <View style={styles.composer}>
-            {GIFS_READY ? (
+        {/* One hairline pill: the actions live inside it, and the white
+            send is the only bright thing on the bar. */}
+        <View style={styles.composerWrap}>
+          {recording ? (
+            <View style={styles.pill}>
               <Pressable
-                onPress={() => setGifOpen(true)}
-                hitSlop={8}
-                disabled={sendingMedia}
-                style={styles.mediaButton}>
-                <Text style={styles.gifButtonText}>GIF</Text>
+                onPress={() => finishRecording(false)}
+                hitSlop={10}
+                style={styles.pillIcon}
+                accessibilityLabel="Discard recording">
+                <Ionicons name="trash-outline" size={20} color="#f87171" />
               </Pressable>
-            ) : null}
-            {Platform.OS !== 'web' ? (
-              <Pressable
-                onPress={startRecording}
-                hitSlop={8}
-                disabled={sendingMedia}
-                style={styles.mediaButton}>
-                <Ionicons name="mic-outline" size={22} color="#8f99a3" />
-              </Pressable>
-            ) : null}
-            {isArtist ? (
-              <PickPhotosButton
-                label=""
-                maxCount={1}
-                disabled={sendingMedia}
-                onPicked={(images) => {
-                  if (images[0]) handleSendPhoto(images[0]);
-                }}
-                onError={setError}
-              />
-            ) : null}
-            <TextInput
-              style={styles.input}
-              placeholder="Message…"
-              placeholderTextColor="#555"
-              value={draft}
-              onChangeText={setDraft}
-              maxLength={MESSAGE_MAX_LENGTH}
-              multiline
-            />
-            {sendingMedia ? (
-              <View style={styles.sendButton}>
-                <ActivityIndicator color="#000" size="small" />
+              <View style={styles.recordingRow}>
+                <View style={styles.recordingDot} />
+                <Text style={styles.recordingTime}>
+                  {Math.floor((recorderState.durationMillis ?? 0) / 1000)}s / {VOICE_MAX_SECONDS}s
+                </Text>
               </View>
-            ) : (
               <Pressable
-                style={[styles.sendButton, (!draft.trim() || sending) && styles.sendButtonDisabled]}
-                onPress={handleSend}
-                disabled={!draft.trim() || sending}>
-                {sending ? (
-                  <ActivityIndicator color="#000" size="small" />
-                ) : (
-                  <Ionicons name="arrow-up" size={20} color="#000" />
-                )}
+                style={styles.send}
+                onPress={() => finishRecording(true)}
+                accessibilityLabel="Send voice note">
+                <Ionicons name="arrow-up" size={18} color="#000" />
               </Pressable>
-            )}
-          </View>
-        )}
+            </View>
+          ) : (
+            <View style={styles.pill}>
+              {Platform.OS !== 'web' ? (
+                <Pressable
+                  onPress={startRecording}
+                  hitSlop={8}
+                  disabled={sendingMedia}
+                  style={styles.pillIcon}
+                  accessibilityLabel="Record a voice note">
+                  <Ionicons name="mic-outline" size={20} color="#6c7078" />
+                </Pressable>
+              ) : null}
+              {GIFS_READY ? (
+                <Pressable
+                  onPress={() => setGifOpen(true)}
+                  hitSlop={8}
+                  disabled={sendingMedia}
+                  style={styles.pillIcon}
+                  accessibilityLabel="Send a GIF">
+                  <Text style={styles.gifLabel}>GIF</Text>
+                </Pressable>
+              ) : null}
+              {isArtist ? (
+                <PickPhotosButton
+                  compact
+                  label=""
+                  maxCount={1}
+                  disabled={sendingMedia}
+                  onPicked={(images) => {
+                    if (images[0]) handleSendPhoto(images[0]);
+                  }}
+                  onError={setError}
+                />
+              ) : null}
+              <TextInput
+                style={styles.input}
+                placeholder="Write something"
+                placeholderTextColor="#55555c"
+                value={draft}
+                onChangeText={setDraft}
+                maxLength={MESSAGE_MAX_LENGTH}
+                multiline
+              />
+              {sendingMedia ? (
+                <View style={styles.send}>
+                  <ActivityIndicator color="#000" size="small" />
+                </View>
+              ) : (
+                <Pressable
+                  style={[styles.send, composerDisabled && styles.sendDisabled]}
+                  onPress={handleSend}
+                  disabled={composerDisabled}
+                  accessibilityLabel="Send">
+                  {sending ? (
+                    <ActivityIndicator color="#000" size="small" />
+                  ) : (
+                    <Ionicons name="arrow-up" size={18} color="#000" />
+                  )}
+                </Pressable>
+              )}
+            </View>
+          )}
+        </View>
       </KeyboardAvoidingView>
+
+      {/* The header floats over the thread; messages slide beneath it and
+          dissolve in its zone. Only the top edge gets glass — the composer
+          is a real bar, not a floating one. */}
+      <EdgeGlass bottom={false} />
+      <View style={[styles.header, { top: insets.top }]} pointerEvents="box-none">
+        <Pressable onPress={goBack} hitSlop={12} style={styles.back} accessibilityLabel="Back">
+          <Ionicons name="chevron-back" size={24} color="#fff" />
+        </Pressable>
+        <View style={styles.titleBlock} pointerEvents="none">
+          <Text style={styles.title} numberOfLines={1}>
+            {info?.title ?? 'Chat'}
+          </Text>
+          {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
+        </View>
+        <View style={styles.actions}>
+          <Pressable
+            onPress={toggleMute}
+            hitSlop={12}
+            accessibilityLabel={info?.mutedAt ? 'Unmute' : 'Mute'}>
+            <Ionicons
+              name={info?.mutedAt ? 'notifications-off' : 'notifications-outline'}
+              size={20}
+              color={info?.mutedAt ? '#c3cdd6' : '#6c7078'}
+            />
+          </Pressable>
+          {isGroup ? (
+            <Pressable onPress={() => setConfirmLeave(true)} hitSlop={12} accessibilityLabel="Leave">
+              <Ionicons name="exit-outline" size={20} color="#6c7078" />
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
+
+      {confirmLeave ? (
+        <View style={[styles.floating, { top: insets.top + 58 }]}>
+          <Text style={styles.confirmText}>Leave the community chat?</Text>
+          <Pressable onPress={handleLeave} hitSlop={8}>
+            <Text style={styles.confirmYes}>Leave</Text>
+          </Pressable>
+          <Pressable onPress={() => setConfirmLeave(false)} hitSlop={8}>
+            <Text style={styles.confirmNo}>Cancel</Text>
+          </Pressable>
+        </View>
+      ) : error ? (
+        <View style={[styles.floating, styles.errorBar, { top: insets.top + 58 }]}>
+          <Text style={styles.error} numberOfLines={3}>
+            {error}
+          </Text>
+          <Pressable onPress={() => setError(null)} hitSlop={8} accessibilityLabel="Dismiss">
+            <Ionicons name="close" size={16} color="#8a8a92" />
+          </Pressable>
+        </View>
+      ) : null}
 
       <GifPicker visible={gifOpen} onClose={() => setGifOpen(false)} onPick={handleSendGif} />
     </SafeAreaView>
   );
 }
 
+const HAIRLINE = 'rgba(255,255,255,0.16)';
+const SILVER = '#c3cdd6';
+const SILVER_LINE = 'rgba(195,205,214,0.6)';
+
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#0b0c0e' },
+  safe: { flex: 1, backgroundColor: '#000000' },
   flex: { flex: 1 },
+
+  // ---- floating header ----
   header: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 25,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#222',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingTop: 6,
+    paddingBottom: 10,
   },
-  headerTitle: {
+  back: { width: 24, alignItems: 'center' },
+  titleBlock: { flex: 1, minWidth: 0, alignItems: 'center' },
+  title: {
     color: '#fff',
     fontSize: 17,
+    lineHeight: 21,
     fontFamily: DISPLAY_FONT,
     letterSpacing: 1.5,
-    flex: 1,
-    textAlign: 'center',
   },
-  headerActions: { flexDirection: 'row', gap: 16 },
-  confirmBar: {
+  eyebrow: {
+    color: SILVER,
+    fontSize: 9,
+    lineHeight: 12,
+    fontFamily: DISPLAY_FONT,
+    letterSpacing: 2.2,
+    marginTop: 3,
+  },
+  actions: { flexDirection: 'row', gap: 14, alignItems: 'center' },
+
+  // ---- floating notices under the header ----
+  floating: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    zIndex: 26,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
-    backgroundColor: '#181818',
+    gap: 14,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 999,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 9,
   },
-  confirmText: { color: '#ccc', flex: 1, fontSize: 13 },
-  confirmYes: { color: '#f87171', fontWeight: '700' },
-  confirmNo: { color: '#999' },
-  error: { color: '#f87171', paddingHorizontal: 16, paddingVertical: 6 },
+  confirmText: { color: '#e6e8ea', flex: 1, fontSize: 13 },
+  confirmYes: { color: '#f87171', fontWeight: '700', fontSize: 13 },
+  confirmNo: { color: '#8a8a92', fontSize: 13 },
+  errorBar: { borderColor: 'rgba(248,113,113,0.45)' },
+  error: { color: '#f87171', flex: 1, fontSize: 13, lineHeight: 18 },
   notice: { color: '#4fc07a', paddingHorizontal: 16, paddingVertical: 6, fontSize: 13 },
-  actionBar: {
-    backgroundColor: '#181818',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#2a2a2a',
-  },
-  actionTitle: { color: '#888', fontSize: 12, marginBottom: 8, paddingRight: 24 },
-  actionRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
-  actionChip: {
-    backgroundColor: '#2a2a2a',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  actionChipText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  actionChipDanger: { color: '#f87171', fontSize: 13, fontWeight: '600' },
-  actionClose: { position: 'absolute', top: 10, right: 12 },
+
+  // ---- thread ----
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   centerInverted: {
     flex: 1,
@@ -723,68 +888,130 @@ const styles = StyleSheet.create({
     paddingVertical: 64,
     transform: [{ scaleY: -1 }], // un-flip inside the inverted list
   },
-  empty: { color: '#555' },
-  list: { paddingHorizontal: 12, paddingVertical: 12, flexGrow: 1 },
-  bubbleRow: { flexDirection: 'row', marginVertical: 3, gap: 8, alignItems: 'flex-end' },
-  bubbleRowMine: { justifyContent: 'flex-end' },
-  bubble: {
-    maxWidth: '80%',
-    backgroundColor: '#22262c',
-    borderRadius: 18,
-    borderBottomLeftRadius: 5,
-    paddingHorizontal: 13,
-    paddingVertical: 9,
+  // Inverted list: paddingBottom is the VISUAL top (clears the header).
+  list: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 66, flexGrow: 1 },
+  dateline: {
+    color: '#fff',
+    fontSize: 20,
+    lineHeight: 24,
+    fontFamily: DISPLAY_FONT,
+    letterSpacing: 0.8,
+    paddingHorizontal: 2,
+    paddingBottom: 6,
+    marginTop: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.14)',
   },
-  bubbleMine: {
-    backgroundColor: '#39414c',
-    borderBottomLeftRadius: 18,
-    borderBottomRightRadius: 5,
-  },
-  senderName: { color: '#c3cdd6', fontSize: 12, fontWeight: '700', marginBottom: 2 },
-  bubbleText: { color: '#fff', fontSize: 15, lineHeight: 20 },
-  gifBubble: { width: 200, height: 150, borderRadius: 10, backgroundColor: '#14171b' },
-  photoBubble: { width: 200, height: 200, borderRadius: 10, backgroundColor: '#14171b' },
-  mediaLoading: { alignItems: 'center', justifyContent: 'center' },
-  mediaButton: {
-    width: 34,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  gifButtonText: { color: '#8f99a3', fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
-  recordingRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8 },
-  recordingDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#f87171' },
-  recordingTime: { color: '#fff', fontSize: 14, fontVariant: ['tabular-nums'] },
-  bubbleTextMine: { color: '#e6feff' },
-  bubbleTime: { color: '#555', fontSize: 10, marginTop: 4, alignSelf: 'flex-end' },
-  bubbleTimeMine: { color: '#8f99a3' },
-  composer: {
+  run: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginTop: 12 },
+  runMine: { justifyContent: 'flex-end' },
+  avatar: { marginTop: 1 },
+  col: { maxWidth: '80%', gap: 3, alignItems: 'flex-start' },
+  colMine: { alignItems: 'flex-end' },
+  who: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#222',
+    alignItems: 'center',
+    gap: 7,
+    marginLeft: 2,
+    marginTop: 2,
+    marginBottom: 4,
   },
+  emblem: { width: 18, height: 14 },
+  name: { color: '#8a8a92', fontSize: 12, flexShrink: 1 },
+  nameArtist: { color: SILVER, fontWeight: '600' },
+  artistTag: {
+    color: SILVER,
+    fontSize: 9,
+    lineHeight: 12,
+    fontFamily: DISPLAY_FONT,
+    letterSpacing: 2,
+  },
+  whoTime: { color: '#55555c', fontSize: 11, fontVariant: ['tabular-nums'] },
+  bubble: {
+    borderWidth: 1,
+    borderColor: HAIRLINE,
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 13,
+    backgroundColor: 'transparent',
+  },
+  bubbleMine: { backgroundColor: '#15171a', borderColor: '#15171a' },
+  bubbleArtist: { borderColor: SILVER_LINE },
+  bubbleText: { color: '#e6e8ea', fontSize: 15, lineHeight: 21 },
+  bubbleTextMine: { color: '#f2f3f5' },
+  stamp: {
+    color: '#55555c',
+    fontSize: 11,
+    fontVariant: ['tabular-nums'],
+    marginTop: 2,
+    marginHorizontal: 4,
+  },
+  tile: {
+    borderWidth: 1,
+    borderColor: HAIRLINE,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#0a0a0c',
+  },
+  tileArtist: { borderColor: 'rgba(195,205,214,0.55)' },
+  gif: { width: 200, height: 150 },
+  photo: { width: 200, height: 200 },
+  mediaLoading: { alignItems: 'center', justifyContent: 'center' },
+
+  // ---- moderation bar ----
+  actionBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.12)',
+  },
+  actionTitle: { color: '#8a8a92', fontSize: 12, marginBottom: 8, paddingRight: 24 },
+  actionRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
+  actionChip: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  actionChipText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  actionChipDanger: { color: '#f87171', fontSize: 13, fontWeight: '600' },
+  actionClose: { position: 'absolute', top: 10, right: 12 },
+
+  // ---- composer ----
+  composerWrap: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4 },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 999,
+    paddingLeft: 8,
+    paddingRight: 4,
+    paddingVertical: 4,
+  },
+  pillIcon: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
+  gifLabel: { color: '#6c7078', fontSize: 11, fontWeight: '800', letterSpacing: 0.7 },
   input: {
     flex: 1,
-    color: '#fff',
-    backgroundColor: '#131519',
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 10,
+    minWidth: 0,
+    color: '#f2f3f5',
     fontSize: 15,
-    maxHeight: 120,
+    lineHeight: 20,
+    paddingHorizontal: 8,
+    paddingTop: 6,
+    paddingBottom: 6,
+    maxHeight: 110,
   },
-  sendButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  recordingRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 8 },
+  recordingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#f87171' },
+  recordingTime: { color: '#e6e8ea', fontSize: 14, fontVariant: ['tabular-nums'] },
+  send: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendButtonDisabled: { opacity: 0.4 },
+  sendDisabled: { opacity: 0.4 },
 });

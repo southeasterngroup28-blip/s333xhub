@@ -22,9 +22,11 @@ type PhotoProps = {
   maxCount: number;
   onPicked: (images: PickedImageDraft[]) => void;
   onError: (message: string) => void;
+  /** Bare 30px icon in the chat composer's dim gray — no box, no label. */
+  compact?: boolean;
 };
 
-export function PickPhotosButton({ disabled, label, maxCount, onPicked, onError }: PhotoProps) {
+export function PickPhotosButton({ disabled, label, maxCount, onPicked, onError, compact }: PhotoProps) {
   async function pick() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -56,6 +58,18 @@ export function PickPhotosButton({ disabled, label, maxCount, onPicked, onError 
     }
   }
 
+  if (compact) {
+    return (
+      <Pressable
+        style={[styles.compact, disabled && styles.disabled]}
+        onPress={pick}
+        disabled={disabled}
+        hitSlop={8}
+        accessibilityLabel="Send a photo">
+        <Ionicons name="image-outline" size={20} color="#6c7078" />
+      </Pressable>
+    );
+  }
   return (
     <Pressable style={[styles.attach, disabled && styles.disabled]} onPress={pick} disabled={disabled}>
       <Ionicons name="image-outline" size={20} color="#fff" />
@@ -176,6 +190,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 14,
   },
+  compact: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
   disabled: { opacity: 0.4 },
   text: { color: '#fff', fontSize: 15 },
 });

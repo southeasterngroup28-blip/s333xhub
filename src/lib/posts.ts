@@ -138,8 +138,23 @@ export const VIDEO_MAX_SECONDS = 45;
 // The feed refreshes on focus only when this says so (or it's been a while)
 // - otherwise returning from a post keeps your scroll position.
 let feedStale = true;
-export function markFeedStale() { feedStale = true; }
+const staleListeners = new Set<() => void>();
+export function markFeedStale() {
+  feedStale = true;
+  staleListeners.forEach((notify) => notify());
+}
 export function consumeFeedStale(): boolean { const v = feedStale; feedStale = false; return v; }
+/**
+ * Fires the moment the feed is marked stale. A feed that is already on
+ * screen gets no focus event, so it listens here to refetch right away
+ * (a new-post push tapped while sitting on the feed). Returns an unsubscribe.
+ */
+export function onFeedStale(listener: () => void): () => void {
+  staleListeners.add(listener);
+  return () => {
+    staleListeners.delete(listener);
+  };
+}
 
 export const MAX_FILE_BYTES = 50 * 1024 * 1024;
 

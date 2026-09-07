@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -18,7 +18,14 @@ import { PostCard } from '@/components/post-card';
 import { EmptyState } from '@/components/empty-state';
 import { PostSkeleton } from '@/components/skeleton';
 import { Top8Card } from '@/components/top8-card';
-import { consumeFeedStale, fetchPosts, PAGE_SIZE, signedUrlsFor, type Post } from '@/lib/posts';
+import {
+  consumeFeedStale,
+  fetchPosts,
+  onFeedStale,
+  PAGE_SIZE,
+  signedUrlsFor,
+  type Post,
+} from '@/lib/posts';
 import { fetchMyPurchasedPostIds } from '@/lib/purchases';
 import {
   fetchPolls,
@@ -52,6 +59,9 @@ export function Feed() {
   /** Bumps on every fresh load; stale loadMore results get discarded. */
   const fetchSeq = useRef(0);
   const lastLoadAt = useRef(0);
+  const listRef = useRef<FlatList<Post>>(null);
+  /** Whether this tab is the one on screen (focus effects only fire on navigation). */
+  const focused = useRef(false);
 
   const isArtist = profile?.role === 'artist';
   // The profile lookup runs alongside the first render, so for a beat the
@@ -126,17 +136,42 @@ export function Feed() {
   // load waits for the profile lookup — and a profile that lands AFTER a
   // load flips the role, which needs a reload: otherwise the artist's own
   // locked posts sit with no media links and render as bare text.
-  useFocusEffect(
-    useCallback(() => {
-      if (roleUnknown) return;
-      if (
-        consumeFeedStale() ||
+  const refreshIfNeeded = useCallback(
+    (scrollToTop: boolean) => {
+      if (consumeFeedStale()) {
+        // A new-post push tapped while looking at the feed: bring the top
+        // into view so the new post is what you see. Every other stale
+        // refresh keeps the scroll position, as before.
+        if (scrollToTop) listRef.current?.scrollToOffset({ offset: 0, animated: true });
+        loadFresh();
+      } else if (
         loadedAsArtist.current !== isArtist ||
         Date.now() - lastLoadAt.current > 120_000
       ) {
         loadFresh();
       }
-    }, [loadFresh, isArtist, roleUnknown])
+    },
+    [loadFresh, isArtist]
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      focused.current = true;
+      if (!roleUnknown) refreshIfNeeded(false);
+      return () => {
+        focused.current = false;
+      };
+    }, [refreshIfNeeded, roleUnknown])
+  );
+
+  // A new-post push tapped while the feed is already on screen gives no
+  // focus event — the stale mark itself is the signal to refetch.
+  useEffect(
+    () =>
+      onFeedStale(() => {
+        if (focused.current && !roleUnknown) refreshIfNeeded(true);
+      }),
+    [refreshIfNeeded, roleUnknown]
   );
 
   async function loadMore() {
@@ -185,6 +220,7 @@ export function Feed() {
       ) : (
         <FadeMask>
           <FlatList
+            ref={listRef}
             data={posts}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
