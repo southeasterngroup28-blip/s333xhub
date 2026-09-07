@@ -4,7 +4,7 @@
 // payment sheet → RevenueCat's webhook verifies with Apple and writes
 // the purchases row server-side → the app sees the unlock appear.
 // The client NEVER writes its own unlock — the vault seal stays sealed.
-import { Platform } from 'react-native';
+import { LogBox, Platform } from 'react-native';
 
 import { fetchMyPurchasedPostIds } from '@/lib/purchases';
 import { requireUserId } from '@/lib/supabase';
@@ -32,6 +32,11 @@ async function rc() {
 /** Idempotent setup — call whenever a session exists. */
 export async function configurePayments(userId: string): Promise<void> {
   if (Platform.OS !== 'ios' || !RC_KEY.startsWith('appl_')) return;
+  // Dev builds only: RevenueCat logs an 'Error fetching offerings' console.error
+  // on every launch until Apple serves the products, and Expo's LogBox turns
+  // that into a red toast. We never use offerings (we fetch products directly),
+  // so keep the toast off the test screen. LogBox does not exist in release.
+  if (__DEV__) LogBox.ignoreLogs([/\[RevenueCat\].*offerings/i]);
   try {
     const Purchases = await rc();
     if (configuredFor === null) {
