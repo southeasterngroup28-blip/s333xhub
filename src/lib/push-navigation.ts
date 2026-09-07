@@ -1,11 +1,11 @@
 // Tapping a push should land you ON the thing — the post, the chat,
-// the drop — not just open the app.
+// the drop, the shows list — not just open the app.
 import { Platform } from 'react-native';
 
 type Router = { push: (url: never) => void };
 
 /** Screens a push is allowed to deep-open. */
-const ALLOWED = [/^\/post\/[\w-]+$/, /^\/channel\/[\w-]+$/, /^\/drop\/[\w-]+$/];
+const ALLOWED = [/^\/post\/[\w-]+$/, /^\/channel\/[\w-]+$/, /^\/drop\/[\w-]+$/, /^\/shows$/];
 
 function openFromData(router: Router, data: unknown): void {
   const url = (data as { url?: string } | null)?.url;

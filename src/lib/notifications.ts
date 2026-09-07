@@ -6,18 +6,25 @@ export type NotificationPrefs = {
   new_posts: boolean;
   group_chat: boolean;
   dms: boolean;
+  shows: boolean;
 };
 
-export const DEFAULT_PREFS: NotificationPrefs = { new_posts: true, group_chat: true, dms: true };
+export const DEFAULT_PREFS: NotificationPrefs = {
+  new_posts: true,
+  group_chat: true,
+  dms: true,
+  shows: true,
+};
 
 /** This user's opt-outs; no row yet means everything on. */
 export async function fetchNotificationPrefs(): Promise<NotificationPrefs> {
   const { data, error } = await supabase
     .from('notification_prefs')
-    .select('new_posts, group_chat, dms')
+    .select('new_posts, group_chat, dms, shows')
     .maybeSingle();
   if (error) throw error;
-  return (data as NotificationPrefs | null) ?? DEFAULT_PREFS;
+  // Merge over defaults so a row written before a newer column existed still reads as "on".
+  return { ...DEFAULT_PREFS, ...((data as Partial<NotificationPrefs> | null) ?? {}) };
 }
 
 export async function setNotificationPref(

@@ -16,10 +16,12 @@ import { AppBackground } from '@/components/app-background';
 import { EdgeGlass, FadeMask } from '@/components/edge-fade';
 import { PostCard } from '@/components/post-card';
 import { EmptyState } from '@/components/empty-state';
+import { ShowsCard } from '@/components/shows-card';
 import { PostSkeleton } from '@/components/skeleton';
 import { Top8Card } from '@/components/top8-card';
 import { consumeFeedStale, fetchPosts, PAGE_SIZE, signedUrlsFor, type Post } from '@/lib/posts';
 import { fetchMyPurchasedPostIds } from '@/lib/purchases';
+import { fetchUpcomingShows, type Show } from '@/lib/shows';
 import {
   fetchPolls,
   fetchSocialSummary,
@@ -44,6 +46,7 @@ export function Feed() {
   const [social, setSocial] = useState<SocialSummary>({ reactions: {}, commentCounts: {} });
   const [polls, setPolls] = useState<Record<string, PollState>>({});
   const [topFans, setTopFans] = useState<TopFan[]>([]);
+  const [shows, setShows] = useState<Show[]>([]);
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -94,14 +97,16 @@ export function Feed() {
 
       const ids = fresh.map((p) => p.id);
       const pollIds = fresh.filter((p) => p.kind === 'poll').map((p) => p.id);
-      const [summary, pollStates, top] = await Promise.all([
+      const [summary, pollStates, top, upcomingShows] = await Promise.all([
         fetchSocialSummary(ids).catch(() => ({ reactions: {}, commentCounts: {} })),
         fetchPolls(pollIds).catch(() => ({})),
         fetchTopFans().catch(() => []),
+        fetchUpcomingShows().catch(() => []),
       ]);
       setSocial(summary);
       setPolls(pollStates);
       setTopFans(top);
+      setShows(upcomingShows);
 
       await resolveMedia(fresh, purchased);
     } catch (e) {
@@ -201,7 +206,12 @@ export function Feed() {
           }
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
-          ListHeaderComponent={<Top8Card fans={topFans} viewerIsArtist={isArtist} />}
+          ListHeaderComponent={
+            <>
+              <Top8Card fans={topFans} viewerIsArtist={isArtist} />
+              <ShowsCard shows={shows} viewerIsArtist={isArtist} />
+            </>
+          }
           ListEmptyComponent={
             <EmptyState
               icon="flash-outline"

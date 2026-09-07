@@ -35,6 +35,7 @@ const PREF_LABELS: { key: keyof NotificationPrefs; label: string; hint: string }
   { key: 'new_posts', label: 'New posts', hint: 'When the artist drops something new' },
   { key: 'group_chat', label: 'Community chat', hint: 'Messages in the group chat' },
   { key: 'dms', label: 'Direct messages', hint: 'When you get a DM' },
+  { key: 'shows', label: 'Show announcements', hint: 'When a new show or tour date is added' },
 ];
 
 export default function SettingsScreen() {
