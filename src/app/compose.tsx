@@ -23,7 +23,14 @@ import {
   PickVideoButton,
   type PickedImageDraft,
 } from '@/components/media-pickers';
-import { createPost, markFeedStale, type PickedAudio, type PickedVideo, type Project } from '@/lib/posts';
+import {
+  createPost,
+  markFeedStale,
+  titleFromFileName,
+  type PickedAudio,
+  type PickedVideo,
+  type Project,
+} from '@/lib/posts';
 import { useAuth } from '@/providers/auth-provider';
 
 const MAX_IMAGES = 4;
@@ -211,10 +218,8 @@ export default function ComposeScreen() {
   function handlePickedAudio(picked: PickedAudio) {
     setError(null);
     setAudio(picked);
-    if (!trackTitle.trim()) {
-      // Pre-fill the title from the file name, minus the extension.
-      setTrackTitle(picked.name.replace(/\.[^.]+$/, ''));
-    }
+    // Pre-fill the title from the file name, minus the extension.
+    setTrackTitle(titleFromFileName(picked.name));
   }
 
   function handlePickedVideo(picked: PickedVideo) {
@@ -266,9 +271,7 @@ export default function ComposeScreen() {
     !posting &&
     (pollMode
       ? body.trim().length > 0 && pollOptions.map((o) => o.trim()).filter(Boolean).length >= 2
-      : audio
-        ? trackTitle.trim().length > 0
-        : !!video || body.trim().length > 0 || images.length > 0);
+      : !!audio || !!video || body.trim().length > 0 || images.length > 0);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -382,7 +385,7 @@ export default function ComposeScreen() {
                 onPress={() => {
                   setAudio(null);
                   setCover(null);
-                    setTrackTitle('');
+                  setTrackTitle('');
                 }}
                 disabled={posting}>
                 <Ionicons name="close" size={18} color="#888" />

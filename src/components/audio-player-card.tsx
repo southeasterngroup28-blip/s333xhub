@@ -89,14 +89,22 @@ export function AudioCover({
           />
         ) : (
           // No cover art: charcoal ground with the project emblem as a watermark.
-          <LinearGradient colors={['#262b32', '#0b0d10']} style={StyleSheet.absoluteFill}>
+          // Two flat, absolute layers of the cover — the same shape as the art
+          // above — so the emblem is measured against the cover itself rather
+          // than living inside the native gradient view.
+          <>
+            <LinearGradient
+              pointerEvents="none"
+              colors={['#262b32', '#0b0d10']}
+              style={StyleSheet.absoluteFill}
+            />
             <Image
               source={EMBLEMS[project]}
               style={styles.emblem}
               contentFit="contain"
               blurRadius={locked ? 3 : undefined}
             />
-          </LinearGradient>
+          </>
         )}
         <LinearGradient
           pointerEvents="none"
@@ -281,12 +289,14 @@ const styles = StyleSheet.create({
   },
   // A blurred image goes soft at its edges; a touch of scale hides that.
   artLocked: { transform: [{ scale: 1.06 }] },
+  // Centred 55% × 75% of the cover, written as insets (like the art's
+  // absoluteFill) so it sizes against the cover the same way the art does.
   emblem: {
     position: 'absolute',
     top: '12.5%',
+    bottom: '12.5%',
     left: '22.5%',
-    width: '55%',
-    height: '75%',
+    right: '22.5%',
     opacity: 0.16,
   },
   scrim: { position: 'absolute', left: 0, right: 0, bottom: 0 },

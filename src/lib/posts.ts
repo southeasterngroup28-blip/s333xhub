@@ -127,6 +127,11 @@ export type PickedAudio = {
   name: string;
 };
 
+/** "hotel 2.mp3" → "hotel 2": the default title for an audio post. */
+export function titleFromFileName(name: string): string {
+  return name.replace(/\.[^.]+$/, '').trim();
+}
+
 /** HARD business rule: videos over 45s are rejected to control bandwidth cost. */
 export const VIDEO_MAX_SECONDS = 45;
 /** Supabase per-file upload ceiling on the current plan. */
@@ -151,6 +156,7 @@ export type PickedVideo = {
 export type NewPost = {
   project: Project;
   body: string;
+  /** Audio posts: what the artist typed. Blank falls back to the file name. */
   title?: string;
   priceCents?: number | null;
   images?: PickedImage[];
@@ -184,6 +190,9 @@ export async function createPost(input: NewPost): Promise<void> {
     throw new Error(`Videos are capped at ${VIDEO_MAX_SECONDS} seconds.`);
   }
 
+  // A typed title wins; an audio post with the field cleared uses its file name.
+  const resolvedTitle = title?.trim() || (audio ? titleFromFileName(audio.name) : '');
+
   const { data: post, error: postError } = await supabase
     .from('posts')
     .insert({
@@ -199,7 +208,7 @@ export async function createPost(input: NewPost): Promise<void> {
               ? 'photo'
               : 'text',
       body: body.trim() || null,
-      title: title?.trim() || null,
+      title: resolvedTitle || null,
       is_locked: !!priceCents,
       price_cents: priceCents ?? null,
     })
