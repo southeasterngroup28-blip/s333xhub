@@ -1,70 +1,127 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
-import { useEffect, useRef, useState } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useRef, useState, type ReactNode } from 'react';
 import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, {
-  cancelAnimation,
-  useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withRepeat,
-  withSequence,
-  withTiming,
-} from 'react-native-reanimated';
 
-import { pressFeedback } from '@/lib/haptics';
-import { usePlayer } from '@/providers/player-provider';
 import { DISPLAY_FONT } from '@/constants/type';
+import { pressFeedback } from '@/lib/haptics';
+import type { Project } from '@/lib/posts';
+import { usePlayer } from '@/providers/player-provider';
 
 type Props = {
   postId: string;
   title: string;
   url: string;
+  project: Project;
   coverUrl?: string;
   /** Which vertical slice of the cover shows: 0 top … 1 bottom. */
   coverFocus?: number;
 };
 
-function formatTime(totalSeconds: number): string {
+export function formatTime(totalSeconds: number): string {
   if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return '0:00';
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = Math.floor(totalSeconds % 60);
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-/** One dancing equalizer bar (the classic "this one's playing" tell). */
-function EqBar({ active, delay }: { active: boolean; delay: number }) {
-  const height = useSharedValue(4);
-
-  useEffect(() => {
-    if (active) {
-      height.value = withDelay(
-        delay,
-        withRepeat(
-          withSequence(
-            withTiming(15, { duration: 240 }),
-            withTiming(5, { duration: 220 }),
-            withTiming(11, { duration: 200 })
-          ),
-          -1,
-          true
-        )
-      );
-    } else {
-      cancelAnimation(height);
-      height.value = withTiming(4, { duration: 150 });
-    }
-    return () => cancelAnimation(height);
-  }, [active, delay, height]);
-
-  const style = useAnimatedStyle(() => ({ height: height.value }));
-  return <Animated.View style={[styles.eqBar, style]} />;
+/** The project's display name, as it reads in the eyebrow. */
+export function projectLabel(project: Project): string {
+  return project === 's333xgod' ? 'S333XGOD' : 'MAZZE';
 }
 
-export function AudioPlayerCard({ postId, title, url, coverUrl, coverFocus = 0.5 }: Props) {
+const EMBLEMS = {
+  mazze: require('../../assets/images/emblem-mazze.png'),
+  s333xgod: require('../../assets/images/emblem-s333xgod.png'),
+} as const;
+
+// Dark scrim the type and controls sit on. Playing: bottom two thirds only,
+// so the art still breathes up top. Locked: the whole cover, a little
+// heavier, so the blurred art reads as "behind glass".
+const SCRIM = ['rgba(4,6,8,0)', 'rgba(4,6,8,0.58)', 'rgba(4,6,8,0.9)'] as const;
+const SCRIM_STOPS = [0, 0.42, 1] as const;
+const SCRIM_LOCKED = ['rgba(4,6,8,0.25)', 'rgba(4,6,8,0.55)', 'rgba(4,6,8,0.88)'] as const;
+const SCRIM_LOCKED_STOPS = [0, 0.5, 1] as const;
+
+// Past this many characters a title will not fit two lines at 36 in Anton,
+// so it steps down to 30 before the ellipsis has to kick in.
+const LONG_TITLE = 40;
+
+type CoverProps = {
+  project: Project;
+  /** Small silver line above the title: "MAZZE", "LOCKED · S333XGOD". */
+  eyebrow: string;
+  title: string;
+  coverUrl?: string;
+  coverFocus?: number;
+  /** Blurs the art and darkens the whole cover (the paid tease). */
+  locked?: boolean;
+  /** The row under the title: playback controls, or the unlock row. */
+  children?: ReactNode;
+};
+
+/**
+ * The cover IS the post: a 4:3 block of art that runs edge to edge of the
+ * card, with the title typeset into its bottom edge like a magazine
+ * headline. The player and the locked tease both build on this.
+ */
+export function AudioCover({
+  project,
+  eyebrow,
+  title,
+  coverUrl,
+  coverFocus = 0.5,
+  locked = false,
+  children,
+}: CoverProps) {
+  return (
+    <View style={styles.bleed}>
+      <View style={styles.cover}>
+        {coverUrl ? (
+          <Image
+            source={{ uri: coverUrl }}
+            style={[StyleSheet.absoluteFill, locked && styles.artLocked]}
+            contentFit="cover"
+            contentPosition={{ left: '50%', top: `${coverFocus * 100}%` }}
+            blurRadius={locked ? 22 : undefined}
+            transition={locked ? 200 : 150}
+          />
+        ) : (
+          // No cover art: charcoal ground with the project emblem as a watermark.
+          <LinearGradient colors={['#262b32', '#0b0d10']} style={StyleSheet.absoluteFill}>
+            <Image
+              source={EMBLEMS[project]}
+              style={styles.emblem}
+              contentFit="contain"
+              blurRadius={locked ? 3 : undefined}
+            />
+          </LinearGradient>
+        )}
+        <LinearGradient
+          pointerEvents="none"
+          colors={locked ? SCRIM_LOCKED : SCRIM}
+          locations={locked ? SCRIM_LOCKED_STOPS : SCRIM_STOPS}
+          style={[styles.scrim, locked ? styles.scrimFull : styles.scrimLower]}
+        />
+        <Text style={styles.eyebrow} numberOfLines={1}>
+          {eyebrow}
+        </Text>
+        <Text
+          style={[styles.title, title.length > LONG_TITLE && styles.titleSmall]}
+          numberOfLines={2}>
+          {title}
+        </Text>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+export function AudioPlayerCard({ postId, title, url, project, coverUrl, coverFocus = 0.5 }: Props) {
   const { current, status, starting, playTrack, toggle, seekTo } = usePlayer();
   const [barWidth, setBarWidth] = useState(0);
-  /** While the thumb is being dragged, the waveform previews that spot. */
+  /** While the thumb is being dragged, the bar previews that spot. */
   const [dragFraction, setDragFraction] = useState<number | null>(null);
   const widthRef = useRef(0);
   const currentRef = useRef(false);
@@ -148,117 +205,118 @@ export function AudioPlayerCard({ postId, title, url, coverUrl, coverFocus = 0.5
   }
 
   return (
-    <View style={styles.wrap}>
-      {/* Art panel: album-drop sized cover when the post has one. */}
-      <View style={[styles.art, coverUrl && styles.artWithCover]}>
-        {coverUrl ? (
-          <Image
-            source={{ uri: coverUrl }}
-            style={StyleSheet.absoluteFill}
-            contentFit="cover"
-            contentPosition={{ left: '50%', top: `${coverFocus * 100}%` }}
-            transition={150}
+    <AudioCover
+      project={project}
+      eyebrow={projectLabel(project)}
+      title={title}
+      coverUrl={coverUrl}
+      coverFocus={coverFocus}>
+      {/* Controls on the art's bottom edge: play, then the seek bar beside it. */}
+      <View style={styles.controls}>
+        <Pressable style={styles.play} onPress={handlePress} hitSlop={8}>
+          <Ionicons
+            name={isPlaying ? 'pause' : 'play'}
+            size={20}
+            color="#0b0c0e"
+            style={!isPlaying && styles.playNudge}
           />
-        ) : (
-          <View style={styles.artGlow} />
-        )}
-        {coverUrl ? <View style={styles.artScrim} /> : null}
-        <View style={styles.artRow}>
-          <Pressable style={styles.play} onPress={handlePress} hitSlop={8}>
-            <Ionicons
-              name={isPlaying ? 'pause' : 'play'}
-              size={20}
-              color="#0b0c0e"
-              style={!isPlaying && styles.playNudge}
-            />
-          </Pressable>
-          <View style={styles.titleWrap}>
-            <View style={styles.titleRow}>
-              <Text
-                style={[styles.trackTitle, coverUrl && styles.trackTitleBig]}
-                numberOfLines={1}>
-                {title}
-              </Text>
-              {isPlaying ? (
-                <View style={styles.eq}>
-                  <EqBar active delay={0} />
-                  <EqBar active delay={120} />
-                  <EqBar active delay={240} />
-                </View>
-              ) : null}
+        </Pressable>
+
+        <View style={styles.seekCol}>
+          {/* Seek bar: thin track, round thumb, grabs on touch. */}
+          <View
+            style={styles.seekTouch}
+            onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
+            {...pan.panHandlers}>
+            <View style={styles.track} pointerEvents="none">
+              <View style={[styles.fill, { width: `${shownFraction * 100}%` }]} />
             </View>
-            {!isCurrent ? <Text style={styles.time}>Tap to play</Text> : null}
+            {isCurrent ? (
+              <View
+                pointerEvents="none"
+                style={[
+                  styles.thumb,
+                  dragFraction != null && styles.thumbActive,
+                  {
+                    left: Math.max(
+                      0,
+                      Math.min(
+                        barWidth - (dragFraction != null ? 16 : 12),
+                        shownFraction * barWidth - (dragFraction != null ? 8 : 6)
+                      )
+                    ),
+                  },
+                ]}
+              />
+            ) : null}
+          </View>
+          {/* The row keeps its height at rest so nothing jumps when play starts. */}
+          <View style={styles.timesRow} pointerEvents="none">
+            {isCurrent ? (
+              <>
+                <Text style={styles.timeStamp}>
+                  {formatTime(dragFraction != null ? dragFraction * duration : position)}
+                </Text>
+                <Text style={styles.timeStamp}>{formatTime(duration)}</Text>
+              </>
+            ) : null}
           </View>
         </View>
       </View>
-
-      {/* Seek bar: thin track, round thumb, grabs on touch. */}
-      <View
-        style={styles.seekTouch}
-        onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
-        {...pan.panHandlers}>
-        <View style={styles.track} pointerEvents="none">
-          <View style={[styles.fill, { width: `${shownFraction * 100}%` }]} />
-        </View>
-        {isCurrent ? (
-          <View
-            pointerEvents="none"
-            style={[
-              styles.thumb,
-              dragFraction != null && styles.thumbActive,
-              {
-                left: Math.max(
-                  0,
-                  Math.min(
-                    barWidth - (dragFraction != null ? 16 : 12),
-                    shownFraction * barWidth - (dragFraction != null ? 8 : 6)
-                  )
-                ),
-              },
-            ]}
-          />
-        ) : null}
-      </View>
-      {isCurrent ? (
-        <View style={styles.timesRow} pointerEvents="none">
-          <Text style={styles.timeStamp}>
-            {formatTime(dragFraction != null ? dragFraction * duration : position)}
-          </Text>
-          <Text style={styles.timeStamp}>{formatTime(duration)}</Text>
-        </View>
-      ) : null}
-    </View>
+    </AudioCover>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginTop: 12 },
-  art: {
-    borderRadius: 12,
-    backgroundColor: '#171b20',
-    minHeight: 110,
+  // Runs edge to edge of the post card (cancels the card's 16px padding).
+  bleed: { marginTop: 12, marginHorizontal: -16 },
+  cover: {
+    aspectRatio: 4 / 3,
     justifyContent: 'flex-end',
+    paddingTop: 14,
+    paddingHorizontal: 16,
+    paddingBottom: 10,
+    backgroundColor: '#07090b',
     overflow: 'hidden',
   },
-  artWithCover: { aspectRatio: 4 / 3 },
-  artScrim: {
+  // A blurred image goes soft at its edges; a touch of scale hides that.
+  artLocked: { transform: [{ scale: 1.06 }] },
+  emblem: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 96,
-    backgroundColor: 'rgba(4, 6, 8, 0.55)',
+    top: '12.5%',
+    left: '22.5%',
+    width: '55%',
+    height: '75%',
+    opacity: 0.16,
   },
-  artGlow: {
-    position: 'absolute',
-    top: -40,
-    right: -20,
-    width: 180,
-    height: 140,
-    borderRadius: 90,
-    backgroundColor: 'rgba(195, 205, 214, 0.14)',
+  scrim: { position: 'absolute', left: 0, right: 0, bottom: 0 },
+  scrimLower: { height: '66%' },
+  scrimFull: { top: 0 },
+  eyebrow: {
+    color: '#c3cdd6',
+    fontFamily: DISPLAY_FONT,
+    fontSize: 11,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
   },
-  artRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12 },
+  title: {
+    color: '#fff',
+    fontFamily: DISPLAY_FONT,
+    fontSize: 36,
+    lineHeight: 38,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+    textShadowColor: 'rgba(0,0,0,0.65)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 10,
+  },
+  titleSmall: { fontSize: 30, lineHeight: 32 },
+  controls: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   play: {
     width: 44,
     height: 44,
@@ -273,22 +331,10 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   playNudge: { marginLeft: 2 },
-  titleWrap: { flex: 1 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 9 },
-  trackTitle: { color: '#fff', fontSize: 15, fontWeight: '700', flexShrink: 1 },
-  trackTitleBig: {
-    fontSize: 18,
-    fontFamily: DISPLAY_FONT,
-    fontWeight: 'normal',
-    letterSpacing: 1,
-    textShadowColor: 'rgba(0,0,0,0.6)',
-    textShadowRadius: 6,
-  },
-  time: { color: '#99a1a9', fontSize: 12, marginTop: 2 },
-  eq: { flexDirection: 'row', alignItems: 'flex-end', gap: 2.5, height: 16 },
-  eqBar: { width: 3, borderRadius: 2, backgroundColor: '#c3cdd6' },
-  seekTouch: { height: 30, justifyContent: 'center', marginTop: 4 },
-  track: { height: 4, borderRadius: 2, backgroundColor: '#2a2f36', overflow: 'hidden' },
+  // paddingTop 7: the bar's centre (7 + 15) meets the play button's (22).
+  seekCol: { flex: 1, minWidth: 0, paddingTop: 7 },
+  seekTouch: { height: 30, justifyContent: 'center' },
+  track: { height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.22)', overflow: 'hidden' },
   fill: { height: 4, borderRadius: 2, backgroundColor: '#ffffff' },
   thumb: {
     position: 'absolute',
@@ -304,6 +350,6 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   thumbActive: { top: 7, width: 16, height: 16, borderRadius: 8 },
-  timesRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -2 },
-  timeStamp: { color: '#8f99a3', fontSize: 11, fontVariant: ['tabular-nums'] },
+  timesRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -2, height: 14 },
+  timeStamp: { color: 'rgba(255,255,255,0.72)', fontSize: 11, fontVariant: ['tabular-nums'] },
 });

@@ -11,7 +11,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { AudioPlayerCard } from '@/components/audio-player-card';
+import { AudioCover, AudioPlayerCard, projectLabel } from '@/components/audio-player-card';
 import { Avatar } from '@/components/avatar';
 import { pressFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import { PaymentsNotLiveError, purchasePost } from '@/lib/payments';
@@ -257,6 +257,18 @@ export function PostCard({
     }
   }
 
+  // One pill, two homes (audio cover + non-audio tease): busy state and price live here.
+  const unlockPill = (
+    <Pressable
+      style={[styles.unlockPill, unlocking && styles.unlockPillBusy]}
+      disabled={unlocking}
+      onPress={handleUnlock}>
+      <Text style={styles.unlockPillText}>
+        {unlocking ? 'Unlocking…' : `Unlock · $${((post.price_cents ?? 0) / 100).toFixed(2)}`}
+      </Text>
+    </Pressable>
+  );
+
   return (
     <Animated.View
       entering={FadeInDown.duration(280)}
@@ -372,7 +384,27 @@ export function PostCard({
         </View>
       ) : null}
 
-      {locked ? (
+      {locked && post.kind === 'audio' ? (
+        // A locked track keeps the player's shape: the same cover block,
+        // blurred, with the unlock pill sitting where play would be.
+        <>
+          <AudioCover
+            project={post.project}
+            eyebrow={`LOCKED · ${projectLabel(post.project)}`}
+            title={post.title ?? 'Exclusive drop'}
+            coverUrl={post.cover_path ? mediaUrls[post.cover_path] : undefined}
+            coverFocus={post.cover_focus ?? 0.5}
+            locked>
+            <View style={styles.lockRow}>
+              <View style={styles.lockSeat}>
+                <Ionicons name="lock-closed" size={18} color="#e8e9eb" />
+              </View>
+              {unlockPill}
+            </View>
+          </AudioCover>
+          {unlockNotice ? <Text style={styles.unlockNotice}>{unlockNotice}</Text> : null}
+        </>
+      ) : locked ? (
         <View style={styles.teaseWrap}>
           {post.cover_path && mediaUrls[post.cover_path] ? (
             // The real cover art, heavily blurred — a tease of what's inside.
@@ -401,14 +433,7 @@ export function PostCard({
             <Text style={styles.teaseTitle} numberOfLines={1}>
               {post.title ?? 'Exclusive drop'}
             </Text>
-            <Pressable
-              style={[styles.unlockPill, unlocking && styles.unlockPillBusy]}
-              disabled={unlocking}
-              onPress={handleUnlock}>
-              <Text style={styles.unlockPillText}>
-                {unlocking ? 'Unlocking…' : `Unlock · $${((post.price_cents ?? 0) / 100).toFixed(2)}`}
-              </Text>
-            </Pressable>
+            {unlockPill}
             {unlockNotice ? <Text style={styles.teaseSub}>{unlockNotice}</Text> : null}
           </View>
         </View>
@@ -426,6 +451,7 @@ export function PostCard({
                   postId={post.id}
                   title={post.title ?? 'Untitled track'}
                   url={url}
+                  project={post.project}
                   coverUrl={post.cover_path ? mediaUrls[post.cover_path] : undefined}
                   coverFocus={post.cover_focus ?? 0.5}
                 />
@@ -475,7 +501,9 @@ export function PostCard({
             : post.kind === 'video'
               ? 'No video attached'
               : 'No photos attached'}
-          {' — the upload didn’t finish. Fans only see the text; delete this post and post it again.'}
+          {post.is_locked
+            ? ' — the upload didn’t finish. Fans see a paywall with nothing behind it; delete this post before anyone buys it and post it again.'
+            : ' — the upload didn’t finish. Fans only see the text; delete this post and post it again.'}
         </Text>
       ) : null}
 
@@ -587,6 +615,19 @@ const styles = StyleSheet.create({
   },
   unlockPillText: { color: '#14161a', fontWeight: '700', fontSize: 13 },
   unlockPillBusy: { opacity: 0.6 },
+  // Locked audio: the lock sits in the play button's seat, pill beside it.
+  lockRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  lockSeat: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(4,6,8,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  unlockNotice: { color: '#aab2ba', fontSize: 11.5, marginTop: 8 },
   socialRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 12, flexWrap: 'wrap' },
   react: {
     flexDirection: 'row',
