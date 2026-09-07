@@ -466,6 +466,19 @@ export function PostCard({
             );
           })}
 
+      {viewerIsArtist && post.kind !== 'text' && post.kind !== 'poll' && media.length === 0 ? (
+        // Only the artist sees this: the post row exists but its file never
+        // landed (an upload that died mid-way), so fans get a bare text card.
+        <Text style={styles.missingMedia}>
+          {post.kind === 'audio'
+            ? 'No audio attached'
+            : post.kind === 'video'
+              ? 'No video attached'
+              : 'No photos attached'}
+          {' — the upload didn’t finish. Fans only see the text; delete this post and post it again.'}
+        </Text>
+      ) : null}
+
       <View style={styles.socialRow}>
         {REACTION_EMOJIS.map((emoji) => (
           <ReactionChip
@@ -525,6 +538,7 @@ const styles = StyleSheet.create({
   menuDanger: { color: '#f87171', fontSize: 13, fontWeight: '600' },
   reportedNote: { color: '#4fc07a', fontSize: 13, marginBottom: 8 },
   actionError: { color: '#f87171', fontSize: 13, marginBottom: 8 },
+  missingMedia: { color: '#e6b45c', fontSize: 12.5, lineHeight: 18, marginTop: 10 },
   unlockedTag: {
     color: '#c3cdd6',
     fontSize: 11,

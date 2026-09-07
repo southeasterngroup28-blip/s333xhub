@@ -34,7 +34,7 @@ import { DISPLAY_FONT } from '@/constants/type';
 
 
 export function Feed() {
-  const { profile } = useAuth();
+  const { profile, profileError } = useAuth();
   const { current: currentTrack } = usePlayer();
   const insets = useSafeAreaInsets();
   const router = useRouter();
@@ -54,6 +54,11 @@ export function Feed() {
   const lastLoadAt = useRef(0);
 
   const isArtist = profile?.role === 'artist';
+  // The profile lookup runs alongside the first render, so for a beat the
+  // viewer's role is simply unknown — not "fan".
+  const roleUnknown = !profile && !profileError;
+  /** The role the current list was resolved for; null until the first load. */
+  const loadedAsArtist = useRef<boolean | null>(null);
 
   const resolveMedia = useCallback(
     async (batch: Post[], purchased: Set<string>) => {
@@ -81,6 +86,7 @@ export function Feed() {
   const loadFresh = useCallback(async () => {
     const seq = ++fetchSeq.current;
     lastLoadAt.current = Date.now();
+    loadedAsArtist.current = isArtist;
     try {
       const purchased = isArtist
         ? new Set<string>()
@@ -115,12 +121,22 @@ export function Feed() {
 
   // Refresh on focus only when something changed (a new post was made)
   // or the data is old - otherwise keep the fan's scroll position.
+  // The viewer's role decides which media links get requested (the artist
+  // sees everything; fans get free posts + their unlocks), so the first
+  // load waits for the profile lookup — and a profile that lands AFTER a
+  // load flips the role, which needs a reload: otherwise the artist's own
+  // locked posts sit with no media links and render as bare text.
   useFocusEffect(
     useCallback(() => {
-      if (consumeFeedStale() || Date.now() - lastLoadAt.current > 120_000) {
+      if (roleUnknown) return;
+      if (
+        consumeFeedStale() ||
+        loadedAsArtist.current !== isArtist ||
+        Date.now() - lastLoadAt.current > 120_000
+      ) {
         loadFresh();
       }
-    }, [loadFresh])
+    }, [loadFresh, isArtist, roleUnknown])
   );
 
   async function loadMore() {

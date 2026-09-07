@@ -47,10 +47,12 @@ import { DISPLAY_FONT } from '@/constants/type';
 
 export default function PostScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { session, profile } = useAuth();
+  const { session, profile, profileError } = useAuth();
   const router = useRouter();
   const { showProfile } = useProfileCard();
   const isArtist = profile?.role === 'artist';
+  // Mirrors the feed: until the profile lookup lands the role is unknown, not "fan".
+  const roleUnknown = !profile && !profileError;
   const myUserId = session?.user.id;
 
   const [post, setPost] = useState<Post | null>(null);
@@ -146,10 +148,16 @@ export default function PostScreen() {
     }
   }, [id]);
 
+  // The role decides which media links get requested, so the post waits for
+  // the profile lookup (a push-tap cold start lands here before it finishes);
+  // a role flip re-creates loadPost and re-runs this with the right links.
   useEffect(() => {
-    loadPost();
+    if (!roleUnknown) loadPost();
+  }, [loadPost, roleUnknown]);
+
+  useEffect(() => {
     load();
-  }, [loadPost, load]);
+  }, [load]);
 
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   function flash(text: string) {
