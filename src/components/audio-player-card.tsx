@@ -317,7 +317,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontFamily: DISPLAY_FONT,
     fontSize: 36,
-    lineHeight: 38,
+    // Anton's ascenders overshoot a tight line box and iOS clips them, so the
+    // leading stays roomy (about 1.2x) even though the mockup drew it tighter.
+    lineHeight: 44,
     letterSpacing: 0.4,
     textTransform: 'uppercase',
     marginBottom: 8,
@@ -325,7 +327,7 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 10,
   },
-  titleSmall: { fontSize: 30, lineHeight: 32 },
+  titleSmall: { fontSize: 30, lineHeight: 37 },
   controls: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   play: {
     width: 44,
