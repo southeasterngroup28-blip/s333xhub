@@ -60,11 +60,6 @@ export default function ShowsScreen() {
     }, [load])
   );
 
-  function goBack() {
-    if (router.canGoBack()) router.back();
-    else router.replace('/');
-  }
-
   function handleTickets(show: Show) {
     tapFeedback();
     openTickets(show).catch((e) => {
@@ -164,9 +159,6 @@ export default function ShowsScreen() {
 
       <EdgeGlass />
       <View style={[styles.topBar, { top: insets.top }]} pointerEvents="box-none">
-        <Pressable onPress={goBack} hitSlop={12} style={styles.back}>
-          <Ionicons name="chevron-back" size={24} color="#fff" />
-        </Pressable>
         <Text style={styles.title}>SHOWS</Text>
         {isArtist ? (
           <Pressable
@@ -276,8 +268,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  back: { position: 'absolute', left: 12 },
-  title: { color: '#f4f5f6', fontSize: 22, fontFamily: DISPLAY_FONT, letterSpacing: 3 },
+  title: { color: '#f4f5f6', fontSize: 22, fontFamily: DISPLAY_FONT, letterSpacing: 2 },
   newButton: {
     position: 'absolute',
     right: 16,

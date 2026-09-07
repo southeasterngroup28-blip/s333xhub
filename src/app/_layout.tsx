@@ -51,7 +51,9 @@ function RootNavigator() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Protected guard={!!session}>
-        <Stack.Screen name="(tabs)" />
+        {/* Stable identity: deep links (push taps) navigate INTO the mounted
+            tab group instead of stacking a second one. */}
+        <Stack.Screen name="(tabs)" getId={() => '(tabs)'} />
         <Stack.Screen name="compose" options={{ presentation: 'modal' }} />
         <Stack.Screen name="channel/[id]" />
         <Stack.Screen name="settings" />
@@ -61,7 +63,6 @@ function RootNavigator() {
         <Stack.Screen name="drop/[id]" />
         <Stack.Screen name="drop-new" options={{ presentation: 'modal' }} />
         <Stack.Screen name="drop-edit/[id]" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="shows" />
         <Stack.Screen name="show-new" options={{ presentation: 'modal' }} />
       </Stack.Protected>
       <Stack.Protected guard={!session}>

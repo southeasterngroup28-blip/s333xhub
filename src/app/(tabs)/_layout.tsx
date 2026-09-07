@@ -16,6 +16,7 @@ import { installPushNavigation } from '@/lib/push-navigation';
 const TAB_ICONS: Record<string, { on: keyof typeof Ionicons.glyphMap; off: keyof typeof Ionicons.glyphMap }> = {
   index: { on: 'home', off: 'home-outline' },
   chat: { on: 'chatbubbles', off: 'chatbubbles-outline' },
+  shows: { on: 'ticket', off: 'ticket-outline' },
   fanmail: { on: 'mail', off: 'mail-outline' },
 };
 
@@ -134,6 +135,7 @@ export default function TabsLayout() {
         screenOptions={{ headerShown: false }}>
         <Tabs.Screen name="index" />
         <Tabs.Screen name="chat" />
+        <Tabs.Screen name="shows" />
         <Tabs.Screen name="fanmail" />
         <Tabs.Screen name="shop" />
       </Tabs>
@@ -170,7 +172,8 @@ const styles = StyleSheet.create({
   },
   tab: {
     paddingVertical: 10,
-    paddingHorizontal: 26,
+    // Four icons share the pill; 16 keeps them inside it on 360–375pt phones.
+    paddingHorizontal: 16,
     borderRadius: 999,
   },
   tabOn: { backgroundColor: 'rgba(255, 255, 255, 0.11)' },
