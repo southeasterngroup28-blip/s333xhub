@@ -2,6 +2,16 @@
 // RC calls this on every purchase event; we verify the shared secret,
 // validate the product tier against the post's price, and record the
 // unlock. The client never writes its own "I paid" row.
+//
+// Required secrets (Dashboard → Edge Functions → Secrets):
+//   RC_WEBHOOK_SECRET   — the Authorization value set on the RevenueCat
+//                         webhook; every call must carry it
+//   SB_SECRET_KEY — the sb_secret_… key (Settings → API Keys) that
+//                         runs the privileged post check + purchase write
+//                         below. If it's missing we fall back to the
+//                         auto-injected legacy SUPABASE_SERVICE_ROLE_KEY
+//                         JWT, which this new-generation project has
+//                         rejected before.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -16,6 +26,27 @@ const TIER_CENTS: Record<string, number> = {
   unlock_tier_1499: 1499,
   unlock_tier_1999: 1999,
 };
+
+// Which secret unlocks the privileged (row-level-security-bypassing)
+// client. Decided once at startup and logged BY NAME ONLY, so the
+// dashboard logs show which key a deploy is running on — the value itself
+// never goes near a log line.
+// Preference order: the owner-added SB_SECRET_KEY (secret names starting
+// with SUPABASE_ are reserved by the dashboard), then the platform's own
+// SUPABASE_SECRET_KEYS (may hold several, comma-separated), then the
+// deprecated legacy service-role JWT as a last resort.
+const ADMIN_KEY_NAME = Deno.env.get('SB_SECRET_KEY')
+  ? 'SB_SECRET_KEY'
+  : Deno.env.get('SUPABASE_SECRET_KEYS')
+    ? 'SUPABASE_SECRET_KEYS'
+    : 'SUPABASE_SERVICE_ROLE_KEY';
+const ADMIN_KEY = (Deno.env.get(ADMIN_KEY_NAME) ?? '').split(',')[0].trim();
+console.log(`privileged Supabase client: using ${ADMIN_KEY_NAME}`);
+
+/** The privileged client — see ADMIN_KEY_NAME for which key it holds. */
+function adminClient() {
+  return createClient(Deno.env.get('SUPABASE_URL')!, ADMIN_KEY);
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -54,10 +85,7 @@ Deno.serve(async (req) => {
     return new Response('missing target', { status: 200, headers: corsHeaders });
   }
 
-  const supabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-  );
+  const supabase = adminClient();
 
   // The paid tier must match the post's price — no unlocking a $19.99
   // post with a $4.99 receipt.

@@ -6,7 +6,12 @@
 // payment (see stripe-webhook).
 //
 // Required secrets (Dashboard → Edge Functions → Secrets):
-//   STRIPE_SECRET_KEY — sk_test_… while testing, sk_live_… for real money
+//   STRIPE_SECRET_KEY   — sk_test_… while testing, sk_live_… for real money
+//   SB_SECRET_KEY — the sb_secret_… key (Settings → API Keys). Powers
+//                         the privileged reads/writes below. If it's missing
+//                         we fall back to the auto-injected legacy
+//                         SUPABASE_SERVICE_ROLE_KEY JWT, which this
+//                         new-generation project has rejected before.
 // (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY are
 // provided automatically.)
 //
@@ -36,6 +41,32 @@ function json(body: unknown, status = 200) {
 
 function fail(message: string, status: number) {
   return json({ error: message }, status);
+}
+
+// Which secret unlocks the privileged (row-level-security-bypassing)
+// client. Decided once at startup and logged BY NAME ONLY, so the
+// dashboard logs show which key a deploy is running on — the value itself
+// never goes near a log line.
+// Preference order: the owner-added SB_SECRET_KEY (secret names starting
+// with SUPABASE_ are reserved by the dashboard), then the platform's own
+// SUPABASE_SECRET_KEYS (may hold several, comma-separated), then the
+// deprecated legacy service-role JWT as a last resort.
+const ADMIN_KEY_NAME = Deno.env.get('SB_SECRET_KEY')
+  ? 'SB_SECRET_KEY'
+  : Deno.env.get('SUPABASE_SECRET_KEYS')
+    ? 'SUPABASE_SECRET_KEYS'
+    : 'SUPABASE_SERVICE_ROLE_KEY';
+const ADMIN_KEY = (Deno.env.get(ADMIN_KEY_NAME) ?? '').split(',')[0].trim();
+console.log(`privileged Supabase client: using ${ADMIN_KEY_NAME}`);
+
+/** The privileged client — see ADMIN_KEY_NAME for which key it holds. */
+function adminClient() {
+  return createClient(Deno.env.get('SUPABASE_URL')!, ADMIN_KEY);
+}
+
+/** One log line from a PostgREST error: code | message | details | hint. */
+function describe(error: { code?: string; message?: string; details?: string; hint?: string }) {
+  return [error.code, error.message, error.details, error.hint].filter(Boolean).join(' | ');
 }
 
 /**
@@ -94,10 +125,7 @@ Deno.serve(async (req) => {
   const user = userData?.user;
   if (userError || !user) return fail('Please sign in again.', 401);
 
-  const admin = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-  );
+  const admin = adminClient();
 
   // ---- Is this show really selling? --------------------------------
   const { data: show, error: showError } = await admin
@@ -105,7 +133,11 @@ Deno.serve(async (req) => {
     .select('id, title, venue, city, status, sales_mode, ticket_price_cents, capacity, starts_at')
     .eq('id', showId)
     .maybeSingle();
-  if (showError) return fail('Could not load that show. Try again.', 500);
+  if (showError) {
+    // The fan sees a friendly sentence; the real cause goes to the logs.
+    console.error(`show lookup failed (via ${ADMIN_KEY_NAME}):`, describe(showError));
+    return fail('Could not load that show. Try again.', 500);
+  }
   if (!show) return fail('That show is gone.', 404);
   if (show.status === 'cancelled') return fail('This show was cancelled.', 409);
   if (show.sales_mode !== 'in_app') return fail('Tickets for this show are not sold in the app.', 409);
@@ -119,7 +151,10 @@ Deno.serve(async (req) => {
   }
   if (show.capacity !== null) {
     const { data: sold, error: soldError } = await admin.rpc('tickets_sold', { show: showId });
-    if (soldError) return fail('Could not check availability. Try again.', 500);
+    if (soldError) {
+      console.error(`tickets_sold failed (via ${ADMIN_KEY_NAME}):`, describe(soldError));
+      return fail('Could not check availability. Try again.', 500);
+    }
     if (Number(sold ?? 0) >= show.capacity) return fail('This show is sold out.', 409);
   }
 

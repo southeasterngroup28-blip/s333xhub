@@ -32,7 +32,10 @@ function loadStripeProvider(): StripeModule['StripeProvider'] | null {
   } else {
     try {
       stripeProvider = (require('@stripe/stripe-react-native') as StripeModule).StripeProvider;
-    } catch {
+    } catch (e) {
+      // No native Stripe on this build (older dev client): the app still
+      // runs, just without checkout — buyTicket says so in its own words.
+      console.warn('[stripe] native module is missing from this build — checkout disabled.', e);
       stripeProvider = null;
     }
   }

@@ -1,7 +1,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -59,22 +61,132 @@ function parseCapacity(raw: string): number | null {
 // ---- The artist types the time as printed on the ticket (venue wall clock).
 // ---- We store the real instant plus the zone, so every fan sees venue time.
 
-function parseDate(raw: string): { year: number; month: number; day: number } | null {
-  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(raw.trim());
-  if (!m) return null;
-  const year = Number(m[1]);
-  const month = Number(m[2]);
-  const day = Number(m[3]);
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  // Feb 30 and friends roll over when built, so a real date round-trips unchanged.
+// ---- Dates: whatever's on the flyer goes in ("9/15", "Sept 15", "2026-09-15");
+// ---- on blur the field tidies itself to "Sep 15, 2026".
+
+const MONTH_NAMES = [
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+];
+
+type DateParts = { year: number; month: number; day: number };
+
+/** A read date, plus whether we had to guess (day/month swapped, or a year we picked). */
+type ParsedDate = DateParts & { guessed: boolean };
+
+/** A real calendar date, or null. Feb 30 and friends roll over when built, so a real date round-trips unchanged. */
+function calendarDate(year: number, month: number, day: number): DateParts | null {
+  if (!Number.isInteger(year) || month < 1 || month > 12 || day < 1 || day > 31) return null;
   const probe = new Date(Date.UTC(year, month - 1, day));
   if (probe.getUTCMonth() !== month - 1 || probe.getUTCDate() !== day) return null;
   return { year, month, day };
 }
 
-/** Accepts "8:00 PM", "8pm", "20:00" — whatever's on the flyer. */
+/** "sep", "sept", "September", "Sep." → 9; null when it isn't a month. */
+function monthNumber(word: string): number | null {
+  const w = word.toLowerCase().replace(/\.$/, '');
+  if (w.length < 3) return null;
+  const i = MONTH_NAMES.findIndex((name) => name.startsWith(w));
+  return i === -1 ? null : i + 1;
+}
+
+/** "26" → 2026; four digits pass through; nothing typed stays undefined. */
+function fullYear(raw: string | undefined): number | undefined {
+  if (raw == null) return undefined;
+  return raw.length === 2 ? 2000 + Number(raw) : Number(raw);
+}
+
+/** No year typed: this year, or next year once that day has already gone by. */
+function inferYear(month: number, day: number): { year: number; rolled: boolean } {
+  const now = new Date();
+  const year = now.getFullYear();
+  const today = Date.UTC(year, now.getMonth(), now.getDate());
+  const thisYear = calendarDate(year, month, day);
+  if (thisYear && Date.UTC(year, month - 1, day) >= today) return { year, rolled: false };
+  return { year: year + 1, rolled: true };
+}
+
+/** Pins the year (typed, or inferred) and confirms the date exists. */
+function resolveDate(month: number, day: number, year: number | undefined): ParsedDate | null {
+  if (year != null) {
+    const d = calendarDate(year, month, day);
+    return d && { ...d, guessed: false };
+  }
+  const inferred = inferYear(month, day);
+  const d = calendarDate(inferred.year, month, day);
+  return d && { ...d, guessed: inferred.rolled };
+}
+
+/** Numbers only: month/day as typed, else swapped ("15/9" → Sep 15) — the swap counts as a guess. */
+function numericDate(a: number, b: number, year: number | undefined): ParsedDate | null {
+  const asTyped = resolveDate(a, b, year);
+  if (asTyped) return asTyped;
+  const swapped = resolveDate(b, a, year);
+  return swapped && { ...swapped, guessed: true };
+}
+
+/**
+ * Accepts 2026-09-15, 9/15/2026, 9/15/26, 9/15, Sep 15, Sept 15th,
+ * September 15, 2026, 15 Sep 2026 — and 2026-15-09, read with day and month swapped.
+ */
+function parseDate(raw: string): ParsedDate | null {
+  const text = raw
+    .trim()
+    .replace(/\s+/g, ' ')
+    // "Tue, Sep 15" — a weekday up front is decoration.
+    .replace(/^(?:mon|tue|wed|thu|fri|sat|sun)[a-z]*,? /i, '');
+  if (!text) return null;
+
+  // 2026-09-15 · 2026/9/15
+  let m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/.exec(text);
+  if (m) return numericDate(Number(m[2]), Number(m[3]), Number(m[1]));
+
+  // 9/15/2026 · 9-15-26 · 9/15 (year assumed)
+  m = /^(\d{1,2})[-/.](\d{1,2})(?:[-/.](\d{2}|\d{4}))?$/.exec(text);
+  if (m) return numericDate(Number(m[1]), Number(m[2]), fullYear(m[3]));
+
+  // Sep 15 · Sept 15th · September 15, 2026 · Sep. 15 2026
+  m = /^([a-z]+)\.? (\d{1,2})(?:st|nd|rd|th)?,?(?: (\d{2}|\d{4}))?$/i.exec(text);
+  if (m) {
+    const month = monthNumber(m[1]);
+    return month ? resolveDate(month, Number(m[2]), fullYear(m[3])) : null;
+  }
+
+  // 15 Sep · 15th September 2026
+  m = /^(\d{1,2})(?:st|nd|rd|th)? ([a-z]+)\.?,?(?: (\d{2}|\d{4}))?$/i.exec(text);
+  if (m) {
+    const month = monthNumber(m[2]);
+    return month ? resolveDate(month, Number(m[1]), fullYear(m[3])) : null;
+  }
+
+  return null;
+}
+
+/** The field's tidy form: "Sep 15, 2026" — which parseDate reads straight back. */
+function dateLabel(d: DateParts): string {
+  const month = MONTH_NAMES[d.month - 1];
+  return `${month.charAt(0).toUpperCase()}${month.slice(1, 3)} ${d.day}, ${d.year}`;
+}
+
+/** The field's tidy form: 22:00 → "10:00 PM". */
+function timeLabel(t: { hour: number; minute: number }): string {
+  const h12 = t.hour % 12 === 0 ? 12 : t.hour % 12;
+  return `${h12}:${String(t.minute).padStart(2, '0')} ${t.hour >= 12 ? 'PM' : 'AM'}`;
+}
+
+/** Accepts "8:00 PM", "10pm", "10 PM", "10:30pm", "22:00", "10.30 p.m." — whatever's on the flyer. */
 function parseTime(raw: string): { hour: number; minute: number } | null {
-  const m = /^(\d{1,2})(?::(\d{2}))?\s*([ap]\.?m?\.?)?$/i.exec(raw.trim());
+  const m = /^(\d{1,2})(?:[:.](\d{2}))?\s*([ap]\.?m?\.?)?$/i.exec(raw.trim());
   if (!m) return null;
   let hour = Number(m[1]);
   const minute = m[2] ? Number(m[2]) : 0;
@@ -136,7 +248,7 @@ function zonedToUtc(
   return new Date(instant);
 }
 
-/** The stored instant, back into the form's "2026-10-18" / "8:00 PM" fields. */
+/** The stored instant, back into the form's "Oct 18, 2026" / "8:00 PM" fields. */
 function wallClock(iso: string, tz: string): { date: string; time: string } {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: tz,
@@ -148,12 +260,10 @@ function wallClock(iso: string, tz: string): { date: string; time: string } {
     minute: '2-digit',
   }).formatToParts(new Date(iso));
   const get = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((p) => p.type === type)?.value ?? '';
-  const hour = Number(get('hour'));
-  const h12 = hour % 12 === 0 ? 12 : hour % 12;
+    Number(parts.find((p) => p.type === type)?.value);
   return {
-    date: `${get('year')}-${get('month')}-${get('day')}`,
-    time: `${h12}:${get('minute')} ${hour >= 12 ? 'PM' : 'AM'}`,
+    date: dateLabel({ year: get('year'), month: get('month'), day: get('day') }),
+    time: timeLabel({ hour: get('hour'), minute: get('minute') }),
   };
 }
 
@@ -183,6 +293,9 @@ export default function ShowFormScreen() {
   const [venue, setVenue] = useState('');
   const [city, setCity] = useState('');
   const [date, setDate] = useState('');
+  /** "Read that as Sep 15, 2026 — tap to change." after a guessed date; tap focuses the field. */
+  const [dateNote, setDateNote] = useState<string | null>(null);
+  const dateRef = useRef<TextInput>(null);
   const [time, setTime] = useState('');
   /** One of SHOW_TIMEZONES' values, or 'other' to reveal the free-text field. */
   const [zoneChoice, setZoneChoice] = useState<string>(DEFAULT_SHOW_TIMEZONE);
@@ -286,13 +399,28 @@ export default function ShowFormScreen() {
 
   const whenHint =
     date.trim() && !dateParts
-      ? 'Date should look like 2026-10-18.'
+      ? 'Couldn’t read that date — e.g. Sep 15 or 9/15/2026.'
       : time.trim() && !timeParts
-        ? 'Time should look like 8:00 PM (or 20:00).'
+        ? 'Time should look like 8:00 PM, 8pm, or 20:00.'
         : null;
   const zoneHint =
     zoneRaw && !timezone ? "That's not a timezone we recognize — try America/Chicago." : null;
   const inPast = !!startsAt && startsAt.getTime() < Date.now();
+
+  /** On blur: "9/15" → "Sep 15, 2026". A guessed reading gets a note the artist can tap to fix. */
+  function tidyDate() {
+    const parsed = parseDate(date);
+    if (!parsed) return;
+    const label = dateLabel(parsed);
+    setDate(label);
+    setDateNote(parsed.guessed ? `Read that as ${label} — tap to change.` : null);
+  }
+
+  /** On blur: "10pm" → "10:00 PM". */
+  function tidyTime() {
+    const parsed = parseTime(time);
+    if (parsed) setTime(timeLabel(parsed));
+  }
 
   function goBack() {
     if (router.canGoBack()) router.back();
@@ -368,243 +496,266 @@ export default function ShowFormScreen() {
           <ActivityIndicator color="#fff" />
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-          <TextInput
-            style={styles.input}
-            placeholder="Tour or show name (optional)"
-            placeholderTextColor="#55585f"
-            value={title}
-            onChangeText={setTitle}
-            maxLength={80}
-          />
-
-          <Text style={styles.label}>VENUE</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="The Fillmore"
-            placeholderTextColor="#55585f"
-            value={venue}
-            onChangeText={setVenue}
-            autoCapitalize="words"
-            maxLength={80}
-          />
-
-          <Text style={styles.label}>CITY</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Miami, FL"
-            placeholderTextColor="#55585f"
-            value={city}
-            onChangeText={setCity}
-            autoCapitalize="words"
-            maxLength={60}
-          />
-
-          <View style={styles.pairRow}>
-            <View style={styles.pairCell}>
-              <Text style={styles.label}>DATE</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="2026-10-18"
-                placeholderTextColor="#55585f"
-                keyboardType="numbers-and-punctuation"
-                value={date}
-                onChangeText={setDate}
-                maxLength={10}
-              />
-            </View>
-            <View style={styles.pairCell}>
-              <Text style={styles.label}>TIME</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="8:00 PM"
-                placeholderTextColor="#55585f"
-                value={time}
-                onChangeText={setTime}
-                autoCapitalize="characters"
-                autoCorrect={false}
-                maxLength={8}
-              />
-            </View>
-          </View>
-          {whenHint ? <Text style={styles.hint}>{whenHint}</Text> : null}
-
-          <Text style={styles.label}>TIMEZONE</Text>
-          <View style={styles.zoneRow}>
-            {SHOW_TIMEZONES.map((option) => (
-              <Pressable
-                key={option.value}
-                style={[styles.zoneChip, zoneChoice === option.value && styles.zoneChipOn]}
-                onPress={() => setZoneChoice(option.value)}>
-                <Text
-                  style={[styles.zoneText, zoneChoice === option.value && styles.zoneTextOn]}>
-                  {option.label.toUpperCase()}
-                </Text>
-              </Pressable>
-            ))}
-            <Pressable
-              style={[styles.zoneChip, zoneChoice === 'other' && styles.zoneChipOn]}
-              onPress={() => setZoneChoice('other')}>
-              <Text style={[styles.zoneText, zoneChoice === 'other' && styles.zoneTextOn]}>
-                OTHER
-              </Text>
-            </Pressable>
-          </View>
-          {zoneChoice === 'other' ? (
+        // Price and capacity sit below the fold on a phone: the avoiding view
+        // lifts the form off the keyboard and the deep bottom padding leaves
+        // room to scroll the last inputs and the button clear of it.
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <ScrollView
+            contentContainerStyle={styles.body}
+            keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+            contentInsetAdjustmentBehavior="automatic">
             <TextInput
               style={styles.input}
-              placeholder="America/Anchorage"
+              placeholder="Tour or show name (optional)"
               placeholderTextColor="#55585f"
-              value={customZone}
-              onChangeText={setCustomZone}
-              autoCapitalize="none"
-              autoCorrect={false}
+              value={title}
+              onChangeText={setTitle}
+              maxLength={80}
             />
-          ) : null}
-          {zoneHint ? <Text style={styles.hint}>{zoneHint}</Text> : null}
-          <Text style={styles.sub}>
-            {startsAt && timezone
-              ? `Fans will see: ${previewLabel(startsAt, timezone)}.${
-                  inPast ? ' Heads up — that date has already passed.' : ''
-                }`
-              : 'Use the time printed on the ticket — the venue’s local time.'}
-          </Text>
 
-          <Text style={styles.label}>TICKETS</Text>
-          <View style={[styles.statusRow, styles.modeRow]}>
-            {SALES_MODES.map((mode) => (
-              <Pressable
-                key={mode}
-                style={[styles.statusChip, salesMode === mode && styles.statusChipOn]}
-                onPress={() => setSalesMode(mode)}>
-                <Text
-                  style={[
-                    styles.statusText,
-                    styles.modeText,
-                    salesMode === mode && styles.statusTextOn,
-                  ]}>
-                  {SALES_MODE_LABEL[mode].toUpperCase()}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+            <Text style={styles.label}>VENUE</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="The Fillmore"
+              placeholderTextColor="#55585f"
+              value={venue}
+              onChangeText={setVenue}
+              autoCapitalize="words"
+              maxLength={80}
+            />
 
-          {salesMode === 'in_app' ? (
+            <Text style={styles.label}>CITY</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Miami, FL"
+              placeholderTextColor="#55585f"
+              value={city}
+              onChangeText={setCity}
+              autoCapitalize="words"
+              maxLength={60}
+            />
+
             <View style={styles.pairRow}>
               <View style={styles.pairCell}>
-                <Text style={styles.label}>PRICE ($)</Text>
+                <Text style={styles.label}>DATE</Text>
                 <TextInput
+                  ref={dateRef}
                   style={styles.input}
-                  placeholder="45"
+                  placeholder="Sep 15, 2026"
                   placeholderTextColor="#55585f"
-                  keyboardType="decimal-pad"
-                  value={price}
-                  onChangeText={setPrice}
-                  maxLength={9}
+                  value={date}
+                  onChangeText={(text) => {
+                    setDate(text);
+                    setDateNote(null);
+                  }}
+                  onBlur={tidyDate}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  maxLength={24}
                 />
               </View>
               <View style={styles.pairCell}>
-                <Text style={styles.label}>CAPACITY</Text>
+                <Text style={styles.label}>TIME</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="Unlimited"
+                  placeholder="8:00 PM"
                   placeholderTextColor="#55585f"
-                  keyboardType="number-pad"
-                  value={capacity}
-                  onChangeText={setCapacity}
-                  maxLength={7}
+                  value={time}
+                  onChangeText={setTime}
+                  onBlur={tidyTime}
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  maxLength={10}
                 />
               </View>
             </View>
-          ) : salesMode === 'link' ? (
-            <>
-              <Text style={styles.label}>TICKET LINK</Text>
+            {dateNote ? (
+              <Pressable onPress={() => dateRef.current?.focus()} hitSlop={6}>
+                <Text style={styles.readAs}>{dateNote}</Text>
+              </Pressable>
+            ) : null}
+            {whenHint ? <Text style={styles.hint}>{whenHint}</Text> : null}
+
+            <Text style={styles.label}>TIMEZONE</Text>
+            <View style={styles.zoneRow}>
+              {SHOW_TIMEZONES.map((option) => (
+                <Pressable
+                  key={option.value}
+                  style={[styles.zoneChip, zoneChoice === option.value && styles.zoneChipOn]}
+                  onPress={() => setZoneChoice(option.value)}>
+                  <Text
+                    style={[styles.zoneText, zoneChoice === option.value && styles.zoneTextOn]}>
+                    {option.label.toUpperCase()}
+                  </Text>
+                </Pressable>
+              ))}
+              <Pressable
+                style={[styles.zoneChip, zoneChoice === 'other' && styles.zoneChipOn]}
+                onPress={() => setZoneChoice('other')}>
+                <Text style={[styles.zoneText, zoneChoice === 'other' && styles.zoneTextOn]}>
+                  OTHER
+                </Text>
+              </Pressable>
+            </View>
+            {zoneChoice === 'other' ? (
               <TextInput
                 style={styles.input}
-                placeholder="https://… (blank shows “Tickets soon”)"
+                placeholder="America/Anchorage"
                 placeholderTextColor="#55585f"
-                keyboardType="url"
+                value={customZone}
+                onChangeText={setCustomZone}
                 autoCapitalize="none"
                 autoCorrect={false}
-                value={ticketUrl}
-                onChangeText={setTicketUrl}
               />
-            </>
-          ) : null}
-          {priceHint ? <Text style={styles.hint}>{priceHint}</Text> : null}
-          {capacityHint ? <Text style={styles.hint}>{capacityHint}</Text> : null}
-          {!ticketOk ? (
-            <Text style={styles.hint}>Ticket links need to start with http:// or https://.</Text>
-          ) : null}
-          <Text style={styles.sub}>{salesNote}</Text>
-          {switchNote ? <Text style={styles.sub}>{switchNote}</Text> : null}
-
-          {editing ? (
-            <>
-              <Text style={styles.label}>STATUS</Text>
-              <View style={styles.statusRow}>
-                {STATUS_ORDER.map((value) => (
-                  <Pressable
-                    key={value}
-                    style={[styles.statusChip, status === value && styles.statusChipOn]}
-                    onPress={() => setStatus(value)}>
-                    <Text style={[styles.statusText, status === value && styles.statusTextOn]}>
-                      {SHOW_STATUS_LABEL[value].toUpperCase()}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </>
-          ) : null}
-
-          <Pressable
-            style={[styles.create, (!valid || saving) && styles.createDisabled]}
-            disabled={!valid || saving}
-            onPress={handleSubmit}>
-            {saving ? (
-              <ActivityIndicator color="#0b0c0e" />
-            ) : (
-              <Text style={styles.createText}>
-                {editing ? 'SAVE CHANGES' : inPast ? 'ADD PAST SHOW' : 'POST SHOW · PUSH EVERY FAN'}
-              </Text>
-            )}
-          </Pressable>
-          <Text style={styles.subCenter}>
-            {editing
-              ? 'Edits are quiet — no push goes out. Fans see the change next time they open the app.'
-              : inPast
-                ? 'Past dates go straight to the archive — no push.'
-                : 'Fans get a push the moment you post this.'}
-          </Text>
-
-          {editing && sold > 0 ? (
-            // Sold tickets pin the show (the database refuses the delete), so
-            // steer the artist to the CANCELLED status above instead.
-            <Text style={[styles.subCenter, styles.deleteNote]}>
-              Fans already bought tickets for this show — mark it cancelled instead of deleting
-              it.
+            ) : null}
+            {zoneHint ? <Text style={styles.hint}>{zoneHint}</Text> : null}
+            <Text style={styles.sub}>
+              {startsAt && timezone
+                ? `Fans will see: ${previewLabel(startsAt, timezone)}.${
+                    inPast ? ' Heads up — that date has already passed.' : ''
+                  }`
+                : 'Use the time printed on the ticket — the venue’s local time.'}
             </Text>
-          ) : editing ? (
-            confirmDelete ? (
-              <View style={styles.confirmRow}>
-                <Text style={styles.confirmText}>Delete this show?</Text>
-                <Pressable onPress={handleDelete}>
-                  <Text style={styles.confirmYes}>DELETE</Text>
+
+            <Text style={styles.label}>TICKETS</Text>
+            <View style={[styles.statusRow, styles.modeRow]}>
+              {SALES_MODES.map((mode) => (
+                <Pressable
+                  key={mode}
+                  style={[styles.statusChip, salesMode === mode && styles.statusChipOn]}
+                  onPress={() => setSalesMode(mode)}>
+                  <Text
+                    style={[
+                      styles.statusText,
+                      styles.modeText,
+                      salesMode === mode && styles.statusTextOn,
+                    ]}>
+                    {SALES_MODE_LABEL[mode].toUpperCase()}
+                  </Text>
                 </Pressable>
-                <Pressable onPress={() => setConfirmDelete(false)}>
-                  <Text style={styles.confirmNo}>Cancel</Text>
-                </Pressable>
+              ))}
+            </View>
+
+            {salesMode === 'in_app' ? (
+              <View style={styles.pairRow}>
+                <View style={styles.pairCell}>
+                  <Text style={styles.label}>PRICE ($)</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="45"
+                    placeholderTextColor="#55585f"
+                    keyboardType="decimal-pad"
+                    value={price}
+                    onChangeText={setPrice}
+                    maxLength={9}
+                  />
+                </View>
+                <View style={styles.pairCell}>
+                  <Text style={styles.label}>CAPACITY</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Unlimited"
+                    placeholderTextColor="#55585f"
+                    keyboardType="number-pad"
+                    value={capacity}
+                    onChangeText={setCapacity}
+                    maxLength={7}
+                  />
+                </View>
               </View>
-            ) : (
-              <Pressable
-                style={styles.deleteRow}
-                disabled={saving}
-                onPress={() => setConfirmDelete(true)}>
-                <Text style={styles.deleteText}>Delete show</Text>
-              </Pressable>
-            )
-          ) : null}
-        </ScrollView>
+            ) : salesMode === 'link' ? (
+              <>
+                <Text style={styles.label}>TICKET LINK</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="https://… (blank shows “Tickets soon”)"
+                  placeholderTextColor="#55585f"
+                  keyboardType="url"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  value={ticketUrl}
+                  onChangeText={setTicketUrl}
+                />
+              </>
+            ) : null}
+            {priceHint ? <Text style={styles.hint}>{priceHint}</Text> : null}
+            {capacityHint ? <Text style={styles.hint}>{capacityHint}</Text> : null}
+            {!ticketOk ? (
+              <Text style={styles.hint}>Ticket links need to start with http:// or https://.</Text>
+            ) : null}
+            <Text style={styles.sub}>{salesNote}</Text>
+            {switchNote ? <Text style={styles.sub}>{switchNote}</Text> : null}
+
+            {editing ? (
+              <>
+                <Text style={styles.label}>STATUS</Text>
+                <View style={styles.statusRow}>
+                  {STATUS_ORDER.map((value) => (
+                    <Pressable
+                      key={value}
+                      style={[styles.statusChip, status === value && styles.statusChipOn]}
+                      onPress={() => setStatus(value)}>
+                      <Text style={[styles.statusText, status === value && styles.statusTextOn]}>
+                        {SHOW_STATUS_LABEL[value].toUpperCase()}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            ) : null}
+
+            <Pressable
+              style={[styles.create, (!valid || saving) && styles.createDisabled]}
+              disabled={!valid || saving}
+              onPress={handleSubmit}>
+              {saving ? (
+                <ActivityIndicator color="#0b0c0e" />
+              ) : (
+                <Text style={styles.createText}>
+                  {editing ? 'SAVE CHANGES' : inPast ? 'ADD PAST SHOW' : 'POST SHOW · PUSH EVERY FAN'}
+                </Text>
+              )}
+            </Pressable>
+            <Text style={styles.subCenter}>
+              {editing
+                ? 'Edits are quiet — no push goes out. Fans see the change next time they open the app.'
+                : inPast
+                  ? 'Past dates go straight to the archive — no push.'
+                  : 'Fans get a push the moment you post this.'}
+            </Text>
+
+            {editing && sold > 0 ? (
+              // Sold tickets pin the show (the database refuses the delete), so
+              // steer the artist to the CANCELLED status above instead.
+              <Text style={[styles.subCenter, styles.deleteNote]}>
+                Fans already bought tickets for this show — mark it cancelled instead of deleting
+                it.
+              </Text>
+            ) : editing ? (
+              confirmDelete ? (
+                <View style={styles.confirmRow}>
+                  <Text style={styles.confirmText}>Delete this show?</Text>
+                  <Pressable onPress={handleDelete}>
+                    <Text style={styles.confirmYes}>DELETE</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setConfirmDelete(false)}>
+                    <Text style={styles.confirmNo}>Cancel</Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <Pressable
+                  style={styles.deleteRow}
+                  disabled={saving}
+                  onPress={() => setConfirmDelete(true)}>
+                  <Text style={styles.deleteText}>Delete show</Text>
+                </Pressable>
+              )
+            ) : null}
+          </ScrollView>
+        </KeyboardAvoidingView>
       )}
     </SafeAreaView>
   );
@@ -612,6 +763,7 @@ export default function ShowFormScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
+  flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row',
@@ -623,7 +775,8 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#fff', fontSize: 17, fontFamily: DISPLAY_FONT, letterSpacing: 2 },
   cancel: { color: '#8f99a3', fontSize: 15 },
   error: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 },
-  body: { padding: 16, paddingBottom: 60 },
+  // Deep enough that the price/capacity row and the button scroll above the keyboard.
+  body: { padding: 16, paddingBottom: 160 },
   input: {
     backgroundColor: '#131519',
     color: '#fff',
@@ -643,6 +796,8 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   hint: { color: '#f87171', fontSize: 11.5, lineHeight: 16, marginTop: -4, marginBottom: 10 },
+  // Same seat as a hint, but calm: we read the date fine, just say how.
+  readAs: { color: '#c3cdd6', fontSize: 11.5, lineHeight: 16, marginTop: -4, marginBottom: 10 },
   zoneRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 12 },
   zoneChip: {
     paddingHorizontal: 12,

@@ -116,7 +116,9 @@ export default function ShowsScreen() {
 
   // The relative eyebrow belongs to the one date fans are actually waiting on.
   const nextId = upcoming.find((s) => s.status !== 'cancelled')?.id ?? null;
-  // The header's scan shortcut only earns its spot while there's a door to work.
+  // Every scan entry point is the artist's alone — the header shortcut here,
+  // and each row's chip below (fans get no scan handler, so the chip has
+  // nothing to render). The shortcut also waits for a door worth working.
   const canScan =
     isArtist && upcoming.some((s) => s.sales_mode === 'in_app' && s.status !== 'cancelled');
 
@@ -163,10 +165,10 @@ export default function ShowsScreen() {
                   show={show}
                   isNext={show.id === nextId}
                   editable={isArtist}
-                  sold={soldByShow[show.id]}
+                  sold={isArtist ? soldByShow[show.id] : undefined}
                   onEdit={() => handleEdit(show)}
                   onTickets={() => handleTickets(show)}
-                  onScan={() => handleScan(show)}
+                  onScan={isArtist ? () => handleScan(show) : undefined}
                   ticketing={isArtist ? undefined : ticketing.forRow(show)}
                 />
               ))
@@ -273,7 +275,8 @@ function ShowRow({
   const soldOut = show.status === 'sold_out';
   const mode = salesMode(show);
   const price = show.ticket_price_cents ?? 0;
-  // Artist: sales + the scanner live on in-app dates that haven't wrapped.
+  // Artist: the sold line + the scanner live on in-app dates that haven't
+  // wrapped. `editable` is the artist flag, so fans never see either.
   const artistSales = editable && !past && show.sales_mode === 'in_app';
 
   return (

@@ -1,8 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { Component, useCallback, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import QRCode from 'react-native-qrcode-svg';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EmptyState } from '@/components/empty-state';
@@ -10,6 +9,27 @@ import { Skeleton } from '@/components/skeleton';
 import { DISPLAY_FONT } from '@/constants/type';
 import { showDateParts, showRelative } from '@/lib/shows';
 import { fetchTicket, priceLabel, type Ticket } from '@/lib/tickets';
+
+// The QR is drawn by react-native-qrcode-svg on top of react-native-svg,
+// which looks up its native module the moment it's imported. A build made
+// before the ticket screen was added would throw right there — and a route
+// module that throws takes the whole router down with it. So the code is
+// required lazily, inside the card, and a miss shows a note instead of a
+// crash. (Only the type comes in at the top — types are erased.)
+type QrModule = typeof import('react-native-qrcode-svg');
+type QrComponent = QrModule['default'];
+let qrComponent: QrComponent | null | undefined;
+
+function loadQrCode(): QrComponent | null {
+  if (qrComponent !== undefined) return qrComponent;
+  try {
+    qrComponent = (require('react-native-qrcode-svg') as QrModule).default ?? null;
+  } catch (e) {
+    console.warn('[ticket] QR code module is missing from this build — code hidden.', e);
+    qrComponent = null;
+  }
+  return qrComponent;
+}
 
 /** The QR is the whole point — big enough for a scanner across a table. */
 const QR_SIZE = 220;
@@ -92,7 +112,48 @@ function clockAt(iso: string, timeZone: string | undefined): string {
   }
 }
 
+type BoundaryProps = { fallback: ReactNode; children: ReactNode };
+type BoundaryState = { failed: boolean };
+
+/**
+ * If drawing the code blows up mid-render (a native view this build
+ * doesn't have, a token the generator chokes on), show the note in its
+ * place instead of losing the whole screen.
+ */
+class QrBoundary extends Component<BoundaryProps, BoundaryState> {
+  state: BoundaryState = { failed: false };
+
+  static getDerivedStateFromError(): BoundaryState {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.warn('[ticket] QR code failed to draw — showing the note instead.', error);
+  }
+
+  render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+/** Solid stand-in for the QR when this build can't draw one. */
+function QrUnavailable() {
+  return (
+    <View style={styles.qrMissing}>
+      <View style={styles.qrMissingRing}>
+        <Ionicons name="qr-code-outline" size={26} color="#8f99a3" />
+      </View>
+      <Text style={styles.qrMissingTitle}>UPDATE THE APP</Text>
+      <Text style={styles.qrMissingSub}>
+        This version of the app can&apos;t draw your ticket&apos;s code yet. Update the app to
+        view your ticket.
+      </Text>
+    </View>
+  );
+}
+
 function TicketCard({ ticket }: { ticket: Ticket }) {
+  const QRCode = loadQrCode();
   const show = ticket.show;
   const date = show ? showDateParts(show) : null;
   const relative = show ? showRelative(show) : null;
@@ -136,21 +197,27 @@ function TicketCard({ ticket }: { ticket: Ticket }) {
       </View>
 
       <View style={styles.qrWrap}>
-        {/* White on a white pad — scanners want the quiet zone, so the pad is the code's own margin. */}
-        <View style={styles.qrPad}>
-          <QRCode
-            value={ticket.qr_token}
-            size={QR_SIZE}
-            color="#000000"
-            backgroundColor="#ffffff"
-            ecl="M"
-          />
-          {ticket.status === 'refunded' ? (
-            <View style={styles.qrWash}>
-              <Text style={styles.qrStamp}>REFUNDED</Text>
+        {QRCode ? (
+          <QrBoundary fallback={<QrUnavailable />}>
+            {/* White on a white pad — scanners want the quiet zone, so the pad is the code's own margin. */}
+            <View style={styles.qrPad}>
+              <QRCode
+                value={ticket.qr_token}
+                size={QR_SIZE}
+                color="#000000"
+                backgroundColor="#ffffff"
+                ecl="M"
+              />
+              {ticket.status === 'refunded' ? (
+                <View style={styles.qrWash}>
+                  <Text style={styles.qrStamp}>REFUNDED</Text>
+                </View>
+              ) : null}
             </View>
-          ) : null}
-        </View>
+          </QrBoundary>
+        ) : (
+          <QrUnavailable />
+        )}
       </View>
 
       {ticket.buyer_name ? <Text style={styles.buyer}>{ticket.buyer_name}</Text> : null}
@@ -168,7 +235,9 @@ function TicketCard({ ticket }: { ticket: Ticket }) {
           ? 'This ticket was refunded — it won’t scan at the door.'
           : ticket.status === 'checked_in'
             ? 'You’re in. Enjoy the show.'
-            : 'Show this at the door.'}
+            : QRCode
+              ? 'Show this at the door.'
+              : 'Your ticket is saved — update the app and its code will show here.'}
       </Text>
     </View>
   );
@@ -290,6 +359,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 4,
     transform: [{ rotate: '-9deg' }],
+  },
+  // Same footprint as the QR pad, so the card doesn't jump between builds.
+  qrMissing: {
+    width: QR_SIZE + 32,
+    minHeight: QR_SIZE + 32,
+    borderRadius: 18,
+    backgroundColor: '#101216',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+    paddingVertical: 24,
+  },
+  qrMissingRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#14171b',
+    borderWidth: 1,
+    borderColor: '#23262b',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  qrMissingTitle: {
+    color: '#e8e9eb',
+    fontSize: 18,
+    lineHeight: 22,
+    fontFamily: DISPLAY_FONT,
+    letterSpacing: 1.5,
+    textAlign: 'center',
+  },
+  qrMissingSub: {
+    color: '#8f99a3',
+    fontSize: 12.5,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 8,
   },
   buyer: { color: '#fff', fontSize: 15, fontWeight: '700', textAlign: 'center', marginTop: 18 },
   status: {

@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
+import type { BarcodeScanningResult } from 'expo-camera';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -10,6 +10,26 @@ import { errorFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import { fetchShow, showDateParts } from '@/lib/shows';
 import { checkInTicket } from '@/lib/tickets';
 import { useAuth } from '@/providers/auth-provider';
+
+// expo-camera looks up its native module the moment the package is
+// imported, so a build made before the scanner was added throws right
+// there — and a route module that throws takes the whole router down with
+// it ("Cannot read property 'ErrorBoundary' of undefined"). So the camera
+// is required lazily, inside the screen, and a miss shows a note instead.
+// (Only the type comes in at the top — types are erased, they can't throw.)
+type CameraModule = typeof import('expo-camera');
+let cameraModule: CameraModule | null | undefined;
+
+function loadCamera(): CameraModule | null {
+  if (cameraModule !== undefined) return cameraModule;
+  try {
+    cameraModule = require('expo-camera') as CameraModule;
+  } catch (e) {
+    console.warn('[scan] expo-camera is missing from this build — scanner disabled.', e);
+    cameraModule = null;
+  }
+  return cameraModule;
+}
 
 /** The same QR code keeps firing while it's in frame — one check per 3s. */
 const REPEAT_WINDOW_MS = 3000;
@@ -93,6 +113,98 @@ export default function ScanScreen() {
   const { show: showId } = useLocalSearchParams<{ show?: string }>();
   const router = useRouter();
   const { profile } = useAuth();
+
+  function close() {
+    if (router.canGoBack()) router.back();
+    else router.replace('/shows' as never);
+  }
+
+  // Profile still on its way (cold start straight into a deep link): hold
+  // the frame rather than judging a role we don't know yet.
+  if (!profile) {
+    return <SafeAreaView style={styles.safe} />;
+  }
+
+  // Artist-only surface, same guard as show-new: a fan who deep-links here
+  // gets a note and the way back, never a camera.
+  if (profile.role !== 'artist') {
+    return (
+      <ScanNotice
+        icon="lock-closed-outline"
+        title="ARTIST ONLY"
+        sub="The door scanner is for checking fans in on show night. Your own tickets live on the Shows tab."
+        cta="BACK TO SHOWS"
+        onClose={close}
+      />
+    );
+  }
+
+  const camera = loadCamera();
+  if (!camera) {
+    return (
+      <ScanNotice
+        icon="cloud-download-outline"
+        title="UPDATE THE APP"
+        sub="This version of the app doesn't have the camera scanner yet. Update the app to use the scanner at the door."
+        cta="BACK TO SHOWS"
+        onClose={close}
+      />
+    );
+  }
+
+  return <Scanner camera={camera} showId={showId} onClose={close} />;
+}
+
+type NoticeProps = {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  sub: string;
+  cta: string;
+  onClose: () => void;
+};
+
+/** The scanner's frame with one solid card in it — for when there's no camera to show. */
+function ScanNotice({ icon, title, sub, cta, onClose }: NoticeProps) {
+  return (
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <View style={styles.header}>
+        <Pressable onPress={onClose} hitSlop={12} style={styles.headerButton}>
+          <Ionicons name="close" size={22} color="#f4f5f6" />
+        </Pressable>
+        <View style={styles.headerMiddle}>
+          <Text style={styles.headerTitle}>SCAN TICKETS</Text>
+        </View>
+        <View style={styles.headerSpacer} />
+      </View>
+      <View style={[styles.permission, styles.noticeCard]}>
+        <View style={styles.iconRing}>
+          <Ionicons name={icon} size={26} color="#8f99a3" />
+        </View>
+        <Text style={styles.permissionTitle}>{title}</Text>
+        <Text style={styles.permissionSub}>{sub}</Text>
+        <Pressable
+          style={styles.cta}
+          onPress={() => {
+            tapFeedback();
+            onClose();
+          }}>
+          <Text style={styles.ctaText}>{cta}</Text>
+        </Pressable>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+type ScannerProps = {
+  /** The loaded expo-camera module — the screen only gets here once it's known to exist. */
+  camera: CameraModule;
+  showId?: string;
+  onClose: () => void;
+};
+
+/** The door itself: camera, result banner, tonight's count. */
+function Scanner({ camera, showId, onClose }: ScannerProps) {
+  const { CameraView, useCameraPermissions } = camera;
   const [permission, requestPermission] = useCameraPermissions();
 
   const [showLabel, setShowLabel] = useState<string | null>(null);
@@ -127,11 +239,6 @@ export default function ScanScreen() {
     }, BANNER_MS);
     return () => clearTimeout(timer);
   }, [banner]);
-
-  function close() {
-    if (router.canGoBack()) router.back();
-    else router.replace('/shows' as never);
-  }
 
   async function handleScan({ data }: BarcodeScanningResult) {
     const token = (data ?? '').trim();
@@ -176,15 +283,10 @@ export default function ScanScreen() {
     }
   }
 
-  // Artist-only surface; a deep-linked fan sees nothing, not a camera.
-  if (profile?.role !== 'artist') {
-    return <SafeAreaView style={styles.safe} />;
-  }
-
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Pressable onPress={close} hitSlop={12} style={styles.headerButton}>
+        <Pressable onPress={onClose} hitSlop={12} style={styles.headerButton}>
           <Ionicons name="close" size={22} color="#f4f5f6" />
         </Pressable>
         <View style={styles.headerMiddle}>
@@ -303,8 +405,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerButtonOn: { backgroundColor: '#fff' },
+  /** Keeps the title centred when there's no torch button on the right. */
+  headerSpacer: { width: 36 },
   headerMiddle: { flex: 1, alignItems: 'center' },
-  headerTitle: { color: '#fff', fontSize: 17, fontFamily: DISPLAY_FONT, letterSpacing: 2 },
+  headerTitle: {
+    color: '#fff',
+    fontSize: 17,
+    lineHeight: 21,
+    fontFamily: DISPLAY_FONT,
+    letterSpacing: 2,
+  },
   headerSub: { color: '#8f99a3', fontSize: 11.5, marginTop: 2 },
   camera: {
     flex: 1,
@@ -338,6 +448,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 28,
   },
+  /** The notice stands alone (no banner or counter under it), so it keeps its own bottom margin. */
+  noticeCard: { marginBottom: 16 },
   iconRing: {
     width: 64,
     height: 64,
@@ -349,7 +461,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 16,
   },
-  permissionTitle: { color: '#e8e9eb', fontSize: 18, fontFamily: DISPLAY_FONT, letterSpacing: 1.5 },
+  permissionTitle: {
+    color: '#e8e9eb',
+    fontSize: 18,
+    lineHeight: 22,
+    fontFamily: DISPLAY_FONT,
+    letterSpacing: 1.5,
+    textAlign: 'center',
+  },
   permissionSub: {
     color: '#8f99a3',
     fontSize: 13,
