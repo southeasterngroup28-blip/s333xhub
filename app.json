@@ -61,7 +61,6 @@
       [
         "@stripe/stripe-react-native",
         {
-          "merchantIdentifier": "merchant.com.s333xhub.app",
           "enableGooglePay": false
         }
       ]
