@@ -56,7 +56,18 @@ const ADMIN_KEY_NAME = Deno.env.get('SB_SECRET_KEY')
   : Deno.env.get('SUPABASE_SECRET_KEYS')
     ? 'SUPABASE_SECRET_KEYS'
     : 'SUPABASE_SERVICE_ROLE_KEY';
-const ADMIN_KEY = (Deno.env.get(ADMIN_KEY_NAME) ?? '').split(',')[0].trim();
+/** Read a key from an env var that may hold either a bare key or Supabase's JSON dictionary of keys. */
+function envKey(name: string): string {
+  const raw = (Deno.env.get(name) ?? '').trim();
+  if (!raw.startsWith('{')) return raw.split(',')[0].trim();
+  try {
+    const dict = JSON.parse(raw) as Record<string, string>;
+    return String(dict.default ?? Object.values(dict)[0] ?? '');
+  } catch {
+    return '';
+  }
+}
+const ADMIN_KEY = envKey(ADMIN_KEY_NAME);
 console.log(`privileged Supabase client: using ${ADMIN_KEY_NAME}`);
 
 /** The privileged client — see ADMIN_KEY_NAME for which key it holds. */
@@ -118,7 +129,7 @@ Deno.serve(async (req) => {
   // (needed for the capacity count) or write their own Stripe customer id.
   const caller = createClient(
     Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_ANON_KEY')!,
+    envKey('SUPABASE_PUBLISHABLE_KEYS') || Deno.env.get('SUPABASE_ANON_KEY')!,
     { global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } } }
   );
   const { data: userData, error: userError } = await caller.auth.getUser();

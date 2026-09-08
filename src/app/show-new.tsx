@@ -504,9 +504,7 @@ export default function ShowFormScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <ScrollView
             contentContainerStyle={styles.body}
-            keyboardShouldPersistTaps="handled"
-            automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
-            contentInsetAdjustmentBehavior="automatic">
+            keyboardShouldPersistTaps="handled">
             <TextInput
               style={styles.input}
               placeholder="Tour or show name (optional)"
@@ -554,7 +552,7 @@ export default function ShowFormScreen() {
                   onBlur={tidyDate}
                   autoCapitalize="words"
                   autoCorrect={false}
-                  maxLength={24}
+                  maxLength={40}
                 />
               </View>
               <View style={styles.pairCell}>
