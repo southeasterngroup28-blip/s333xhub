@@ -158,8 +158,12 @@ type IntentResponse = {
   paymentIntent?: string;
   ephemeralKey?: string;
   customer?: string;
+  livemode?: boolean;
   error?: string;
 };
+
+/** Which Stripe world this build's publishable key belongs to. */
+const STRIPE_MODE: 'test' | 'live' = STRIPE_KEY.startsWith('pk_live_') ? 'live' : 'test';
 
 /**
  * Edge function errors come back as FunctionsHttpError with the raw
@@ -189,6 +193,24 @@ async function intentError(error: unknown, fallback: string): Promise<Error> {
 async function stripe() {
   const module = await import('@stripe/stripe-react-native');
   return module;
+}
+
+// Stripe's catch-all sentence. It hides the real reason (a key from the
+// wrong account, a stale intent...) which the SDK only puts in `message`.
+const GENERIC_STRIPE_LINE = /unexpected error/i;
+
+type StripeError = { code?: string; message?: string; localizedMessage?: string };
+
+/**
+ * The fan-facing line, plus the SDK's specific reason in parentheses on a
+ * dev build only. It is always logged, so a production failure still
+ * leaves a trace.
+ */
+function withDetail(fanLine: string, error: StripeError): string {
+  const detail = (error.message ?? '').trim();
+  const specific = detail && detail !== error.localizedMessage && !GENERIC_STRIPE_LINE.test(detail);
+  if (specific) console.warn('[tickets] Stripe:', error.code, detail);
+  return __DEV__ && specific ? `${fanLine} (${detail})` : fanLine;
 }
 
 /**
@@ -221,12 +243,19 @@ export async function buyTicket(show: Show, buyerName?: string | null): Promise<
   // The server prices and gates the sale — the app only asks.
   const { data, error } = await supabase.functions.invoke<IntentResponse>(
     'stripe-payment-intent',
-    { body: { show_id: show.id } }
+    { body: { show_id: show.id, mode: STRIPE_MODE } }
   );
   if (error) throw await intentError(error, 'Could not start checkout - try again in a moment.');
   if (data?.error) throw new Error(data.error);
   if (!data?.paymentIntent || !data.ephemeralKey || !data.customer) {
     throw new Error('Could not start checkout - try again in a moment.');
+  }
+  // Belt and braces for an older server build: a test app must never be
+  // handed a live payment, and the reverse would only fail inside Stripe.
+  if (typeof data.livemode === 'boolean' && data.livemode !== (STRIPE_MODE === 'live')) {
+    throw new Error(
+      `Checkout is misconfigured: the app uses Stripe ${STRIPE_MODE} keys but the server holds a ${data.livemode ? 'live' : 'test'} key.`
+    );
   }
 
   let sdk: Awaited<ReturnType<typeof stripe>>;
@@ -248,7 +277,7 @@ export async function buyTicket(show: Show, buyerName?: string | null): Promise<
     allowsDelayedPaymentMethods: false,
   });
   if (init.error) {
-    throw new Error('Could not open checkout - try again in a moment.');
+    throw new Error(withDetail('Could not open checkout - try again in a moment.', init.error));
   }
 
   // What I already hold for this show, BEFORE paying — so the wait below
@@ -262,9 +291,13 @@ export async function buyTicket(show: Show, buyerName?: string | null): Promise<
   const result = await sdk.presentPaymentSheet();
   if (result.didCancel || result.error?.code === 'Canceled') throw new PurchaseCancelledError();
   if (result.error) {
-    throw new Error(
-      result.error.localizedMessage || result.error.message || 'The payment did not go through.'
-    );
+    // Stripe's localizedMessage is the fan-facing line; when it's only the
+    // generic "unexpected error" one, fall back to our own copy.
+    const fanLine =
+      result.error.localizedMessage && !GENERIC_STRIPE_LINE.test(result.error.localizedMessage)
+        ? result.error.localizedMessage
+        : 'The payment did not go through - try again in a moment.';
+    throw new Error(withDetail(fanLine, result.error));
   }
 
   // Stripe took the money; now wait for the webhook to record the ticket.

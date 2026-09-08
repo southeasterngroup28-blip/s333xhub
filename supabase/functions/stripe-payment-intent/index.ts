@@ -15,8 +15,11 @@
 // (SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY are
 // provided automatically.)
 //
-// Request:  POST { show_id }   with the fan's Authorization header
-// Success:  200 { paymentIntent, ephemeralKey, customer }
+// Request:  POST { show_id, mode? }   with the fan's Authorization header
+//           mode = 'test' | 'live' — which kind of publishable key the app
+//           holds; refused up front if this function's secret key is the
+//           other kind (a test app can never start a live charge).
+// Success:  200 { paymentIntent, ephemeralKey, customer, livemode }
 // Failure:  4xx/5xx { error: "friendly sentence" }
 import { createClient } from 'npm:@supabase/supabase-js@2';
 
@@ -116,13 +119,24 @@ Deno.serve(async (req) => {
   }
 
   let showId = '';
+  let appMode = '';
   try {
     const body = await req.json();
     showId = String(body?.show_id ?? '');
+    appMode = String(body?.mode ?? '');
   } catch {
     return fail('Bad request.', 400);
   }
   if (!uuidish.test(showId)) return fail('Missing show.', 400);
+
+  // Test app + live key (or the reverse) can never work: Stripe keeps the
+  // two worlds apart, so the payment sheet would only ever see "No such
+  // payment_intent". Say so plainly instead of creating a stray charge.
+  const serverMode = Deno.env.get('STRIPE_SECRET_KEY')!.startsWith('sk_live_') ? 'live' : 'test';
+  if ((appMode === 'test' || appMode === 'live') && appMode !== serverMode) {
+    console.error(`Stripe key mismatch: app is ${appMode}, STRIPE_SECRET_KEY is ${serverMode}`);
+    return fail(`Checkout is misconfigured: the app uses Stripe ${appMode} keys but the server holds a ${serverMode} key.`, 500);
+  }
 
   // Act AS the caller only to learn who they are — everything after this
   // uses the service role, because fans can't read other people's tickets
@@ -235,6 +249,7 @@ Deno.serve(async (req) => {
       paymentIntent: intent.client_secret,
       ephemeralKey: ephemeralKey!.secret,
       customer: customerId,
+      livemode: intent.livemode === true,
     });
   } catch (error) {
     console.error('stripe setup failed', String(error));
