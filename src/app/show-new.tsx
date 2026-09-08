@@ -16,17 +16,45 @@ import { useAuth } from '@/providers/auth-provider';
 import { DISPLAY_FONT } from '@/constants/type';
 import {
   DEFAULT_SHOW_TIMEZONE,
+  SALES_MODE_LABEL,
   SHOW_STATUS_LABEL,
   SHOW_TIMEZONES,
   createShow,
   deleteShow,
   fetchShow,
   updateShow,
+  type SalesMode,
   type ShowStatus,
 } from '@/lib/shows';
+import { ticketsSold } from '@/lib/tickets';
 
 /** Segmented order for the edit screen; labels come from the lib so badges match. */
 const STATUS_ORDER: ShowStatus[] = ['announced', 'sold_out', 'cancelled'];
+
+/** In-app first — selling in the app is the whole point of the feature. */
+const SALES_MODES: SalesMode[] = ['in_app', 'link', 'none'];
+
+/** Stripe won't take a USD charge under 50¢, so neither does the form. */
+const MIN_PRICE_CENTS = 50;
+
+/** "45", "45.5", "$45.00", "1,200" → cents; null when it isn't a price. */
+function parsePriceCents(raw: string): number | null {
+  const cleaned = raw.trim().replace(/^\$/, '').replace(/,/g, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(cleaned)) return null;
+  return Math.round(Number(cleaned) * 100);
+}
+
+/** Cents back into the price field: 4500 → "45", 4550 → "45.50". */
+function priceInput(cents: number): string {
+  return cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2);
+}
+
+/** Blank = unlimited (null); otherwise a whole number, or NaN when it isn't one. */
+function parseCapacity(raw: string): number | null {
+  const cleaned = raw.trim().replace(/,/g, '');
+  if (!cleaned) return null;
+  return /^\d+$/.test(cleaned) ? Number(cleaned) : Number.NaN;
+}
 
 // ---- The artist types the time as printed on the ticket (venue wall clock).
 // ---- We store the real instant plus the zone, so every fan sees venue time.
@@ -160,6 +188,14 @@ export default function ShowFormScreen() {
   const [zoneChoice, setZoneChoice] = useState<string>(DEFAULT_SHOW_TIMEZONE);
   const [customZone, setCustomZone] = useState('');
   const [ticketUrl, setTicketUrl] = useState('');
+  const [salesMode, setSalesMode] = useState<SalesMode>('in_app');
+  const [price, setPrice] = useState('');
+  const [capacity, setCapacity] = useState('');
+  /**
+   * Editing: tickets already sold. Capacity can't drop below it, and a show
+   * with sales can't be deleted (sold tickets pin it) — only cancelled.
+   */
+  const [sold, setSold] = useState(0);
   const [status, setStatus] = useState<ShowStatus>('announced');
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -184,7 +220,15 @@ export default function ShowFormScreen() {
         setZoneChoice(preset ? zone : 'other');
         setCustomZone(preset ? '' : zone);
         setTicketUrl(show.ticket_url ?? '');
+        setSalesMode(show.sales_mode);
+        setPrice(show.ticket_price_cents != null ? priceInput(show.ticket_price_cents) : '');
+        setCapacity(show.capacity != null ? String(show.capacity) : '');
         setStatus(show.status);
+        // Every mode, not just in-app: a show that sold in the app and then
+        // switched to a link still has fans holding tickets. Best effort — a
+        // miss only loosens the capacity check and lets Delete fall through
+        // to the database's own (friendly) refusal.
+        ticketsSold(show.id).then(setSold).catch(() => {});
       })
       .catch((e) => setError((e as { message?: string })?.message ?? 'Could not load.'))
       .finally(() => setLoading(false));
@@ -197,8 +241,48 @@ export default function ShowFormScreen() {
   const startsAt =
     dateParts && timeParts && timezone ? zonedToUtc(dateParts, timeParts, timezone) : null;
   const ticket = ticketUrl.trim();
-  const ticketOk = ticket.length === 0 || /^https?:\/\/\S+$/i.test(ticket);
-  const valid = venue.trim().length > 0 && city.trim().length > 0 && !!startsAt && ticketOk;
+  const ticketOk =
+    salesMode !== 'link' || ticket.length === 0 || /^https?:\/\/\S+$/i.test(ticket);
+  const priceCents = parsePriceCents(price);
+  const priceOk = salesMode !== 'in_app' || (priceCents !== null && priceCents >= MIN_PRICE_CENTS);
+  const capacityValue = parseCapacity(capacity);
+  const capacityOk =
+    salesMode !== 'in_app' ||
+    capacityValue === null ||
+    (Number.isInteger(capacityValue) && capacityValue >= 1 && capacityValue >= sold);
+  const valid =
+    venue.trim().length > 0 &&
+    city.trim().length > 0 &&
+    !!startsAt &&
+    ticketOk &&
+    priceOk &&
+    capacityOk;
+
+  const priceHint =
+    salesMode === 'in_app' && price.trim() && !priceOk
+      ? priceCents === null
+        ? 'Price should look like 45 or 45.50.'
+        : 'Tickets need a price of at least $0.50.'
+      : null;
+  const capacityHint =
+    salesMode === 'in_app' && capacity.trim() && !capacityOk
+      ? capacityValue !== null && Number.isInteger(capacityValue) && capacityValue < sold
+        ? `${sold} already sold — capacity can't go below that.`
+        : 'Capacity should be a whole number, like 200 (or blank for unlimited).'
+      : null;
+  const salesNote =
+    salesMode === 'in_app'
+      ? `${price.trim() ? '' : 'Set a ticket price to post. '}Fans pay in the app with Apple Pay or a card${
+          capacityValue && capacityOk ? ` — sales stop at ${capacityValue}.` : ' — no cap on sales.'
+        }${editing && sold > 0 ? ` ${sold} sold so far.` : ''}`
+      : salesMode === 'link'
+        ? 'Fans tap TICKETS and land on that page. Blank shows “Tickets soon”.'
+        : 'No ticket button — fans just see the date and place.';
+  // Switching an in-app show away from in-app doesn't touch tickets already sold.
+  const switchNote =
+    editing && sold > 0 && salesMode !== 'in_app'
+      ? `${sold} fan${sold === 1 ? '' : 's'} already bought in the app — they keep their tickets; new in-app sales stop.`
+      : null;
 
   const whenHint =
     date.trim() && !dateParts
@@ -226,7 +310,10 @@ export default function ShowFormScreen() {
       city: city.trim(),
       starts_at: startsAt.toISOString(),
       timezone,
-      ticket_url: ticket || null,
+      sales_mode: salesMode,
+      ticket_url: salesMode === 'link' ? ticket || null : null,
+      ticket_price_cents: salesMode === 'in_app' ? priceCents : null,
+      capacity: salesMode === 'in_app' ? capacityValue : null,
     };
     try {
       if (editId) {
@@ -383,20 +470,74 @@ export default function ShowFormScreen() {
               : 'Use the time printed on the ticket — the venue’s local time.'}
           </Text>
 
-          <Text style={styles.label}>TICKET LINK</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="https://… (blank shows “Tickets soon”)"
-            placeholderTextColor="#55585f"
-            keyboardType="url"
-            autoCapitalize="none"
-            autoCorrect={false}
-            value={ticketUrl}
-            onChangeText={setTicketUrl}
-          />
+          <Text style={styles.label}>TICKETS</Text>
+          <View style={[styles.statusRow, styles.modeRow]}>
+            {SALES_MODES.map((mode) => (
+              <Pressable
+                key={mode}
+                style={[styles.statusChip, salesMode === mode && styles.statusChipOn]}
+                onPress={() => setSalesMode(mode)}>
+                <Text
+                  style={[
+                    styles.statusText,
+                    styles.modeText,
+                    salesMode === mode && styles.statusTextOn,
+                  ]}>
+                  {SALES_MODE_LABEL[mode].toUpperCase()}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {salesMode === 'in_app' ? (
+            <View style={styles.pairRow}>
+              <View style={styles.pairCell}>
+                <Text style={styles.label}>PRICE ($)</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="45"
+                  placeholderTextColor="#55585f"
+                  keyboardType="decimal-pad"
+                  value={price}
+                  onChangeText={setPrice}
+                  maxLength={9}
+                />
+              </View>
+              <View style={styles.pairCell}>
+                <Text style={styles.label}>CAPACITY</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Unlimited"
+                  placeholderTextColor="#55585f"
+                  keyboardType="number-pad"
+                  value={capacity}
+                  onChangeText={setCapacity}
+                  maxLength={7}
+                />
+              </View>
+            </View>
+          ) : salesMode === 'link' ? (
+            <>
+              <Text style={styles.label}>TICKET LINK</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="https://… (blank shows “Tickets soon”)"
+                placeholderTextColor="#55585f"
+                keyboardType="url"
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={ticketUrl}
+                onChangeText={setTicketUrl}
+              />
+            </>
+          ) : null}
+          {priceHint ? <Text style={styles.hint}>{priceHint}</Text> : null}
+          {capacityHint ? <Text style={styles.hint}>{capacityHint}</Text> : null}
           {!ticketOk ? (
             <Text style={styles.hint}>Ticket links need to start with http:// or https://.</Text>
           ) : null}
+          <Text style={styles.sub}>{salesNote}</Text>
+          {switchNote ? <Text style={styles.sub}>{switchNote}</Text> : null}
 
           {editing ? (
             <>
@@ -436,7 +577,14 @@ export default function ShowFormScreen() {
                 : 'Fans get a push the moment you post this.'}
           </Text>
 
-          {editing ? (
+          {editing && sold > 0 ? (
+            // Sold tickets pin the show (the database refuses the delete), so
+            // steer the artist to the CANCELLED status above instead.
+            <Text style={[styles.subCenter, styles.deleteNote]}>
+              Fans already bought tickets for this show — mark it cancelled instead of deleting
+              it.
+            </Text>
+          ) : editing ? (
             confirmDelete ? (
               <View style={styles.confirmRow}>
                 <Text style={styles.confirmText}>Delete this show?</Text>
@@ -517,6 +665,9 @@ const styles = StyleSheet.create({
   statusChipOn: { backgroundColor: '#ffffff' },
   statusText: { color: '#8f99a3', fontWeight: '800', fontSize: 11, letterSpacing: 1.5 },
   statusTextOn: { color: '#0b0c0e' },
+  modeRow: { marginBottom: 12 },
+  // Three labels across a phone — a touch tighter than the two-word status chips.
+  modeText: { fontSize: 10, letterSpacing: 1 },
   create: {
     backgroundColor: '#ffffff',
     borderRadius: 999,
@@ -547,4 +698,5 @@ const styles = StyleSheet.create({
   confirmNo: { color: '#8f99a3', fontSize: 13 },
   deleteRow: { alignItems: 'center', marginTop: 22 },
   deleteText: { color: '#f87171', fontSize: 13, fontWeight: '600' },
+  deleteNote: { marginTop: 22 },
 });

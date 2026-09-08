@@ -5,6 +5,12 @@ import { supabase, requireUserId } from '@/lib/supabase';
 
 export type ShowStatus = 'announced' | 'sold_out' | 'cancelled';
 
+/**
+ * How fans get in: tickets sold right in the app (Stripe), a link-out to
+ * an outside ticket page, or no tickets at all (free / walk-up night).
+ */
+export type SalesMode = 'in_app' | 'link' | 'none';
+
 export type Show = {
   id: string;
   /** Optional tour/show name ("Highs & Lows Tour"). */
@@ -15,21 +21,66 @@ export type Show = {
   starts_at: string;
   /** IANA zone of the venue — every time we display is in this zone. */
   timezone: string;
-  /** Link-out; null = "Tickets soon". */
+  /** Link-out (sales_mode 'link'); null = "Tickets soon". */
   ticket_url: string | null;
   status: ShowStatus;
+  sales_mode: SalesMode;
+  /** In-app price in cents; null unless sales_mode is 'in_app'. */
+  ticket_price_cents: number | null;
+  /** In-app cap on tickets; null = unlimited. */
+  capacity: number | null;
   created_at: string;
   updated_at: string;
 };
 
-export type NewShow = Omit<Show, 'id' | 'created_at' | 'updated_at' | 'status'> & {
-  status?: ShowStatus;
-};
+/** The sales columns travel together; the lib keeps them consistent with sales_mode. */
+export type ShowSales = Pick<Show, 'sales_mode' | 'ticket_price_cents' | 'capacity'>;
+
+export type NewShow = Omit<Show, 'id' | 'created_at' | 'updated_at' | 'status' | keyof ShowSales> &
+  Partial<ShowSales> & {
+    status?: ShowStatus;
+  };
 
 export type ShowPatch = Partial<Omit<Show, 'id' | 'created_at' | 'updated_at'>>;
 
-const SHOW_COLUMNS =
-  'id, title, venue, city, starts_at, timezone, ticket_url, status, created_at, updated_at';
+/** Every column of Show — exported so a joined `show:shows(…)` elsewhere can't drift from the type. */
+export const SHOW_COLUMNS =
+  'id, title, venue, city, starts_at, timezone, ticket_url, status, sales_mode, ticket_price_cents, capacity, created_at, updated_at';
+
+export const SALES_MODE_LABEL: Record<SalesMode, string> = {
+  in_app: 'Sell in app',
+  link: 'Ticket link',
+  none: 'None',
+};
+
+/**
+ * Columns for a sales mode, scrubbed so a show never carries leftovers
+ * from a previous mode (a stale link on an in-app show, a price on a
+ * free night). Price and capacity only mean something in-app; the
+ * link-out only means something in link mode.
+ */
+export function salesColumns(
+  mode: SalesMode,
+  fields: { ticket_url?: string | null; ticket_price_cents?: number | null; capacity?: number | null }
+): {
+  sales_mode: SalesMode;
+  ticket_url?: string | null;
+  ticket_price_cents: number | null;
+  capacity: number | null;
+} {
+  const columns = {
+    sales_mode: mode,
+    ticket_price_cents: mode === 'in_app' ? (fields.ticket_price_cents ?? null) : null,
+    capacity: mode === 'in_app' ? (fields.capacity ?? null) : null,
+  };
+  // Link mode with no link in the patch leaves the stored link alone.
+  if (mode === 'link') {
+    return fields.ticket_url === undefined
+      ? columns
+      : { ...columns, ticket_url: normalizeTicketUrl(fields.ticket_url) };
+  }
+  return { ...columns, ticket_url: null };
+}
 
 /**
  * A show is still "on" for 6 hours after doors — it's happening, not
@@ -63,19 +114,28 @@ export const SHOW_STATUS_LABEL: Record<ShowStatus, string> = {
 
 /** "On sale" / "Tickets soon" / "Sold out" / "Cancelled" for a badge. */
 export function statusLabel(show: Show): string {
-  if (show.status === 'announced' && !show.ticket_url) return 'Tickets soon';
+  if (show.status === 'announced' && show.sales_mode === 'link' && !show.ticket_url) {
+    return 'Tickets soon';
+  }
   return SHOW_STATUS_LABEL[show.status];
 }
 
 /**
  * Supabase errors carry raw Postgres text - fans never see that. A
  * write the database refused (RLS) means a non-artist tried to manage
- * shows; everything else gets the caller's own copy.
+ * shows; a foreign-key refusal means sold tickets are pinning the show
+ * (tickets.show_id is `on delete restrict`); everything else gets the
+ * caller's own copy.
  */
 function friendly(error: { message?: string; code?: string } | null, copy: string): Error {
   const text = error?.message ?? '';
   if (error?.code === '42501' || text.includes('row-level security')) {
     return new Error('Only the artist can manage shows.');
+  }
+  if (error?.code === '23503') {
+    return new Error(
+      'Fans already bought tickets for this show — mark it cancelled instead of deleting it.'
+    );
   }
   return new Error(copy);
 }
@@ -144,8 +204,9 @@ export async function createShow(input: NewShow): Promise<Show> {
       city: input.city.trim(),
       starts_at: input.starts_at,
       timezone: input.timezone || DEFAULT_SHOW_TIMEZONE,
-      ticket_url: normalizeTicketUrl(input.ticket_url),
       status: input.status ?? 'announced',
+      // 'link' mirrors the database default, so an older caller still lands there.
+      ...salesColumns(input.sales_mode ?? 'link', input),
     })
     .select(SHOW_COLUMNS)
     .single();
@@ -161,7 +222,12 @@ export async function updateShow(id: string, patch: ShowPatch): Promise<Show> {
   if ('title' in patch) row.title = patch.title?.trim() || null;
   if (patch.venue !== undefined) row.venue = patch.venue.trim();
   if (patch.city !== undefined) row.city = patch.city.trim();
-  if ('ticket_url' in patch) row.ticket_url = normalizeTicketUrl(patch.ticket_url);
+  if (patch.sales_mode) {
+    // A mode switch scrubs the other modes' columns in the same write.
+    Object.assign(row, salesColumns(patch.sales_mode, patch));
+  } else if ('ticket_url' in patch) {
+    row.ticket_url = normalizeTicketUrl(patch.ticket_url);
+  }
 
   const { data, error } = await supabase
     .from('shows')

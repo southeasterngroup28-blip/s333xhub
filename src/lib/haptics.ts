@@ -18,3 +18,8 @@ export function pressFeedback() {
 export function successFeedback() {
   if (canBuzz) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
 }
+
+/** Warning buzz — a scan that didn't go through, a refused action. */
+export function errorFeedback() {
+  if (canBuzz) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+}

@@ -10,7 +10,13 @@ type Router = {
 };
 
 /** Screens a push is allowed to deep-open. */
-const ALLOWED = [/^\/post\/[\w-]+$/, /^\/channel\/[\w-]+$/, /^\/drop\/[\w-]+$/, /^\/shows$/];
+const ALLOWED = [
+  /^\/post\/[\w-]+$/,
+  /^\/channel\/[\w-]+$/,
+  /^\/drop\/[\w-]+$/,
+  /^\/shows$/,
+  /^\/ticket\/[\w-]+$/,
+];
 
 /**
  * A new-post push carries `/post/<id>`. The post screen is comments-only
