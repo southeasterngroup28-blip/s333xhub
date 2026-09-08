@@ -7,6 +7,7 @@
 //
 // Required secrets (Dashboard → Edge Functions → Secrets):
 //   STRIPE_SECRET_KEY   — sk_test_… while testing, sk_live_… for real money
+//                         (a restricted rk_test_… / rk_live_… key works too)
 //   SB_SECRET_KEY — the sb_secret_… key (Settings → API Keys). Powers
 //                         the privileged reads/writes below. If it's missing
 //                         we fall back to the auto-injected legacy
@@ -44,6 +45,17 @@ function json(body: unknown, status = 200) {
 
 function fail(message: string, status: number) {
   return json({ error: message }, status);
+}
+
+/**
+ * Which Stripe world a server key belongs to. Both key families count:
+ * standard sk_… and restricted rk_… . Anything else is 'unknown' and the
+ * up-front guard stays out of the way (the app still checks livemode).
+ */
+function stripeMode(key: string): 'live' | 'test' | 'unknown' {
+  if (/^(sk|rk)_live_/.test(key)) return 'live';
+  if (/^(sk|rk)_test_/.test(key)) return 'test';
+  return 'unknown';
 }
 
 // Which secret unlocks the privileged (row-level-security-bypassing)
@@ -132,8 +144,8 @@ Deno.serve(async (req) => {
   // Test app + live key (or the reverse) can never work: Stripe keeps the
   // two worlds apart, so the payment sheet would only ever see "No such
   // payment_intent". Say so plainly instead of creating a stray charge.
-  const serverMode = Deno.env.get('STRIPE_SECRET_KEY')!.startsWith('sk_live_') ? 'live' : 'test';
-  if ((appMode === 'test' || appMode === 'live') && appMode !== serverMode) {
+  const serverMode = stripeMode(Deno.env.get('STRIPE_SECRET_KEY')!);
+  if ((appMode === 'test' || appMode === 'live') && serverMode !== 'unknown' && appMode !== serverMode) {
     console.error(`Stripe key mismatch: app is ${appMode}, STRIPE_SECRET_KEY is ${serverMode}`);
     return fail(`Checkout is misconfigured: the app uses Stripe ${appMode} keys but the server holds a ${serverMode} key.`, 500);
   }
