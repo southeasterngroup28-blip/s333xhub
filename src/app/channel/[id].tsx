@@ -60,6 +60,13 @@ import {
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/auth-provider';
 import { DISPLAY_FONT } from '@/constants/type';
+import {
+  CHAT_COMPOSER,
+  CHAT_HAIRLINE,
+  CHAT_HAIRLINE_MINE,
+  CHAT_SURFACE,
+  CHAT_SURFACE_MINE,
+} from '@/constants/chat-surfaces';
 
 // The artist's mark on the name line — the green skull is the one spot of
 // colour on the screen, which is exactly why it reads.
@@ -816,14 +823,14 @@ export default function ChannelScreen() {
   );
 }
 
-const HAIRLINE = 'rgba(255,255,255,0.16)';
+const HAIRLINE = CHAT_HAIRLINE;
 const SILVER = '#c3cdd6';
 const SILVER_LINE = 'rgba(195,205,214,0.6)';
-// Every surface over the photo background is SOLID — hairline-only
-// bubbles and pills are unreadable on device. Mine sits one shade up so
-// the two sides still read apart.
-const SURFACE = '#131519';
-const SURFACE_MINE = '#23262b';
+// Translucent charcoal over the photo (see constants/chat-surfaces.ts):
+// enough body to read, enough give that the photo shows through. Mine
+// sits one shade up so the two sides still read apart.
+const SURFACE = CHAT_SURFACE;
+const SURFACE_MINE = CHAT_SURFACE_MINE;
 // Bare text over the photo: a soft dark shadow keeps it legible on bright frames.
 const TEXT_SHADOW = {
   textShadowColor: 'rgba(0,0,0,0.6)',
@@ -876,7 +883,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    backgroundColor: SURFACE,
+    backgroundColor: CHAT_COMPOSER,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
     borderRadius: 999,
@@ -947,7 +954,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 13,
     backgroundColor: SURFACE,
   },
-  bubbleMine: { backgroundColor: SURFACE_MINE, borderColor: SURFACE_MINE },
+  bubbleMine: { backgroundColor: SURFACE_MINE, borderColor: CHAT_HAIRLINE_MINE },
   bubbleArtist: { backgroundColor: SURFACE, borderColor: SILVER_LINE },
   bubbleText: { color: '#e6e8ea', fontSize: 15, lineHeight: 21 },
   bubbleTextMine: { color: '#f2f3f5' },
@@ -997,7 +1004,7 @@ const styles = StyleSheet.create({
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: SURFACE,
+    backgroundColor: CHAT_COMPOSER,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
     borderRadius: 999,

@@ -31,6 +31,7 @@ import { fetchBlockedIds } from '@/lib/moderation';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/auth-provider';
 import { DISPLAY_FONT } from '@/constants/type';
+import { CHAT_HAIRLINE_MINE, CHAT_SURFACE_ROW } from '@/constants/chat-surfaces';
 
 // The artist's badge on the DM row — the one spot of colour in the list.
 const ARTIST_EMBLEM = require('../../../assets/images/emblem-mazze.png');
@@ -328,13 +329,15 @@ const styles = StyleSheet.create({
   },
 
   // ---- rows ----
-  // Solid charcoal cards: hairline-only rows over the photo background are
-  // unreadable on device.
+  // Translucent charcoal cards with a faint edge: readable over the photo,
+  // and the photo still shows through (see constants/chat-surfaces.ts).
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    backgroundColor: '#131519',
+    backgroundColor: CHAT_SURFACE_ROW,
+    borderWidth: 1,
+    borderColor: CHAT_HAIRLINE_MINE,
     borderRadius: 16,
     paddingVertical: 13,
     paddingHorizontal: 14,
