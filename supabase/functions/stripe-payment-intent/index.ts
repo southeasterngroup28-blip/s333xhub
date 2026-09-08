@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
   // ---- Is this show really selling? --------------------------------
   const { data: show, error: showError } = await admin
     .from('shows')
-    .select('id, title, venue, city, status, sales_mode, ticket_price_cents, capacity')
+    .select('id, title, venue, city, status, sales_mode, ticket_price_cents, capacity, starts_at')
     .eq('id', showId)
     .maybeSingle();
   if (showError) return fail('Could not load that show. Try again.', 500);
@@ -113,6 +113,10 @@ Deno.serve(async (req) => {
     return fail('This show has no ticket price yet.', 409);
   }
   if (show.status === 'sold_out') return fail('This show is sold out.', 409);
+  // A stale Shows screen can still tap Buy after the night is over.
+  if (new Date(show.starts_at).getTime() + 6 * 3600 * 1000 < Date.now()) {
+    return fail('This show is over.', 409);
+  }
   if (show.capacity !== null) {
     const { data: sold, error: soldError } = await admin.rpc('tickets_sold', { show: showId });
     if (soldError) return fail('Could not check availability. Try again.', 500);

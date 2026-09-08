@@ -176,8 +176,10 @@ begin
   select * into t from public.tickets where stripe_payment_intent_id = p_payment_intent;
   if t.id is not null then return t; end if;
 
-  if s.sales_mode <> 'in_app' then
-    refused := true; -- sales closed since checkout
+  if s.sales_mode <> 'in_app'
+     or s.status in ('cancelled', 'sold_out')
+     or s.starts_at + interval '6 hours' < now() then
+    refused := true; -- sales closed / show cancelled / show over since checkout
   else
     select count(*) into sold
     from public.tickets
