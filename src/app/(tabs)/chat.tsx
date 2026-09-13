@@ -149,14 +149,27 @@ export default function ChatListScreen() {
         return;
       }
     }
-    router.push(`/channel/${item.channelId}`);
+    // The title rides along so the channel header never flashes a placeholder.
+    router.push({
+      pathname: '/channel/[id]',
+      params: { id: item.channelId, title: item.title },
+    });
   }
 
   async function openArtistDm() {
     setOpeningDm(true);
     try {
       const channelId = await getOrCreateDm();
-      router.push(`/channel/${channelId}`);
+      // The DM's title is the artist's name; the group row already knows it.
+      // Check the role: if the artist lookup failed, the first face is a
+      // fan, and an empty title beats a wrong one.
+      const artist = items
+        .find((i) => i.type === 'group')
+        ?.faces.find((f) => f.role === 'artist');
+      router.push({
+        pathname: '/channel/[id]',
+        params: { id: channelId, title: artist?.display_name ?? '' },
+      });
     } catch (e) {
       setError((e as { message?: string })?.message ?? 'Could not open the DM.');
     } finally {
@@ -304,7 +317,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 20,
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     paddingTop: 4,
     paddingBottom: 10,
   },
@@ -316,7 +329,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
   },
   titleRule: { height: 1, backgroundColor: 'rgba(255,255,255,0.14)', marginTop: 8 },
-  list: { paddingHorizontal: 20, paddingTop: 64, paddingBottom: 150, flexGrow: 1 },
+  list: { paddingHorizontal: 16, paddingTop: 64, paddingBottom: 150, flexGrow: 1 },
   error: {
     position: 'absolute',
     left: 0,

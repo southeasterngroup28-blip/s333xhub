@@ -1,10 +1,10 @@
-// Time as the chat surfaces read it: a letter is headed with the day, and
-// the messages beneath it carry only the clock.
+// Time as the chat surfaces read it: a separator chip heads the thread when
+// the day turns or a quiet hour passes, and a tapped bubble tells its time.
 
-// Mixed case throughout — Anton does the shouting, the words don't.
+// Mixed case throughout. Anton does the shouting, the words don't.
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-// AP-style month abbreviations — "Sept", not "Sep".
+// AP-style month abbreviations. "Sept", not "Sep".
 const MONTHS = ['Jan', 'Feb', 'March', 'April', 'May', 'June', 'July', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'];
 
 /** Local calendar day, for grouping — "2026-9-7". */
@@ -13,18 +13,36 @@ export function dayKey(iso: string): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
-/** "Monday, Sept 7" — with the year only when it isn't this year. */
-export function dateline(iso: string): string {
+// One formatter for the whole app, created once, not per row. It follows
+// the phone's clock setting.
+const CLOCK = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+
+/** "1:52 PM", or "13:52" when the phone is set to 24-hour time. */
+export function clockTime(iso: string): string {
+  return CLOCK.format(new Date(iso));
+}
+
+const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+
+/** Whole calendar days between then and now: 0 today, 1 yesterday. */
+function daysAgo(iso: string): number {
+  return Math.round((startOfDay(new Date()) - startOfDay(new Date(iso))) / 86_400_000);
+}
+
+/** "Today", "Yesterday", a weekday within the last 6 days, else "Mon, Sept 7" (the year joins when it is not this year). */
+function dayLabel(iso: string): string {
+  const n = daysAgo(iso);
   const d = new Date(iso);
-  const base = `${WEEKDAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  if (n === 0) return 'Today';
+  if (n === 1) return 'Yesterday';
+  if (n > 1 && n < 7) return WEEKDAYS[d.getDay()];
+  const base = `${WEEKDAYS_SHORT[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}`;
   return d.getFullYear() === new Date().getFullYear() ? base : `${base}, ${d.getFullYear()}`;
 }
 
-/** "1:52" — 12-hour clock, no suffix, the way the dateline'd thread reads. */
-export function clockTime(iso: string): string {
-  const d = new Date(iso);
-  const hours = d.getHours() % 12 || 12;
-  return `${hours}:${String(d.getMinutes()).padStart(2, '0')}`;
+/** The thread's separator chip: "Today 1:52 PM", "Monday 3:04 PM", "Mon, Sept 7 2:15 PM". */
+export function separatorLabel(iso: string): string {
+  return `${dayLabel(iso)} ${clockTime(iso)}`;
 }
 
 /** The chat list's stamp: clock today, "Yesterday", a weekday this week, else the date. */

@@ -11,7 +11,9 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -47,7 +49,7 @@ import {
   type ChatListItem,
   type Message,
 } from '@/lib/chat';
-import { clockTime, dateline, dayKey } from '@/lib/chat-time';
+import { clockTime, dayKey, separatorLabel } from '@/lib/chat-time';
 import { GIFS_READY } from '@/lib/gifs';
 import {
   blockUser,
@@ -75,9 +77,12 @@ const ARTIST_EMBLEM = require('../../../assets/images/emblem-mazze.png');
 /**
  * A run: consecutive messages from one person, shown under one name line
  * with the avatar once. A run breaks on a new author, a new day, or a
- * pause longer than this — so the time on the name line stays honest.
+ * pause longer than this.
  */
 const RUN_GAP_MS = 15 * 60 * 1000;
+
+/** A separator chip heads the thread on a new day or after a quiet hour. */
+const SEPARATOR_GAP_MS = 60 * 60 * 1000;
 
 type Run = {
   /** The run's first message id — stable while newer messages join it. */
@@ -88,45 +93,48 @@ type Run = {
   artist: boolean;
   /** Oldest first, so the column reads top to bottom. */
   messages: Message[];
-  /** Set when this run opens a new day. */
-  dateline: string | null;
+  /** "Today 1:52 PM" chip above the run when the day turns or an hour passed. */
+  separator: string | null;
 };
 
 /** Groups newest-first messages into newest-first runs (for the inverted list). */
 function buildRuns(newestFirst: Message[], myUserId?: string): Run[] {
   const runs: Run[] = [];
   let lastDay = '';
+  // Walking from the oldest up, so the chronologically previous message of
+  // newestFirst[i] is newestFirst[i + 1] — the one from the last loop turn.
+  let prevMs = 0;
   for (let i = newestFirst.length - 1; i >= 0; i--) {
     const m = newestFirst[i];
     const day = dayKey(m.created_at);
+    const ms = new Date(m.created_at).getTime();
+    const needsSeparator = day !== lastDay || (prevMs > 0 && ms - prevMs >= SEPARATOR_GAP_MS);
     const last = runs[runs.length - 1];
-    const tail = last?.messages[last.messages.length - 1];
     const joins =
-      last &&
-      tail &&
-      last.senderId === m.sender_id &&
-      day === lastDay &&
-      new Date(m.created_at).getTime() - new Date(tail.created_at).getTime() < RUN_GAP_MS;
+      !needsSeparator && last && last.senderId === m.sender_id && ms - prevMs < RUN_GAP_MS;
     if (joins) {
       last.messages.push(m);
-      continue;
+    } else {
+      runs.push({
+        id: m.id,
+        senderId: m.sender_id,
+        sender: m.sender,
+        mine: m.sender_id === myUserId,
+        artist: m.sender?.role === 'artist',
+        messages: [m],
+        separator: needsSeparator ? separatorLabel(m.created_at) : null,
+      });
     }
-    runs.push({
-      id: m.id,
-      senderId: m.sender_id,
-      sender: m.sender,
-      mine: m.sender_id === myUserId,
-      artist: m.sender?.role === 'artist',
-      messages: [m],
-      dateline: day !== lastDay ? dateline(m.created_at) : null,
-    });
     lastDay = day;
+    prevMs = ms;
   }
   return runs.reverse();
 }
 
 export default function ChannelScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // `title` is seeded by the list screen so the header never flashes a
+  // placeholder; the loaded channel info takes over once it lands.
+  const { id, title: titleParam } = useLocalSearchParams<{ id: string; title?: string }>();
   const { session, profile } = useAuth();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -151,7 +159,45 @@ export default function ChannelScreen() {
   const [recording, setRecording] = useState(false);
   const [sendingMedia, setSendingMedia] = useState(false);
   const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
+  /** The one message showing its time under the bubble; a tap elsewhere moves it. */
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  /** The composer bar drops its home-indicator padding while the keyboard is up. */
+  const [keyboardUp, setKeyboardUp] = useState(false);
+  /**
+   * The local day the chips were labelled for. "Today" and "Yesterday" go
+   * stale if the screen sleeps past midnight; re-keying on wake rebuilds
+   * the runs with fresh labels.
+   */
+  const [todayKey, setTodayKey] = useState(() => dayKey(new Date().toISOString()));
   const loadingMore = useRef(false);
+  const listRef = useRef<FlatList<Run>>(null);
+
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setKeyboardUp(true)
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKeyboardUp(false)
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') setTodayKey(dayKey(new Date().toISOString()));
+    });
+    return () => sub.remove();
+  }, []);
+
+  /** After a send, slide the inverted list back to the newest message. */
+  function scrollToLatest() {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }
 
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const recorderState = useAudioRecorderState(recorder, 500);
@@ -282,6 +328,7 @@ export default function ChannelScreen() {
       const sent = await sendMessage(id, body);
       appendNew(sent);
       setDraft('');
+      scrollToLatest();
     } catch (e) {
       setError((e as { message?: string })?.message ?? 'Message failed to send.');
     } finally {
@@ -295,6 +342,7 @@ export default function ChannelScreen() {
     setSendingMedia(true);
     try {
       appendNew(await sendGifMessage(id, gifUrl));
+      scrollToLatest();
     } catch (e) {
       setError((e as { message?: string })?.message ?? 'Could not send the GIF.');
     } finally {
@@ -307,6 +355,7 @@ export default function ChannelScreen() {
     setSendingMedia(true);
     try {
       appendNew(await sendMediaMessage(id, 'image', image));
+      scrollToLatest();
     } catch (e) {
       setError((e as { message?: string })?.message ?? 'Could not send the photo.');
     } finally {
@@ -361,6 +410,7 @@ export default function ChannelScreen() {
       appendNew(
         await sendMediaMessage(id, 'voice', { uri: recorder.uri, mimeType: 'audio/m4a' }, seconds)
       );
+      scrollToLatest();
     } catch (e) {
       setError((e as { message?: string })?.message ?? 'Could not send the voice note.');
     } finally {
@@ -474,7 +524,9 @@ export default function ChannelScreen() {
         messages.filter((m) => !blockedIds.has(m.sender_id)),
         myUserId
       ),
-    [messages, blockedIds, myUserId]
+    // todayKey re-runs the relative chip labels after a night in the background.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [messages, blockedIds, myUserId, todayKey]
   );
 
   // The Anton eyebrow under the title: the room and its size, or the DM.
@@ -486,8 +538,11 @@ export default function ChannelScreen() {
         : 'Community'
       : 'Direct message';
 
+  /** Can this message share tightened corners with a neighbour in its run? */
+  const chainable = (m: Message) => m.kind === 'text' || m.kind === 'gif' || m.kind === 'image';
+
   /** One message inside a run: bubble, pill, or hairline tile. */
-  function renderMessage(item: Message, run: Run) {
+  function renderMessage(item: Message, run: Run, index: number) {
     // The silver hairline marks the artist to everyone ELSE — their own
     // messages read as "mine" (filled, no visible border) like anyone's.
     const marked = run.artist && !run.mine;
@@ -496,10 +551,22 @@ export default function ChannelScreen() {
       // the artist also gets delete on anything.
       if (!run.mine || isArtist) setActionTarget(item);
     };
+    const toggleTime = () => setExpandedId((cur) => (cur === item.id ? null : item.id));
+    // iMessage grouping. run.messages is oldest first and each row renders
+    // un-flipped, so index 0 is the bubble the fan sees at the TOP of the
+    // run: it tightens its bottom corner, the last tightens its top, and
+    // the middles tighten both — on the left for theirs, right for mine.
+    const prev = run.messages[index - 1];
+    const next = run.messages[index + 1];
+    const joinTop = !!prev && chainable(prev) && chainable(item);
+    const joinBottom = !!next && chainable(next) && chainable(item);
+    const joined = run.mine
+      ? [joinTop && styles.joinTopR, joinBottom && styles.joinBottomR]
+      : [joinTop && styles.joinTopL, joinBottom && styles.joinBottomL];
     if (item.kind === 'gif' && item.media_url) {
       return (
-        <Pressable key={item.id} onLongPress={longPress} delayLongPress={300}>
-          <View style={[styles.tile, marked && styles.tileArtist]}>
+        <Pressable onPress={toggleTime} onLongPress={longPress} delayLongPress={300}>
+          <View style={[styles.tile, marked && styles.tileArtist, ...joined]}>
             <Image source={{ uri: item.media_url }} style={styles.gif} contentFit="cover" />
           </View>
         </Pressable>
@@ -508,8 +575,8 @@ export default function ChannelScreen() {
     if (item.kind === 'image') {
       const url = item.media_path ? mediaUrls[item.media_path] : undefined;
       return (
-        <Pressable key={item.id} onLongPress={longPress} delayLongPress={300}>
-          <View style={[styles.tile, marked && styles.tileArtist]}>
+        <Pressable onPress={toggleTime} onLongPress={longPress} delayLongPress={300}>
+          <View style={[styles.tile, marked && styles.tileArtist, ...joined]}>
             {url ? (
               <Image source={{ uri: url }} style={styles.photo} contentFit="cover" />
             ) : (
@@ -523,7 +590,7 @@ export default function ChannelScreen() {
     }
     if (item.kind === 'voice') {
       return (
-        <Pressable key={item.id} onLongPress={longPress} delayLongPress={300}>
+        <Pressable onPress={toggleTime} onLongPress={longPress} delayLongPress={300}>
           <VoiceNoteBubble
             url={item.media_path ? mediaUrls[item.media_path] : undefined}
             durationSeconds={item.duration_seconds}
@@ -535,8 +602,8 @@ export default function ChannelScreen() {
     }
     return (
       <Pressable
-        key={item.id}
-        style={[styles.bubble, run.mine && styles.bubbleMine, marked && styles.bubbleArtist]}
+        style={[styles.bubble, run.mine && styles.bubbleMine, marked && styles.bubbleArtist, ...joined]}
+        onPress={toggleTime}
         onLongPress={longPress}
         delayLongPress={300}>
         <Text style={[styles.bubbleText, run.mine && styles.bubbleTextMine]}>{item.body}</Text>
@@ -545,19 +612,36 @@ export default function ChannelScreen() {
   }
 
   function renderRun({ item: run }: { item: Run }) {
-    const first = run.messages[0];
-    const last = run.messages[run.messages.length - 1];
     return (
       <View>
-        {run.dateline ? <Text style={styles.dateline}>{run.dateline}</Text> : null}
-        <View style={[styles.run, run.mine && styles.runMine]}>
+        {/* Each row is un-flipped inside the inverted list, so marginTop on
+            the chip is the space the fan reads ABOVE it and marginBottom the
+            space below, straight reading order. */}
+        {run.separator ? (
+          <View style={styles.sepChip}>
+            <Text style={styles.sepText}>{run.separator}</Text>
+          </View>
+        ) : null}
+        <View style={[styles.run, !run.separator && styles.runGap, run.mine && styles.runMine]}>
+          {/* alignItems flex-end on the row seats the avatar beside the run's
+              visually-bottom bubble; every bubble shares the column's left
+              edge, indented past the avatar by its width + the 8 gap. */}
           {!run.mine ? (
-            <Pressable onPress={() => showProfile(run.senderId)} hitSlop={6} style={styles.avatar}>
+            <Pressable
+              onPress={() => showProfile(run.senderId)}
+              hitSlop={6}
+              // A tapped-open time under the bottom bubble grows the column;
+              // lift the avatar past it so it stays seated beside the bubble.
+              style={
+                expandedId === run.messages[run.messages.length - 1].id
+                  ? styles.avatarLift
+                  : undefined
+              }>
               <Avatar
                 path={run.sender?.avatar_path}
                 focus={run.sender?.avatar_focus}
                 name={run.sender?.display_name}
-                size={24}
+                size={26}
               />
             </Pressable>
           ) : null}
@@ -571,21 +655,24 @@ export default function ChannelScreen() {
                   {run.sender?.display_name ?? 'Deleted user'}
                 </Text>
                 {run.artist ? <Text style={styles.artistTag}>The artist</Text> : null}
-                <Text style={styles.whoTime}>{clockTime(first.created_at)}</Text>
               </View>
             ) : null}
-            {run.messages.map((m) => renderMessage(m, run))}
-            {run.mine ? <Text style={styles.stamp}>{clockTime(last.created_at)}</Text> : null}
+            {run.messages.map((m, i) => (
+              <View key={m.id} style={run.mine ? styles.msgWrapMine : styles.msgWrap}>
+                {renderMessage(m, run, i)}
+                {expandedId === m.id ? (
+                  <Text style={styles.msgTime}>{clockTime(m.created_at)}</Text>
+                ) : null}
+              </View>
+            ))}
           </View>
         </View>
       </View>
     );
   }
 
-  const composerDisabled = !draft.trim() || sending;
-
   return (
-    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+    <SafeAreaView style={styles.safe} edges={['top']}>
       <AppBackground />
 
       <KeyboardAvoidingView
@@ -598,8 +685,10 @@ export default function ChannelScreen() {
         ) : (
           <FadeMask top={64} bottom={10}>
             <FlatList
+              ref={listRef}
               inverted
               data={runs}
+              extraData={expandedId}
               keyExtractor={(run) => run.id}
               renderItem={renderRun}
               contentContainerStyle={styles.list}
@@ -674,9 +763,11 @@ export default function ChannelScreen() {
           </View>
         ) : null}
 
-        {/* One hairline pill: the actions live inside it, and the white
-            send is the only bright thing on the bar. */}
-        <View style={styles.composerWrap}>
+        {/* A real bar: full width, ruled off on top, running under the home
+            indicator. The pill keeps its hairline; the white send (or the
+            recording disc) is the only bright thing on it. */}
+        <View
+          style={[styles.composerBar, { paddingBottom: keyboardUp ? 8 : Math.max(insets.bottom, 8) }]}>
           {recording ? (
             <View style={styles.pill}>
               <Pressable
@@ -701,16 +792,6 @@ export default function ChannelScreen() {
             </View>
           ) : (
             <View style={styles.pill}>
-              {Platform.OS !== 'web' ? (
-                <Pressable
-                  onPress={startRecording}
-                  hitSlop={8}
-                  disabled={sendingMedia}
-                  style={styles.pillIcon}
-                  accessibilityLabel="Record a voice note">
-                  <Ionicons name="mic-outline" size={20} color="#6c7078" />
-                </Pressable>
-              ) : null}
               {GIFS_READY ? (
                 <Pressable
                   onPress={() => setGifOpen(true)}
@@ -742,15 +823,17 @@ export default function ChannelScreen() {
                 maxLength={MESSAGE_MAX_LENGTH}
                 multiline
               />
+              {/* The mic-to-send swap: an empty field offers the voice note,
+                  a typed one offers the white send disc. */}
               {sendingMedia ? (
                 <View style={styles.send}>
                   <ActivityIndicator color="#000" size="small" />
                 </View>
-              ) : (
+              ) : draft.trim() ? (
                 <Pressable
-                  style={[styles.send, composerDisabled && styles.sendDisabled]}
+                  style={styles.send}
                   onPress={handleSend}
-                  disabled={composerDisabled}
+                  disabled={sending}
                   accessibilityLabel="Send">
                   {sending ? (
                     <ActivityIndicator color="#000" size="small" />
@@ -758,7 +841,15 @@ export default function ChannelScreen() {
                     <Ionicons name="arrow-up" size={18} color="#000" />
                   )}
                 </Pressable>
-              )}
+              ) : Platform.OS !== 'web' ? (
+                <Pressable
+                  onPress={startRecording}
+                  hitSlop={8}
+                  style={styles.pillIcon}
+                  accessibilityLabel="Record a voice note">
+                  <Ionicons name="mic-outline" size={20} color="#6c7078" />
+                </Pressable>
+              ) : null}
             </View>
           )}
         </View>
@@ -769,15 +860,21 @@ export default function ChannelScreen() {
           is a real bar, not a floating one. */}
       <EdgeGlass bottom={false} />
       <View style={[styles.header, { top: insets.top }]} pointerEvents="box-none">
+        {/* The title block spans the full width so the title is truly
+            centred; the chevron and the actions float over its ends. The
+            block's fixed height reserves the eyebrow's line, so nothing
+            jumps when the channel info lands. */}
+        <View style={styles.titleBlock} pointerEvents="none">
+          <Text style={styles.title} numberOfLines={1}>
+            {info?.title ?? titleParam ?? ''}
+          </Text>
+          <Text style={styles.eyebrow} numberOfLines={1}>
+            {eyebrow}
+          </Text>
+        </View>
         <Pressable onPress={goBack} hitSlop={12} style={styles.back} accessibilityLabel="Back">
           <Ionicons name="chevron-back" size={24} color="#fff" />
         </Pressable>
-        <View style={styles.titleBlock} pointerEvents="none">
-          <Text style={styles.title} numberOfLines={1}>
-            {info?.title ?? 'Chat'}
-          </Text>
-          {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
-        </View>
         <View style={styles.actions}>
           <Pressable
             onPress={toggleMute}
@@ -843,24 +940,36 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
 
   // ---- floating header ----
+  // Fixed height from the first frame: 36 of title block centred in 52.
   header: {
     position: 'absolute',
     left: 0,
     right: 0,
     zIndex: 25,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 14,
-    paddingTop: 6,
-    paddingBottom: 10,
+    height: 52,
+    justifyContent: 'center',
   },
-  back: { width: 24, alignItems: 'center' },
-  titleBlock: { flex: 1, minWidth: 0, alignItems: 'center' },
+  back: {
+    position: 'absolute',
+    left: 16,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+  },
+  // 21 title + 3 gap + 12 eyebrow = 36, reserved even while both are empty.
+  titleBlock: {
+    height: 36,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    paddingHorizontal: 72,
+  },
+  // Explicit heights: an empty Text collapses to 0, and both lines must
+  // hold their box before the data lands so nothing jumps.
   title: {
     color: '#fff',
     fontSize: 17,
     lineHeight: 21,
+    height: 21,
     fontFamily: DISPLAY_FONT,
     letterSpacing: 1.5,
   },
@@ -868,11 +977,20 @@ const styles = StyleSheet.create({
     color: SILVER,
     fontSize: 9,
     lineHeight: 12,
+    height: 12,
     fontFamily: DISPLAY_FONT,
     letterSpacing: 2.2,
     marginTop: 3,
   },
-  actions: { flexDirection: 'row', gap: 14, alignItems: 'center' },
+  actions: {
+    position: 'absolute',
+    right: 16,
+    top: 0,
+    bottom: 0,
+    flexDirection: 'row',
+    gap: 14,
+    alignItems: 'center',
+  },
 
   // ---- floating notices under the header ----
   floating: {
@@ -907,25 +1025,45 @@ const styles = StyleSheet.create({
     transform: [{ scaleY: -1 }], // un-flip inside the inverted list
   },
   // Inverted list: paddingBottom is the VISUAL top (clears the header).
-  list: { paddingHorizontal: 14, paddingTop: 10, paddingBottom: 66, flexGrow: 1 },
-  // Instagram-style day marker: small, centered, muted - a whisper between
-  // days, not a headline.
-  dateline: {
+  list: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 66, flexGrow: 1 },
+  // The separator chip: a quiet centred capsule on the chat surface. A View
+  // wraps the Text because iOS does not clip a Text's own background to its
+  // radius. Rows render un-flipped, so these margins read 14 above / 8 below.
+  sepChip: {
     alignSelf: 'center',
-    color: '#8a8a92',
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '500',
-    letterSpacing: 0.3,
+    backgroundColor: SURFACE,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     marginTop: 14,
-    marginBottom: 4,
-    ...TEXT_SHADOW,
+    marginBottom: 8,
   },
-  run: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', marginTop: 12 },
+  sepText: {
+    color: '#8a8a92',
+    fontSize: 11,
+    lineHeight: 14,
+    fontVariant: ['tabular-nums'],
+  },
+  run: { flexDirection: 'row', gap: 8, alignItems: 'flex-end' },
+  // The open time label's height (14 line + 2 top margin), so the flex-end
+  // avatar clears it and keeps hugging the bubble.
+  avatarLift: { marginBottom: 16 },
+  // 10 between runs; a run headed by a chip takes its spacing from the chip.
+  runGap: { marginTop: 10 },
   runMine: { justifyContent: 'flex-end' },
-  avatar: { marginTop: 1 },
-  col: { maxWidth: '80%', gap: 3, alignItems: 'flex-start' },
+  col: { maxWidth: '80%', gap: 2, alignItems: 'flex-start' },
   colMine: { alignItems: 'flex-end' },
+  // Keeps a short bubble from stretching to its tapped-open time label.
+  msgWrap: { alignItems: 'flex-start' },
+  msgWrapMine: { alignItems: 'flex-end' },
+  msgTime: {
+    color: '#8a8a92',
+    fontSize: 11,
+    lineHeight: 14,
+    marginTop: 2,
+    marginHorizontal: 4,
+    fontVariant: ['tabular-nums'],
+  },
   who: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -945,7 +1083,6 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     ...TEXT_SHADOW,
   },
-  whoTime: { color: '#55555c', fontSize: 11, fontVariant: ['tabular-nums'], ...TEXT_SHADOW },
   bubble: {
     borderWidth: 1,
     borderColor: HAIRLINE,
@@ -958,14 +1095,11 @@ const styles = StyleSheet.create({
   bubbleArtist: { backgroundColor: SURFACE, borderColor: SILVER_LINE },
   bubbleText: { color: '#e6e8ea', fontSize: 15, lineHeight: 21 },
   bubbleTextMine: { color: '#f2f3f5' },
-  stamp: {
-    color: '#55555c',
-    fontSize: 11,
-    fontVariant: ['tabular-nums'],
-    marginTop: 2,
-    marginHorizontal: 4,
-    ...TEXT_SHADOW,
-  },
+  // Grouped corners: the edge a bubble shares with its neighbour in the run.
+  joinTopL: { borderTopLeftRadius: 6 },
+  joinBottomL: { borderBottomLeftRadius: 6 },
+  joinTopR: { borderTopRightRadius: 6 },
+  joinBottomR: { borderBottomRightRadius: 6 },
   tile: {
     borderWidth: 1,
     borderColor: HAIRLINE,
@@ -1000,7 +1134,14 @@ const styles = StyleSheet.create({
   actionClose: { position: 'absolute', top: 10, right: 12 },
 
   // ---- composer ----
-  composerWrap: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4 },
+  // The bar itself; paddingBottom is set inline (home indicator or keyboard).
+  composerBar: {
+    backgroundColor: 'rgba(5,6,8,0.85)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.12)',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1029,12 +1170,11 @@ const styles = StyleSheet.create({
   recordingDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#f87171' },
   recordingTime: { color: '#e6e8ea', fontSize: 14, fontVariant: ['tabular-nums'] },
   send: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendDisabled: { opacity: 0.4 },
 });
