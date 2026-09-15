@@ -1,3 +1,5 @@
+import type { RealtimeChannel } from '@supabase/supabase-js';
+
 import { supabase } from '@/lib/supabase';
 
 export const REACTION_EMOJIS = ['†', '🔥', '💀', '😭'] as const;
@@ -78,17 +80,99 @@ export type Comment = {
 const COMMENT_SELECT =
   'id, post_id, user_id, body, pinned, created_at, deleted_at, author:profiles!post_comments_user_id_fkey(display_name, role, status, avatar_path, avatar_focus)';
 
-export async function fetchComments(postId: string): Promise<Comment[]> {
-  const { data, error } = await supabase
+/** Comments load a page at a time, oldest first, cursored on created_at. */
+export const COMMENT_PAGE_SIZE = 40;
+
+/**
+ * One page of a post's thread, oldest first. The paged query skips the
+ * pinned comment entirely; page one fetches it in parallel and seats it at
+ * the front, so it can never duplicate when its own page scrolls in. Pass
+ * `after` (the newest loaded created_at) to page forward.
+ */
+export async function fetchComments(postId: string, after?: string): Promise<Comment[]> {
+  const paged = supabase
     .from('post_comments')
     .select(COMMENT_SELECT)
     .eq('post_id', postId)
     .is('deleted_at', null)
-    .order('pinned', { ascending: false })
+    .eq('pinned', false)
     .order('created_at', { ascending: true })
-    .limit(200);
+    .limit(COMMENT_PAGE_SIZE);
+
+  if (after) {
+    const { data, error } = await paged.gt('created_at', after);
+    if (error) throw error;
+    return (data as unknown as Comment[]) ?? [];
+  }
+
+  const [pageRes, pinnedRes] = await Promise.all([
+    paged,
+    supabase
+      .from('post_comments')
+      .select(COMMENT_SELECT)
+      .eq('post_id', postId)
+      .is('deleted_at', null)
+      .eq('pinned', true)
+      .limit(1),
+  ]);
+  if (pageRes.error) throw pageRes.error;
+  if (pinnedRes.error) throw pinnedRes.error;
+  const page = (pageRes.data as unknown as Comment[]) ?? [];
+  const pinned = (pinnedRes.data as unknown as Comment[]) ?? [];
+  return [...pinned, ...page];
+}
+
+/** One comment by id (used for realtime arrivals, which come unjoined). */
+export async function fetchCommentById(id: string): Promise<Comment | null> {
+  const { data, error } = await supabase
+    .from('post_comments')
+    .select(COMMENT_SELECT)
+    .eq('id', id)
+    .is('deleted_at', null)
+    .maybeSingle();
   if (error) throw error;
-  return (data as unknown as Comment[]) ?? [];
+  return (data as unknown as Comment) ?? null;
+}
+
+/** The true thread size, so the header stays honest with one page loaded. */
+export async function fetchCommentCount(postId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('post_comments')
+    .select('id', { count: 'exact', head: true })
+    .eq('post_id', postId)
+    .is('deleted_at', null);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+/**
+ * Live feed of new comments on a post. Needs post_comments in the
+ * supabase_realtime publication (supabase/step-comments-realtime.sql) or
+ * it is a silent no-op. The caller MUST call supabase.removeChannel()
+ * on the result when leaving.
+ */
+export function subscribeToComments(
+  postId: string,
+  onComment: (comment: Comment) => void
+): RealtimeChannel {
+  return supabase
+    .channel(`comments-${postId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'post_comments',
+        filter: `post_id=eq.${postId}`,
+      },
+      async (payload) => {
+        // The realtime payload has no joined author — fetch the full row
+        // (which also re-checks read permission server-side).
+        const full = await fetchCommentById((payload.new as { id: string }).id);
+        if (full) onComment(full);
+      }
+    )
+    .subscribe();
 }
 
 export async function addComment(postId: string, body: string): Promise<Comment> {
