@@ -1,16 +1,21 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tabs, useRouter } from 'expo-router';
-import { useEffect } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, type ReactNode } from 'react';
+import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MiniPlayer } from '@/components/mini-player';
 import { SHOP_TAB_LIVE } from '@/lib/shop';
 import { tapFeedback } from '@/lib/haptics';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { registerPushToken } from '@/lib/notifications';
 import { configurePayments } from '@/lib/payments';
 import { useAuth } from '@/providers/auth-provider';
 import { installPushNavigation } from '@/lib/push-navigation';
+
+// Reanimated exports no Animated.Pressable of its own.
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 /** Icons for the pill; shop renders as the detached teaser circle. */
 const TAB_ICONS: Record<string, { on: keyof typeof Ionicons.glyphMap; off: keyof typeof Ionicons.glyphMap }> = {
@@ -33,6 +38,67 @@ type TabBarProps = {
   };
 };
 
+/**
+ * One dock button: the press is acknowledged at finger-down (haptic +
+ * scale, on the UI thread) and the active pill fades in behind the icon
+ * instead of snapping. Hooks live here, never in the routes map.
+ */
+function TabButton({
+  focused,
+  pillRadius,
+  style,
+  onPress,
+  children,
+}: {
+  focused: boolean;
+  /** 999 for the pill tabs, 27 for the shop circle. */
+  pillRadius: number;
+  style: StyleProp<ViewStyle>;
+  onPress: () => void;
+  children: ReactNode;
+}) {
+  const reduceMotion = useReduceMotion();
+  const scale = useSharedValue(1);
+  const dimSV = useSharedValue(1);
+
+  const pressedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: dimSV.value,
+  }));
+  const pillStyle = useAnimatedStyle(
+    () => ({ opacity: withTiming(focused ? 1 : 0, { duration: 140 }) }),
+    [focused]
+  );
+
+  return (
+    <AnimatedPressable
+      accessibilityRole="button"
+      accessibilityState={focused ? { selected: true } : {}}
+      style={[style, pressedStyle]}
+      onPressIn={() => {
+        // Acknowledge the touch the moment the finger lands.
+        tapFeedback();
+        if (reduceMotion) dimSV.value = withTiming(0.7, { duration: 90 });
+        else scale.value = withTiming(0.9, { duration: 90 });
+      }}
+      onPressOut={() => {
+        scale.value = withTiming(1, { duration: 130 });
+        dimSV.value = withTiming(1, { duration: 130 });
+      }}
+      onPress={onPress}>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          StyleSheet.absoluteFill,
+          { borderRadius: pillRadius, backgroundColor: 'rgba(255, 255, 255, 0.11)' },
+          pillStyle,
+        ]}
+      />
+      {children}
+    </AnimatedPressable>
+  );
+}
+
 /** Floating dock: a pill of tabs + the dimmed S333XSHOP circle beside it. */
 function FloatingTabBar({ state, navigation }: TabBarProps) {
   const insets = useSafeAreaInsets();
@@ -47,13 +113,12 @@ function FloatingTabBar({ state, navigation }: TabBarProps) {
             const focused = state.index === routeIndex;
             const icons = TAB_ICONS[route.name] ?? TAB_ICONS.index;
             return (
-              <Pressable
+              <TabButton
                 key={route.key}
-                accessibilityRole="button"
-                accessibilityState={focused ? { selected: true } : {}}
-                style={[styles.tab, focused && styles.tabOn]}
+                focused={focused}
+                pillRadius={999}
+                style={styles.tab}
                 onPress={() => {
-                  tapFeedback();
                   const event = navigation.emit({
                     type: 'tabPress',
                     target: route.key,
@@ -68,7 +133,7 @@ function FloatingTabBar({ state, navigation }: TabBarProps) {
                   size={22}
                   color={focused ? '#ffffff' : '#6d7278'}
                 />
-              </Pressable>
+              </TabButton>
             );
           })}
       </View>
@@ -83,12 +148,11 @@ function FloatingTabBar({ state, navigation }: TabBarProps) {
         const shopRoute = state.routes[shopIndex];
         const focused = state.index === shopIndex;
         return (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={focused ? { selected: true } : {}}
-            style={[styles.circle, focused && styles.circleOn]}
+          <TabButton
+            focused={focused}
+            pillRadius={27}
+            style={styles.circle}
             onPress={() => {
-              tapFeedback();
               const event = navigation.emit({
                 type: 'tabPress',
                 target: shopRoute.key,
@@ -100,7 +164,7 @@ function FloatingTabBar({ state, navigation }: TabBarProps) {
             }}>
             <Ionicons name={focused ? 'bag' : 'bag-outline'} size={16} color={focused ? '#ffffff' : '#8d97a0'} />
             <Text style={[styles.circleLabel, focused && styles.circleLabelOn]}>S333XSHOP</Text>
-          </Pressable>
+          </TabButton>
         );
       })()}
     </View>
@@ -176,7 +240,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 999,
   },
-  tabOn: { backgroundColor: 'rgba(255, 255, 255, 0.11)' },
   circle: {
     minWidth: 74,
     height: 54,
@@ -194,7 +257,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 14,
   },
-  circleOn: { backgroundColor: 'rgba(255,255,255,0.11)' },
   circleLabel: {
     color: '#8d97a0',
     fontSize: 6.5,

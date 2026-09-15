@@ -1,15 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeIn, LinearTransition } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBackground } from '@/components/app-background';
@@ -17,7 +10,10 @@ import { EdgeGlass, FadeMask } from '@/components/edge-fade';
 import { PostCard } from '@/components/post-card';
 import { EmptyState } from '@/components/empty-state';
 import { PostSkeleton } from '@/components/skeleton';
+import { ScalePressable } from '@/components/ui/scale-pressable';
 import { Top8Card } from '@/components/top8-card';
+import { CHAT_SURFACE } from '@/constants/chat-surfaces';
+import { tapFeedback } from '@/lib/haptics';
 import {
   consumeFeedStale,
   fetchPosts,
@@ -36,15 +32,18 @@ import {
   type TopFan,
 } from '@/lib/social';
 import { useAuth } from '@/providers/auth-provider';
-import { usePlayer } from '@/providers/player-provider';
+import { usePlayerControls } from '@/providers/player-provider';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { DISPLAY_FONT } from '@/constants/type';
 
 
 export function Feed() {
   const { profile, profileError } = useAuth();
-  const { current: currentTrack } = usePlayer();
+  const { current: currentTrack } = usePlayerControls();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const navigation = useNavigation();
+  const reduceMotion = useReduceMotion();
   const [posts, setPosts] = useState<Post[]>([]);
   const [purchasedIds, setPurchasedIds] = useState<Set<string>>(new Set());
   const [feedError, setFeedError] = useState<string | null>(null);
@@ -55,6 +54,8 @@ export function Feed() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [endReached, setEndReached] = useState(false);
+  /** Pagination is a visible state, not a silent one. */
+  const [paging, setPaging] = useState<'idle' | 'loading' | 'failed'>('idle');
   const loadingMore = useRef(false);
   /** Bumps on every fresh load; stale loadMore results get discarded. */
   const fetchSeq = useRef(0);
@@ -62,6 +63,8 @@ export function Feed() {
   const listRef = useRef<FlatList<Post>>(null);
   /** Whether this tab is the one on screen (focus effects only fire on navigation). */
   const focused = useRef(false);
+  /** Rows mounted before this instant animate in; everything later renders still. */
+  const animateUntil = useRef(0);
 
   const isArtist = profile?.role === 'artist';
   // The profile lookup runs alongside the first render, so for a beat the
@@ -97,6 +100,7 @@ export function Feed() {
     const seq = ++fetchSeq.current;
     lastLoadAt.current = Date.now();
     loadedAsArtist.current = isArtist;
+    setPaging('idle');
     try {
       const purchased = isArtist
         ? new Set<string>()
@@ -104,26 +108,36 @@ export function Feed() {
       setPurchasedIds(purchased);
       const fresh = await fetchPosts('all');
       if (seq !== fetchSeq.current) return;
+      // Rows committed inside this window are genuine arrivals — they
+      // animate. Later renders (scroll-back remounts, pagination) don't.
+      animateUntil.current = Date.now() + 600;
       setPosts(fresh);
       setFeedError(null);
       setEndReached(fresh.length < PAGE_SIZE);
 
       const ids = fresh.map((p) => p.id);
       const pollIds = fresh.filter((p) => p.kind === 'poll').map((p) => p.id);
+      // Media links sign IN PARALLEL with the social lookups — posts render
+      // with reserved-size placeholders instead of reflowing when urls land.
       const [summary, pollStates, top] = await Promise.all([
         fetchSocialSummary(ids).catch(() => ({ reactions: {}, commentCounts: {} })),
         fetchPolls(pollIds).catch(() => ({})),
         fetchTopFans().catch(() => []),
+        resolveMedia(fresh, purchased),
       ]);
       setSocial(summary);
       setPolls(pollStates);
       setTopFans(top);
-
-      await resolveMedia(fresh, purchased);
     } catch (e) {
-      // Surface feed failures instead of silently showing an empty feed.
+      // Surface feed failures instead of silently showing an empty feed —
+      // and let the next tab focus retry past the 120s throttle.
+      lastLoadAt.current = 0;
       setFeedError((e as { message?: string })?.message ?? 'Could not load the feed.');
     } finally {
+      // Rows first mount when `loading` flips false — on a slow signing or
+      // social await that moment can be well past the pre-setPosts window,
+      // so re-open it here: the initial reveal always gets its stagger.
+      animateUntil.current = Date.now() + 600;
       setLoading(false);
       setRefreshing(false);
     }
@@ -174,38 +188,111 @@ export function Feed() {
     [refreshIfNeeded, roleUnknown]
   );
 
+  // Re-tapping the home tab scrolls back to the top. The isFocused() guard
+  // is mandatory: tabPress also fires on switch-to, and the feed preserves
+  // scroll position on plain focus.
+  useEffect(
+    () =>
+      navigation.addListener('tabPress' as never, (() => {
+        if (!navigation.isFocused()) return;
+        listRef.current?.scrollToOffset({ offset: 0, animated: true });
+        refreshIfNeeded(false);
+      }) as never),
+    [navigation, refreshIfNeeded]
+  );
+
   async function loadMore() {
     if (loadingMore.current || endReached || posts.length === 0) return;
     loadingMore.current = true;
+    setPaging('loading');
     const seq = fetchSeq.current;
     try {
       const older = await fetchPosts('all', posts[posts.length - 1].created_at);
-      if (seq !== fetchSeq.current) return; // a fresh load replaced the list
+      if (seq !== fetchSeq.current) {
+        // A fresh load replaced the list mid-flight.
+        setPaging('idle');
+        return;
+      }
+
+      const ids = older.map((p) => p.id);
+      const pollIds = older.filter((p) => p.kind === 'poll').map((p) => p.id);
+      // Sign media BEFORE appending: if signing fails, the rows stay off
+      // screen, the footer's "tap to retry" is honest, and the retry
+      // paginates from the SAME cursor — no permanently unsigned batch.
+      const [summary, pollStates] = await Promise.all([
+        fetchSocialSummary(ids).catch(() => ({ reactions: {}, commentCounts: {} })),
+        fetchPolls(pollIds).catch(() => ({})),
+        resolveMedia(older, purchasedIds),
+      ]);
+      if (seq !== fetchSeq.current) {
+        setPaging('idle');
+        return;
+      }
       setPosts((prev) => {
         const seen = new Set(prev.map((p) => p.id));
         return [...prev, ...older.filter((p) => !seen.has(p.id))];
       });
       setEndReached(older.length < PAGE_SIZE);
-
-      const ids = older.map((p) => p.id);
-      const pollIds = older.filter((p) => p.kind === 'poll').map((p) => p.id);
-      const [summary, pollStates] = await Promise.all([
-        fetchSocialSummary(ids).catch(() => ({ reactions: {}, commentCounts: {} })),
-        fetchPolls(pollIds).catch(() => ({})),
-      ]);
       setSocial((prev) => ({
         reactions: { ...prev.reactions, ...summary.reactions },
         commentCounts: { ...prev.commentCounts, ...summary.commentCounts },
       }));
       setPolls((prev) => ({ ...prev, ...pollStates }));
-
-      await resolveMedia(older, purchasedIds);
+      setPaging('idle');
     } catch {
-      // Network blip - the next scroll retries pagination naturally.
+      // Visible, recoverable: the footer offers a retry pill — unless a
+      // fresh load already replaced the list this failure belonged to.
+      if (seq === fetchSeq.current) setPaging('failed');
     } finally {
       loadingMore.current = false;
     }
   }
+
+  // Ref mirror so the unlock callback stays stable (PostCard is memoized).
+  const purchasedRef = useRef(purchasedIds);
+  purchasedRef.current = purchasedIds;
+
+  const handleUnlocked = useCallback(
+    async (post: Post) => {
+      const next = new Set(purchasedRef.current).add(post.id);
+      try {
+        // Resolve the media link BEFORE flipping the unlock, so the reveal
+        // commits with the URL already present. The catch is mandatory: a
+        // signing blip degrades to a late pop — it must never tell a paid
+        // fan the purchase failed. The 4s race keeps the reveal from hanging.
+        await Promise.race([
+          resolveMedia([post], next),
+          new Promise((resolve) => setTimeout(resolve, 4000)),
+        ]);
+      } catch {}
+      setPurchasedIds((prev) => new Set(prev).add(post.id));
+    },
+    [resolveMedia]
+  );
+
+  const handleDeleted = useCallback((postId: string) => {
+    // Local removal — no refetch; the row fades out and the list closes up.
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
+  }, []);
+
+  const renderItem = useCallback(
+    ({ item, index }: { item: Post; index: number }) => (
+      <PostCard
+        post={item}
+        mediaUrls={mediaUrls}
+        viewerIsArtist={isArtist}
+        unlocked={purchasedIds.has(item.id)}
+        reactions={social.reactions[item.id]}
+        commentCount={social.commentCounts[item.id]}
+        poll={polls[item.id]}
+        onDeleted={handleDeleted}
+        onUnlocked={handleUnlocked}
+        animateIn={Date.now() < animateUntil.current}
+        index={index}
+      />
+    ),
+    [mediaUrls, isArtist, purchasedIds, social, polls, handleDeleted, handleUnlocked]
+  );
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -219,52 +306,88 @@ export function Feed() {
         </View>
       ) : (
         <FadeMask>
-          <FlatList
-            ref={listRef}
+          <Animated.FlatList
+            ref={listRef as never}
             data={posts}
             keyExtractor={(item) => item.id}
-            renderItem={({ item }) => (
-            <PostCard
-              post={item}
-              mediaUrls={mediaUrls}
-              viewerIsArtist={isArtist}
-              unlocked={purchasedIds.has(item.id)}
-              reactions={social.reactions[item.id]}
-              commentCount={social.commentCounts[item.id]}
-              poll={polls[item.id]}
-              onDeleted={loadFresh}
-              onUnlocked={() => {
-                const next = new Set(purchasedIds).add(item.id);
-                setPurchasedIds(next);
-                resolveMedia([item], next);
-              }}
-            />
-          )}
-          contentContainerStyle={styles.list}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => {
-                setRefreshing(true);
-                loadFresh();
-              }}
-              tintColor="#fff"
-            />
-          }
-          onEndReached={loadMore}
-          onEndReachedThreshold={0.5}
-          ListHeaderComponent={
-            <>
-              <Top8Card fans={topFans} viewerIsArtist={isArtist} />
-            </>
-          }
-          ListEmptyComponent={
-            <EmptyState
-              icon="flash-outline"
-              title="Nothing dropped yet"
-              sub="When the artist posts, it lands here first."
-            />
-          }
+            renderItem={renderItem}
+            itemLayoutAnimation={reduceMotion ? undefined : LinearTransition.duration(220)}
+            contentContainerStyle={styles.list}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={() => {
+                  setRefreshing(true);
+                  loadFresh();
+                }}
+                tintColor="#fff"
+              />
+            }
+            onEndReached={loadMore}
+            onEndReachedThreshold={0.5}
+            ListHeaderComponent={
+              <>
+                <Top8Card fans={topFans} viewerIsArtist={isArtist} />
+              </>
+            }
+            ListFooterComponent={
+              endReached || posts.length === 0 || paging === 'idle' ? null : paging ===
+                'loading' ? (
+                <Animated.View entering={reduceMotion ? undefined : FadeIn.duration(180)}>
+                  <PostSkeleton />
+                </Animated.View>
+              ) : (
+                <Animated.View
+                  entering={reduceMotion ? undefined : FadeIn.duration(180)}
+                  style={styles.footerWrap}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.footerRetry,
+                      pressed && styles.footerRetryPressed,
+                    ]}
+                    hitSlop={8}
+                    onPress={() => {
+                      tapFeedback();
+                      loadMore();
+                    }}>
+                    <Text style={styles.footerRetryText}>
+                      {"Couldn't load older posts. Tap to retry."}
+                    </Text>
+                  </Pressable>
+                </Animated.View>
+              )
+            }
+            ListEmptyComponent={
+              feedError ? (
+                <Animated.View entering={reduceMotion ? undefined : FadeIn.duration(180)}>
+                  <EmptyState
+                    icon="cloud-offline-outline"
+                    title="Could not load the feed"
+                    sub="Check your connection and try again."
+                  />
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.retryChip,
+                      pressed && styles.retryChipPressed,
+                    ]}
+                    hitSlop={8}
+                    onPress={() => {
+                      tapFeedback();
+                      setFeedError(null);
+                      setLoading(true);
+                      loadFresh();
+                    }}>
+                    <Text style={styles.retryChipText}>Try again</Text>
+                  </Pressable>
+                </Animated.View>
+              ) : (
+                <EmptyState
+                  icon="flash-outline"
+                  title="Nothing dropped yet"
+                  sub="When the artist posts, it lands here first."
+                />
+              )
+            }
           />
         </FadeMask>
       )}
@@ -277,28 +400,34 @@ export function Feed() {
         <Text style={styles.title}>S333XHUB</Text>
         <View style={styles.topActions}>
           {isArtist ? (
-            <Pressable onPress={() => router.push('/reports')} hitSlop={12}>
+            <Pressable
+              onPress={() => router.push('/reports')}
+              hitSlop={12}
+              style={({ pressed }) => (pressed ? styles.iconPressed : undefined)}>
               <Ionicons name="flag-outline" size={21} color="#8f99a3" />
             </Pressable>
           ) : null}
-          <Pressable onPress={() => router.push('/settings')} hitSlop={12}>
+          <Pressable
+            onPress={() => router.push('/settings')}
+            hitSlop={12}
+            style={({ pressed }) => (pressed ? styles.iconPressed : undefined)}>
             <Ionicons name="settings-outline" size={21} color="#8f99a3" />
           </Pressable>
         </View>
       </View>
 
-      {feedError ? (
+      {feedError && posts.length > 0 ? (
         <Text style={[styles.feedError, { top: insets.top + 48 }]}>{feedError}</Text>
       ) : null}
 
       {profile?.role === 'artist' ? (
-        <Pressable
+        <ScalePressable
           // Sit above the floating dock — and above the mini player too
           // when a track is loaded.
           style={[styles.fab, { bottom: insets.bottom + 86 + (currentTrack ? 62 : 0) }]}
           onPress={() => router.push('/compose')}>
           <Ionicons name="add" size={30} color="#0b0c0e" />
-        </Pressable>
+        </ScalePressable>
       ) : null}
     </SafeAreaView>
   );
@@ -331,6 +460,7 @@ const styles = StyleSheet.create({
     gap: 18,
     alignItems: 'center',
   },
+  iconPressed: { opacity: 0.55 },
   feedError: {
     position: 'absolute',
     left: 0,
@@ -344,6 +474,26 @@ const styles = StyleSheet.create({
   list: { paddingTop: 52, paddingBottom: 170, flexGrow: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
   empty: { color: '#555' },
+  footerWrap: { alignItems: 'center', paddingVertical: 8 },
+  footerRetry: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+    borderRadius: 22,
+    backgroundColor: CHAT_SURFACE,
+  },
+  footerRetryPressed: { opacity: 0.6 },
+  footerRetryText: { color: '#c3cdd6', fontSize: 13, fontWeight: '600' },
+  retryChip: {
+    alignSelf: 'center',
+    backgroundColor: '#1e2126',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginTop: 16,
+  },
+  retryChipPressed: { opacity: 0.7 },
+  retryChipText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   fab: {
     position: 'absolute',
     right: 20,

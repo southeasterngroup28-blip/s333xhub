@@ -1,9 +1,14 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useEvent } from 'expo';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeOut } from 'react-native-reanimated';
 
-import { usePlayer } from '@/providers/player-provider';
+import { Skeleton } from '@/components/skeleton';
+import { pressFeedback, tapFeedback } from '@/lib/haptics';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
+import { usePlayerControls } from '@/providers/player-provider';
 
 type Props = {
   url: string;
@@ -26,7 +31,12 @@ export function VideoPlayerCard({ url, width, sourceWidth, sourceHeight }: Props
 
   if (!activated) {
     return (
-      <Pressable style={[styles.poster, size]} onPress={() => setActivated(true)}>
+      <Pressable
+        style={({ pressed }) => [styles.poster, size, pressed && styles.posterPressed]}
+        onPress={() => {
+          pressFeedback();
+          setActivated(true);
+        }}>
         <View style={styles.playBadge}>
           <Ionicons name="play" size={22} color="#0b0c0e" style={styles.playNudge} />
         </View>
@@ -38,13 +48,15 @@ export function VideoPlayerCard({ url, width, sourceWidth, sourceHeight }: Props
 }
 
 function ActiveVideo({ url, size }: { url: string; size: { width: number; height: number } }) {
-  const { pause: pauseMusic } = usePlayer();
+  const { pause: pauseMusic } = usePlayerControls();
+  const reduceMotion = useReduceMotion();
   const player = useVideoPlayer(url, (p) => {
     p.loop = false;
     // Keep the audio player's lock-screen card intact.
     p.showNowPlayingNotification = false;
     p.play();
   });
+  const { status } = useEvent(player, 'statusChange', { status: player.status });
 
   // A video with sound shouldn't play on top of the music.
   useEffect(() => {
@@ -52,11 +64,49 @@ function ActiveVideo({ url, size }: { url: string; size: { width: number; height
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return <VideoView player={player} style={[styles.video, size]} nativeControls contentFit="contain" />;
+  return (
+    <View style={styles.videoWrap}>
+      <VideoView player={player} style={[styles.video, size]} nativeControls contentFit="contain" />
+      {status === 'error' ? (
+        <Pressable
+          style={[styles.overlay, size]}
+          onPress={() => {
+            tapFeedback();
+            player
+              .replaceAsync(url)
+              .then(() => player.play())
+              .catch(() => {});
+          }}>
+          <View style={styles.badgeSeat}>
+            <Ionicons name="refresh" size={22} color="#ffffff" />
+          </View>
+          <Text style={styles.overlayText}>This video did not load. Tap to try again.</Text>
+        </Pressable>
+      ) : status !== 'readyToPlay' ? (
+        // Buffering: the house shimmer over the reserved frame, spinner in
+        // the badge's seat, dissolving the moment frames are ready.
+        <Animated.View
+          exiting={reduceMotion ? undefined : FadeOut.duration(180)}
+          pointerEvents="none"
+          style={[styles.overlay, size]}>
+          <Skeleton
+            width={size.width}
+            height={size.height}
+            radius={12}
+            style={styles.overlayFill}
+          />
+          <View style={styles.badgeSeat}>
+            <ActivityIndicator size="small" color="#ffffff" />
+          </View>
+        </Animated.View>
+      ) : null}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  video: { borderRadius: 12, marginTop: 12, backgroundColor: '#14151a', overflow: 'hidden' },
+  videoWrap: { marginTop: 12 },
+  video: { borderRadius: 12, backgroundColor: '#14151a', overflow: 'hidden' },
   poster: {
     borderRadius: 12,
     marginTop: 12,
@@ -64,6 +114,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  posterPressed: { opacity: 0.85 },
   playBadge: {
     width: 52,
     height: 52,
@@ -78,4 +129,28 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   playNudge: { marginLeft: 3 },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#14151a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  overlayFill: { position: 'absolute', top: 0, left: 0 },
+  // The play badge's 52pt seat, translucent so the shimmer reads through.
+  badgeSeat: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(4,6,8,0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  overlayText: { color: '#aab2ba', fontSize: 12.5, textAlign: 'center', paddingHorizontal: 20 },
 });

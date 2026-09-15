@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -26,9 +26,21 @@ import { useAuth } from '@/providers/auth-provider';
 export default function ShopScreen() {
   const { profile } = useAuth();
   const router = useRouter();
+  const navigation = useNavigation();
   const isArtist = profile?.role === 'artist';
   const now = useNow();
   const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollView>(null);
+
+  // Re-tapping the shop bubble scrolls back to the top (switch-to is ignored).
+  useEffect(
+    () =>
+      navigation.addListener('tabPress' as never, (() => {
+        if (!navigation.isFocused()) return;
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+      }) as never),
+    [navigation]
+  );
 
   const [drops, setDrops] = useState<Drop[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,7 +74,7 @@ export default function ShopScreen() {
         </View>
       ) : (
         <FadeMask>
-        <ScrollView contentContainerStyle={styles.list}>
+        <ScrollView ref={scrollRef} contentContainerStyle={styles.list}>
           {drops.length === 0 ? (
             <EmptyState
               icon="bag-outline"

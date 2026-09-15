@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -28,8 +28,20 @@ const PAST_LIMIT = 10;
 export default function ShowsScreen() {
   const { profile } = useAuth();
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const isArtist = profile?.role === 'artist';
+  const scrollRef = useRef<ScrollView>(null);
+
+  // Re-tapping the Shows tab scrolls back to the top (switch-to is ignored).
+  useEffect(
+    () =>
+      navigation.addListener('tabPress' as never, (() => {
+        if (!navigation.isFocused()) return;
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+      }) as never),
+    [navigation]
+  );
 
   const [upcoming, setUpcoming] = useState<Show[]>([]);
   const [past, setPast] = useState<Show[]>([]);
@@ -135,6 +147,7 @@ export default function ShowsScreen() {
       ) : (
         <FadeMask>
           <ScrollView
+            ref={scrollRef}
             contentContainerStyle={styles.list}
             refreshControl={
               <RefreshControl

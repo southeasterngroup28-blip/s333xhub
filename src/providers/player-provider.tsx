@@ -4,7 +4,18 @@ import {
   useAudioPlayerStatus,
   type AudioStatus,
 } from 'expo-audio';
-import { createContext, useContext, useEffect, useMemo, useState, type PropsWithChildren } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PropsWithChildren,
+} from 'react';
+
+import { errorFeedback } from '@/lib/haptics';
 
 export type Track = {
   postId: string;
@@ -13,12 +24,13 @@ export type Track = {
   artworkUrl?: string;
 };
 
-type PlayerContextValue = {
+// Two contexts from one provider: controls change only when the TRACK
+// changes, status ticks twice a second. Screens that just need "is a track
+// loaded" or "play this" subscribe to controls and stay still while the
+// clock runs; only the players themselves watch the status stream.
+type PlayerControlsValue = {
   /** The track currently loaded (playing or paused), if any. */
   current: Track | null;
-  status: AudioStatus | null;
-  /** True from tap-to-play until audio actually starts — show "playing" UI. */
-  starting: boolean;
   playTrack: (track: Track) => void;
   toggle: () => void;
   seekTo: (seconds: number) => void;
@@ -28,10 +40,18 @@ type PlayerContextValue = {
   stop: () => void;
 };
 
-const PlayerContext = createContext<PlayerContextValue>({
+type PlayerStatusValue = {
+  status: AudioStatus | null;
+  /** True from tap-to-play until audio actually starts — show "playing" UI. */
+  starting: boolean;
+  /** Starting has taken over 600ms — time for a spinner, not a glyph flip. */
+  startingSlow: boolean;
+  /** The loaded track could not play — the play button retries it. */
+  failed: boolean;
+};
+
+const PlayerControlsContext = createContext<PlayerControlsValue>({
   current: null,
-  status: null,
-  starting: false,
   playTrack: () => {},
   toggle: () => {},
   seekTo: () => {},
@@ -39,8 +59,19 @@ const PlayerContext = createContext<PlayerContextValue>({
   stop: () => {},
 });
 
-export function usePlayer() {
-  return useContext(PlayerContext);
+const PlayerStatusContext = createContext<PlayerStatusValue>({
+  status: null,
+  starting: false,
+  startingSlow: false,
+  failed: false,
+});
+
+export function usePlayerControls() {
+  return useContext(PlayerControlsContext);
+}
+
+export function usePlayerStatus() {
+  return useContext(PlayerStatusContext);
 }
 
 export function PlayerProvider({ children }: PropsWithChildren) {
@@ -49,15 +80,68 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   const status = useAudioPlayerStatus(player);
   const [current, setCurrent] = useState<Track | null>(null);
   const [starting, setStarting] = useState(false);
+  const [startingSlow, setStartingSlow] = useState(false);
+  const [failed, setFailed] = useState(false);
 
-  // The moment real audio flows, the optimistic phase ends. If nothing
-  // flows within 12s (dead URL, no network), stop pretending.
+  // `toggle` must not depend on the status stream (that would churn the
+  // controls context twice a second), so the one status-only fact it needs
+  // lives in a ref, refreshed by the hook above.
+  const didJustFinishRef = useRef(false);
   useEffect(() => {
-    if (starting && status?.playing) setStarting(false);
-  }, [starting, status?.playing]);
+    didJustFinishRef.current = !!status?.didJustFinish;
+  }, [status?.didJustFinish]);
+
+  const failedRef = useRef(false);
+  const markFailed = useCallback(() => {
+    // Buzz once, on the false-to-true transition only.
+    if (!failedRef.current) errorFeedback();
+    failedRef.current = true;
+    setFailed(true);
+    // A failed track is no longer "starting" — without this, a fast
+    // status error leaves the discs spinning (or on the pause glyph)
+    // while the sub line already says "Tap to retry".
+    setStarting(false);
+  }, []);
+  const clearFailed = useCallback(() => {
+    failedRef.current = false;
+    setFailed(false);
+  }, []);
+
+  // The moment real audio flows, the optimistic phase ends — and any
+  // earlier failure is forgiven. If nothing flows within 8s (dead URL,
+  // no network), stop pretending and surface the failure.
+  useEffect(() => {
+    if (status?.playing) {
+      if (starting) setStarting(false);
+      clearFailed();
+    }
+  }, [starting, status?.playing, clearFailed]);
   useEffect(() => {
     if (!starting) return;
-    const timer = setTimeout(() => setStarting(false), 12_000);
+    const timer = setTimeout(() => {
+      setStarting(false);
+      if (!player.playing) markFailed();
+    }, 8_000);
+    return () => clearTimeout(timer);
+    // `current` re-keys the deadline: switching tracks mid-load (starting
+    // already true) must give the NEW track its own fresh 8 seconds, not
+    // inherit the tail of the old one and get flagged as failed.
+  }, [starting, current, player, markFailed]);
+
+  // A playback error from the native side fails the current track too.
+  useEffect(() => {
+    if (status?.error != null && current) markFailed();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status?.error]);
+
+  // The first 600ms of a load keeps the instant glyph flip; past that the
+  // discs swap to a spinner (startingSlow) so a slow network reads honest.
+  useEffect(() => {
+    if (!starting) {
+      setStartingSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => setStartingSlow(true), 600);
     return () => clearTimeout(timer);
   }, [starting]);
 
@@ -100,50 +184,77 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.postId, status?.playing]);
 
-  function playTrack(track: Track) {
-    setCurrent(track);
-    setStarting(true);
-    player.replace({ uri: track.url });
-    player.play();
-  }
+  const playTrack = useCallback(
+    (track: Track) => {
+      setCurrent(track);
+      setStarting(true);
+      clearFailed();
+      player.replace({ uri: track.url });
+      player.play();
+    },
+    [player, clearFailed]
+  );
 
-  function toggle() {
+  const toggle = useCallback(() => {
     if (!current) return;
-    if (status?.playing) {
+    if (failedRef.current) {
+      // Retry: reload the same track from scratch.
+      player.replace({ uri: current.url });
+      player.play();
+      setStarting(true);
+      clearFailed();
+      return;
+    }
+    // Reads the player synchronously so this callback never depends on the
+    // status stream — the controls context stays still while the clock runs.
+    if (player.playing) {
       player.pause();
       return;
     }
     // A finished track replays from the top - without this, play after
     // the end is a dead button (the playhead never rewinds itself).
-    const dur = status?.duration ?? 0;
-    if (status?.didJustFinish || (dur > 0 && (status?.currentTime ?? 0) >= dur - 0.3)) {
+    const dur = player.duration ?? 0;
+    if (didJustFinishRef.current || (dur > 0 && (player.currentTime ?? 0) >= dur - 0.3)) {
       player.seekTo(0);
     }
     player.play();
-  }
+  }, [current, player, clearFailed]);
 
-  function seekTo(seconds: number) {
-    player.seekTo(seconds);
-  }
+  const seekTo = useCallback(
+    (seconds: number) => {
+      player.seekTo(seconds);
+    },
+    [player]
+  );
 
-  function pause() {
+  const pause = useCallback(() => {
     try {
       player.pause();
     } catch {}
-  }
+  }, [player]);
 
-  function stop() {
+  const stop = useCallback(() => {
     try {
       player.pause();
     } catch {}
     setCurrent(null);
     setStarting(false);
-  }
+    clearFailed();
+  }, [player, clearFailed]);
+
+  const controls = useMemo(
+    () => ({ current, playTrack, toggle, seekTo, pause, stop }),
+    [current, playTrack, toggle, seekTo, pause, stop]
+  );
+
+  const statusValue = useMemo(
+    () => ({ status, starting, startingSlow, failed }),
+    [status, starting, startingSlow, failed]
+  );
 
   return (
-    <PlayerContext.Provider
-      value={{ current, status, starting, playTrack, toggle, seekTo, pause, stop }}>
-      {children}
-    </PlayerContext.Provider>
+    <PlayerControlsContext.Provider value={controls}>
+      <PlayerStatusContext.Provider value={statusValue}>{children}</PlayerStatusContext.Provider>
+    </PlayerControlsContext.Provider>
   );
 }

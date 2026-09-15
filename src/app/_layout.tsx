@@ -2,19 +2,26 @@ import { useFonts } from 'expo-font';
 import { Anton_400Regular } from '@expo-google-fonts/anton';
 import { Butcherman_400Regular } from '@expo-google-fonts/butcherman';
 import { SixCaps_400Regular } from '@expo-google-fonts/six-caps';
-import { DarkTheme, DefaultTheme, ThemeProvider, Stack } from 'expo-router';
+import { DarkTheme, ThemeProvider, Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, type ReactNode } from 'react';
-import { Platform, useColorScheme } from 'react-native';
+import { Platform } from 'react-native';
 
 import { AccountSuspended } from '@/components/account-suspended';
 import { ProfileCardProvider } from '@/components/profile-card';
 import { installCrashReporting } from '@/lib/crash';
 import { AuthProvider, useAuth } from '@/providers/auth-provider';
-import { PlayerProvider, usePlayer } from '@/providers/player-provider';
+import { PlayerProvider, usePlayerControls } from '@/providers/player-provider';
 
 SplashScreen.preventAutoHideAsync();
 installCrashReporting();
+
+// The app is dark everywhere, whatever the phone's setting says — a fan on
+// light mode must never get a white navigation flash between screens.
+const AppTheme = {
+  ...DarkTheme,
+  colors: { ...DarkTheme.colors, background: '#000000', card: '#0b0c0e' },
+};
 
 // Stripe (show tickets). The SDK looks up its native module the moment
 // the package is imported, so a web bundle or a dev client built before
@@ -59,7 +66,7 @@ function StripeGate({ children }: { children: ReactNode }) {
 
 function RootNavigator() {
   const { session, profile, isLoading } = useAuth();
-  const { current: loadedTrack, stop: stopPlayer } = usePlayer();
+  const { current: loadedTrack, stop: stopPlayer } = usePlayerControls();
   const [fontsLoaded] = useFonts({
     Anton_400Regular,
     SixCaps_400Regular,
@@ -120,13 +127,12 @@ function RootNavigator() {
 }
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
   return (
     <StripeGate>
       <AuthProvider>
         <PlayerProvider>
           <ProfileCardProvider>
-            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+            <ThemeProvider value={AppTheme}>
               <RootNavigator />
             </ThemeProvider>
           </ProfileCardProvider>

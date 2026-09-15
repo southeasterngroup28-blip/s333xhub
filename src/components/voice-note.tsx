@@ -12,7 +12,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 
-import { usePlayer } from '@/providers/player-provider';
+import { usePlayerControls } from '@/providers/player-provider';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { CHAT_HAIRLINE_MINE, CHAT_SURFACE, CHAT_SURFACE_MINE } from '@/constants/chat-surfaces';
 
@@ -159,7 +159,7 @@ export function VoiceNoteBubble({ url, durationSeconds, mine, artist, pending }:
 function Loaded({ url, durationSeconds, mine, artist, pending }: Props & { url: string }) {
   const player = useAudioPlayer(url, { updateInterval: 250 });
   const status = useAudioPlayerStatus(player);
-  const { pause: pauseMusic } = usePlayer();
+  const { pause: pauseMusic } = usePlayerControls();
   const [autoplayed, setAutoplayed] = useState(false);
   // The glyph answers the TAP, not the next status poll. `intent` wins
   // until the player catches up, then hands back to the real state.

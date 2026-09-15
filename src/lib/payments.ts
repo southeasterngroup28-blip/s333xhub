@@ -57,14 +57,35 @@ export class PaymentsNotLiveError extends Error {
   }
 }
 
+/** The fan backed out of Apple's payment sheet — not a failure. */
+export class PurchaseCancelledError extends Error {
+  constructor() {
+    super('Purchase cancelled.');
+    this.name = 'PurchaseCancelledError';
+  }
+}
+
+/** Apple took the money but the webhook row has not landed yet. */
+export class UnlockPendingError extends Error {
+  constructor() {
+    super('Payment went through. Your unlock is on its way.');
+    this.name = 'UnlockPendingError';
+  }
+}
+
 /**
  * Buy one locked post. Resolves once the unlock is RECORDED server-side
  * (webhook round-trip) — so the UI can flip to unlocked with certainty.
+ * `onPaid` fires the moment Apple confirms the charge, before the webhook
+ * wait, so the UI can move from "buying" to "recording" honestly.
  */
-export async function purchasePost(post: {
-  id: string;
-  price_cents: number | null;
-}): Promise<void> {
+export async function purchasePost(
+  post: {
+    id: string;
+    price_cents: number | null;
+  },
+  onPaid?: () => void
+): Promise<void> {
   if (Platform.OS !== 'ios') throw new PaymentsNotLiveError();
   const productId = productIdForCents(post.price_cents ?? 0);
   if (!productId) throw new Error('This post has no valid price tier.');
@@ -84,20 +105,21 @@ export async function purchasePost(post: {
     await Purchases.purchaseStoreProduct(product);
   } catch (e) {
     const err = e as { userCancelled?: boolean; message?: string };
-    if (err.userCancelled) throw new Error('Purchase cancelled.');
+    if (err.userCancelled) throw new PurchaseCancelledError();
     throw new Error(err.message ?? 'The purchase did not go through.');
   }
 
+  onPaid?.();
+
   // Apple confirmed payment; now wait for the webhook to record it.
-  for (let attempt = 0; attempt < 15; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+  // Check first, THEN sleep — an instant webhook adds zero latency.
+  for (let attempt = 0; attempt < 20; attempt++) {
     const owned = await fetchMyPurchasedPostIds().catch(() => new Set<string>());
     if (owned.has(post.id)) return;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   // Paid but the record is lagging — it WILL arrive; tell the user honestly.
-  throw new Error(
-    'Payment went through — the unlock is on its way. Pull the feed to refresh in a moment.'
-  );
+  throw new UnlockPendingError();
 }
 
 /**

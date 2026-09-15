@@ -1,13 +1,20 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRef, useState, type ReactNode } from 'react';
-import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { ActivityIndicator, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { DISPLAY_FONT } from '@/constants/type';
-import { pressFeedback } from '@/lib/haptics';
+import { pressFeedback, selectFeedback, tapFeedback } from '@/lib/haptics';
 import type { Project } from '@/lib/posts';
-import { usePlayer } from '@/providers/player-provider';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
+import { usePlayerControls, usePlayerStatus } from '@/providers/player-provider';
 
 type Props = {
   postId: string;
@@ -126,44 +133,95 @@ export function AudioCover({
   );
 }
 
-export function AudioPlayerCard({ postId, title, url, project, coverUrl, coverFocus = 0.5 }: Props) {
-  const { current, status, starting, playTrack, toggle, seekTo } = usePlayer();
+/**
+ * The scrubber, isolated so its motion lives on the UI thread: the fill and
+ * thumb are shared values (drags write them directly, status ticks glide
+ * them), and the only React state is the drag timestamp's whole second.
+ */
+function SeekBar({
+  isCurrent,
+  duration,
+  position,
+  seekTo,
+}: {
+  isCurrent: boolean;
+  duration: number;
+  position: number;
+  seekTo: (seconds: number) => void;
+}) {
   const [barWidth, setBarWidth] = useState(0);
-  /** While the thumb is being dragged, the bar previews that spot. */
-  const [dragFraction, setDragFraction] = useState<number | null>(null);
+  /** The dragged spot's whole second — feeds the left timestamp only. */
+  const [dragSeconds, setDragSeconds] = useState<number | null>(null);
+  const reduceMotion = useReduceMotion();
+
+  const progressSV = useSharedValue(0);
+  const draggingSV = useSharedValue(false);
+
   const widthRef = useRef(0);
-  const currentRef = useRef(false);
+  const activeRef = useRef(false);
   const durationRef = useRef(0);
-  /** Where we just seeked to — shown until the player's clock catches up. */
+  /** Where we just seeked to — held until the player's clock catches up. */
   const pendingSeekRef = useRef<number | null>(null);
-
-  const isCurrent = current?.postId === postId;
-  // `starting` keeps the button honest during the load gap after a tap —
-  // and hides the PREVIOUS track's leftover clock while the new one loads.
-  const isPlaying = isCurrent && (!!status?.playing || starting);
-  const duration = isCurrent && !starting ? status?.duration ?? 0 : 0;
-  const rawPosition = isCurrent && !starting ? status?.currentTime ?? 0 : 0;
-
-  // After a seek, the status lags a beat — keep showing the seek target
-  // until playback reaches it (no snap-back flicker).
-  let position = rawPosition;
-  if (pendingSeekRef.current != null) {
-    if (Math.abs(rawPosition - pendingSeekRef.current) < 1) {
-      pendingSeekRef.current = null;
-    } else {
-      position = pendingSeekRef.current;
-    }
-  }
-  const progress = duration > 0 ? Math.min(1, position / duration) : 0;
-  const shownFraction = dragFraction ?? progress;
-
-  widthRef.current = barWidth;
-  currentRef.current = isCurrent;
-  durationRef.current = duration;
-
   /** The bar's left edge in screen coords, captured at touch-down. */
   const leftEdgeRef = useRef(0);
   const dragFracRef = useRef(0);
+  const dragSecRef = useRef(-1);
+  const draggingRef = useRef(false);
+  const seekToRef = useRef(seekTo);
+
+  widthRef.current = barWidth;
+  activeRef.current = isCurrent && duration > 0;
+  durationRef.current = duration;
+  seekToRef.current = seekTo;
+
+  // After a seek, the status lags a beat — keep showing the seek target
+  // until playback reaches it (no snap-back flicker).
+  let shownPosition = position;
+  if (pendingSeekRef.current != null) {
+    if (Math.abs(position - pendingSeekRef.current) < 1) {
+      pendingSeekRef.current = null;
+    } else {
+      shownPosition = pendingSeekRef.current;
+    }
+  }
+
+  // At rest, each 500ms status tick glides the fill to the new spot so
+  // progress sweeps instead of stepping. Drags own the value while down.
+  useEffect(() => {
+    if (draggingRef.current) return;
+    const fraction = duration > 0 ? Math.min(1, shownPosition / duration) : 0;
+    if (reduceMotion || pendingSeekRef.current != null || fraction === 0) {
+      // Reduce Motion steps to each tick instead of gliding between them.
+      progressSV.value = fraction;
+    } else {
+      progressSV.value = withTiming(fraction, { duration: 500, easing: Easing.linear });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shownPosition, duration, reduceMotion]);
+
+  function clampFraction(x: number): number {
+    const width = widthRef.current;
+    if (width <= 0) return 0;
+    return Math.max(0, Math.min(1, x / width));
+  }
+
+  function applyDrag(fraction: number) {
+    dragFracRef.current = fraction;
+    // Direct write — the bar answers the finger with zero re-renders.
+    progressSV.value = fraction;
+    const sec = Math.floor(fraction * durationRef.current);
+    if (sec !== dragSecRef.current) {
+      dragSecRef.current = sec;
+      setDragSeconds(sec);
+    }
+  }
+
+  function endDrag() {
+    draggingRef.current = false;
+    draggingSV.value = false;
+    dragSecRef.current = -1;
+    setDragSeconds(null);
+  }
 
   // The seek bar claims the touch the moment your finger lands on it, and
   // KEEPS it — the scroll view is refused when it tries to steal the
@@ -171,37 +229,92 @@ export function AudioPlayerCard({ postId, title, url, project, coverUrl, coverFo
   // (finger position is tracked in screen coordinates, not view-local).
   const pan = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => currentRef.current && durationRef.current > 0,
-      onMoveShouldSetPanResponder: () => currentRef.current && durationRef.current > 0,
+      onStartShouldSetPanResponder: () => activeRef.current,
+      onMoveShouldSetPanResponder: () => activeRef.current,
       onPanResponderTerminationRequest: () => false,
       onPanResponderGrant: (e) => {
         // locationX is view-local and pageX is screen-global: their
         // difference IS the bar's left edge, measured synchronously.
         leftEdgeRef.current = e.nativeEvent.pageX - e.nativeEvent.locationX;
-        const fraction = clampFraction(e.nativeEvent.locationX);
-        dragFracRef.current = fraction;
-        setDragFraction(fraction);
+        draggingRef.current = true;
+        draggingSV.value = true;
+        tapFeedback();
+        applyDrag(clampFraction(e.nativeEvent.locationX));
       },
       onPanResponderMove: (_e, g) => {
-        const fraction = clampFraction(g.moveX - leftEdgeRef.current);
-        dragFracRef.current = fraction;
-        setDragFraction(fraction);
+        applyDrag(clampFraction(g.moveX - leftEdgeRef.current));
       },
       onPanResponderRelease: () => {
         const fraction = dragFracRef.current;
-        setDragFraction(null);
+        endDrag();
         pendingSeekRef.current = fraction * durationRef.current;
-        seekTo(fraction * durationRef.current);
+        selectFeedback();
+        seekToRef.current(fraction * durationRef.current);
       },
-      onPanResponderTerminate: () => setDragFraction(null),
+      onPanResponderTerminate: () => endDrag(),
     })
   ).current;
 
-  function clampFraction(x: number): number {
-    const width = widthRef.current;
-    if (width <= 0) return 0;
-    return Math.max(0, Math.min(1, x / width));
-  }
+  const fillStyle = useAnimatedStyle(
+    () => ({ width: progressSV.value * barWidth }),
+    [barWidth]
+  );
+  const thumbStyle = useAnimatedStyle(
+    () => ({
+      transform: [
+        { translateX: progressSV.value * Math.max(0, barWidth - 12) },
+        {
+          // Reduce Motion keeps the grab acknowledgment but drops the ease.
+          scale: reduceMotion
+            ? draggingSV.value
+              ? 1.33
+              : 1
+            : withTiming(draggingSV.value ? 1.33 : 1, { duration: 120 }),
+        },
+      ],
+    }),
+    [barWidth, reduceMotion]
+  );
+
+  return (
+    <View style={styles.seekCol}>
+      {/* Seek bar: thin track, round thumb, grabs on touch. */}
+      <View
+        style={styles.seekTouch}
+        onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
+        {...pan.panHandlers}>
+        <View style={styles.track} pointerEvents="none">
+          <Animated.View style={[styles.fill, fillStyle]} />
+        </View>
+        {isCurrent ? (
+          <Animated.View pointerEvents="none" style={[styles.thumb, thumbStyle]} />
+        ) : null}
+      </View>
+      {/* The row keeps its height at rest so nothing jumps when play starts. */}
+      <View style={styles.timesRow} pointerEvents="none">
+        {isCurrent ? (
+          <>
+            <Text style={styles.timeStamp}>{formatTime(dragSeconds ?? shownPosition)}</Text>
+            <Text style={styles.timeStamp}>{formatTime(duration)}</Text>
+          </>
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+export function AudioPlayerCard({ postId, title, url, project, coverUrl, coverFocus = 0.5 }: Props) {
+  const { current, playTrack, toggle, seekTo } = usePlayerControls();
+  const { status, starting, startingSlow } = usePlayerStatus();
+
+  const isCurrent = current?.postId === postId;
+  // `starting` keeps the button honest during the load gap after a tap —
+  // and hides the PREVIOUS track's leftover clock while the new one loads.
+  const isPlaying = isCurrent && (!!status?.playing || starting);
+  const duration = isCurrent && !starting ? status?.duration ?? 0 : 0;
+  const position = isCurrent && !starting ? status?.currentTime ?? 0 : 0;
+  // First 600ms keeps the instant glyph flip; past that, an honest spinner.
+  const spinner = isCurrent && starting && startingSlow;
 
   function handlePress() {
     pressFeedback();
@@ -222,54 +335,19 @@ export function AudioPlayerCard({ postId, title, url, project, coverUrl, coverFo
       {/* Controls on the art's bottom edge: play, then the seek bar beside it. */}
       <View style={styles.controls}>
         <Pressable style={styles.play} onPress={handlePress} hitSlop={8}>
-          <Ionicons
-            name={isPlaying ? 'pause' : 'play'}
-            size={20}
-            color="#0b0c0e"
-            style={!isPlaying && styles.playNudge}
-          />
+          {spinner ? (
+            <ActivityIndicator size="small" color="#0b0c0e" />
+          ) : (
+            <Ionicons
+              name={isPlaying ? 'pause' : 'play'}
+              size={20}
+              color="#0b0c0e"
+              style={!isPlaying && styles.playNudge}
+            />
+          )}
         </Pressable>
 
-        <View style={styles.seekCol}>
-          {/* Seek bar: thin track, round thumb, grabs on touch. */}
-          <View
-            style={styles.seekTouch}
-            onLayout={(e) => setBarWidth(e.nativeEvent.layout.width)}
-            {...pan.panHandlers}>
-            <View style={styles.track} pointerEvents="none">
-              <View style={[styles.fill, { width: `${shownFraction * 100}%` }]} />
-            </View>
-            {isCurrent ? (
-              <View
-                pointerEvents="none"
-                style={[
-                  styles.thumb,
-                  dragFraction != null && styles.thumbActive,
-                  {
-                    left: Math.max(
-                      0,
-                      Math.min(
-                        barWidth - (dragFraction != null ? 16 : 12),
-                        shownFraction * barWidth - (dragFraction != null ? 8 : 6)
-                      )
-                    ),
-                  },
-                ]}
-              />
-            ) : null}
-          </View>
-          {/* The row keeps its height at rest so nothing jumps when play starts. */}
-          <View style={styles.timesRow} pointerEvents="none">
-            {isCurrent ? (
-              <>
-                <Text style={styles.timeStamp}>
-                  {formatTime(dragFraction != null ? dragFraction * duration : position)}
-                </Text>
-                <Text style={styles.timeStamp}>{formatTime(duration)}</Text>
-              </>
-            ) : null}
-          </View>
-        </View>
+        <SeekBar isCurrent={isCurrent} duration={duration} position={position} seekTo={seekTo} />
       </View>
     </AudioCover>
   );
@@ -351,6 +429,7 @@ const styles = StyleSheet.create({
   thumb: {
     position: 'absolute',
     top: 9,
+    left: 0,
     width: 12,
     height: 12,
     borderRadius: 6,
@@ -361,7 +440,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 3,
   },
-  thumbActive: { top: 7, width: 16, height: 16, borderRadius: 8 },
   timesRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -2, height: 14 },
   timeStamp: { color: 'rgba(255,255,255,0.72)', fontSize: 11, fontVariant: ['tabular-nums'] },
 });

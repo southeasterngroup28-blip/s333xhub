@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useNavigation } from 'expo-router';
 
 import { AppBackground } from '@/components/app-background';
 import { EdgeGlass, FadeMask } from '@/components/edge-fade';
@@ -49,6 +49,18 @@ export default function FanMailScreen() {
   const { profile } = useAuth();
   const isArtist = profile?.role === 'artist';
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const scrollRef = useRef<ScrollView>(null);
+
+  // Re-tapping the Fan Mail tab scrolls back to the top (switch-to is ignored).
+  useEffect(
+    () =>
+      navigation.addListener('tabPress' as never, (() => {
+        if (!navigation.isFocused()) return;
+        scrollRef.current?.scrollTo({ y: 0, animated: true });
+      }) as never),
+    [navigation]
+  );
 
   const [items, setItems] = useState<FanMailItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,7 +138,7 @@ export default function FanMailScreen() {
         </View>
       ) : (
         <FadeMask>
-        <ScrollView contentContainerStyle={[styles.list, styles.loadingPad]}>
+        <ScrollView ref={scrollRef} contentContainerStyle={[styles.list, styles.loadingPad]}>
           <View style={styles.card}>
             <Text style={styles.pitch}>
               Send the artist your pictures, videos, beats, or music — it goes straight to
