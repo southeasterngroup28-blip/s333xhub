@@ -43,6 +43,8 @@ export type ChatListItem = {
   lastMessage: ChatPreview | null;
   /** Messages from other people since I last opened it (only with `previews`). */
   unreadCount: number;
+  /** When the other DM member last opened the chat (DM only; null for the room). */
+  otherLastReadAt: string | null;
 };
 
 export type MessageKind = 'text' | 'gif' | 'voice' | 'image';
@@ -67,6 +69,20 @@ export type Message = {
     avatar_path: string | null;
     avatar_focus: number | null;
   } | null;
+  // Client-only fields for optimistic sends. Never stored; the server rows
+  // that come back simply don't carry them.
+  /** Still on its way to the server. */
+  pending?: boolean;
+  /** The send failed; the bubble offers retry and delete. */
+  failed?: boolean;
+  /** Local file/preview URI so media shows before the upload lands. */
+  local_uri?: string;
+  /**
+   * Render identity for my own sends: stays the local id through the
+   * temp-to-real swap, so the bubble never remounts when `id` becomes the
+   * server's. Dedupe and receipts keep using `id`.
+   */
+  local_key?: string;
 };
 
 export const MESSAGE_PAGE_SIZE = 50;
@@ -191,21 +207,25 @@ export async function fetchChatList(
   };
   const rows = ((data as unknown as Row[]) ?? []).filter((r) => r.channel);
 
-  // For DMs, look up who the other member is so we can show their name and face.
+  // For DMs, look up who the other member is so we can show their name and
+  // face, plus their read marker for the thread's Seen/Sent word.
   const dmIds = rows.filter((r) => r.channel!.type === 'dm').map((r) => r.channel_id);
   const others: Record<string, ChatPerson | null> = {};
+  const otherReads: Record<string, string | null> = {};
   if (dmIds.length > 0) {
     const { data: members, error: othersError } = await supabase
       .from('channel_members')
-      .select(`channel_id, user_id, profile:profiles(${PERSON_COLUMNS})`)
+      .select(`channel_id, user_id, last_read_at, profile:profiles(${PERSON_COLUMNS})`)
       .in('channel_id', dmIds)
       .neq('user_id', myUserId);
     if (othersError) throw othersError;
     for (const other of (members as unknown as {
       channel_id: string;
+      last_read_at: string | null;
       profile: ChatPerson | null;
     }[]) ?? []) {
       others[other.channel_id] = other.profile ?? null;
+      otherReads[other.channel_id] = other.last_read_at;
     }
   }
 
@@ -262,6 +282,7 @@ export async function fetchChatList(
         faces,
         lastMessage,
         unreadCount,
+        otherLastReadAt: type === 'dm' ? otherReads[r.channel_id] ?? null : null,
       };
     })
   );
@@ -440,6 +461,27 @@ export function subscribeToChatActivity(onActivity: () => void): RealtimeChannel
       () => onActivity()
     )
     .subscribe();
+}
+
+/**
+ * The other member's read marker in a DM, for Seen/Sent under my newest
+ * message. Cheap on purpose: one row, one column. The membership table is
+ * not in the realtime publication, so the thread refetches this on
+ * foreground and when messages arrive instead of subscribing.
+ */
+export async function fetchOtherLastReadAt(
+  channelId: string,
+  myUserId: string
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('channel_members')
+    .select('last_read_at')
+    .eq('channel_id', channelId)
+    .neq('user_id', myUserId)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as { last_read_at: string | null } | null)?.last_read_at ?? null;
 }
 
 /** Finds (or creates) my DM with the artist; returns its channel id. */

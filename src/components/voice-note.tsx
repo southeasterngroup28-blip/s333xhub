@@ -1,14 +1,56 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+  type SharedValue,
+} from 'react-native-reanimated';
 
 import { usePlayer } from '@/providers/player-provider';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { CHAT_HAIRLINE_MINE, CHAT_SURFACE, CHAT_SURFACE_MINE } from '@/constants/chat-surfaces';
 
-function formatSeconds(total: number): string {
+/** "0:12" — the one time format for voice notes, recording included. */
+export function formatSeconds(total: number): string {
   const s = Math.max(0, Math.round(total));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+/**
+ * A quiet breathing white wash over a bubble that's still uploading.
+ * Sits on top of whatever the bubble shows (no spinner, no dimming).
+ */
+export function UploadShimmer({ radius = 16 }: { radius?: number }) {
+  const reduceMotion = useReduceMotion();
+  const pulse = useSharedValue(0.05);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      pulse.value = 0.08;
+      return;
+    }
+    pulse.value = withRepeat(withTiming(0.16, { duration: 700 }), -1, true);
+    return () => cancelAnimation(pulse);
+  }, [reduceMotion, pulse]);
+
+  const animated = useAnimatedStyle(() => ({ opacity: pulse.value }));
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        StyleSheet.absoluteFill,
+        { backgroundColor: '#ffffff', borderRadius: radius },
+        animated,
+      ]}
+    />
+  );
 }
 
 // One voice note at a time: starting a new one pauses whichever was playing.
@@ -28,31 +70,49 @@ type Props = {
   mine?: boolean;
   /** Sent by the artist — the pill's hairline turns GHOST SILVER. */
   artist?: boolean;
+  /** Optimistic send still uploading — the pill wears a soft shimmer. */
+  pending?: boolean;
 };
 
-type Look = Pick<Props, 'mine' | 'artist'>;
+type Look = Pick<Props, 'mine' | 'artist' | 'pending'>;
 
 /** The slim hairline pill every state of the note sits inside. */
-function Pill({ mine, artist, children }: Look & { children: ReactNode }) {
+function Pill({ mine, artist, pending, children }: Look & { children: ReactNode }) {
   return (
-    <View style={[styles.pill, artist && styles.pillArtist, mine && styles.pillMine]}>{children}</View>
+    <View style={[styles.pill, artist && styles.pillArtist, mine && styles.pillMine]}>
+      {children}
+      {pending ? <UploadShimmer radius={999} /> : null}
+    </View>
   );
 }
 
-/** The level line; `progress` (0–1) lights the bars already played. */
-function Line({ progress = 0 }: { progress?: number }) {
+/**
+ * The level line. Without `progress` it's the resting picture; with it,
+ * a white copy of the bars is clipped to an animated width, so playback
+ * sweeps smoothly across the line instead of stepping bar by bar.
+ */
+function Line({ progress }: { progress?: SharedValue<number> }) {
+  const [width, setWidth] = useState(0);
+
+  const clip = useAnimatedStyle(
+    () => ({ width: width * (progress ? progress.value : 0) }),
+    [width, progress]
+  );
+
   return (
-    <View style={styles.line}>
+    <View style={styles.line} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
       {BAR_HEIGHTS.map((height, i) => (
-        <View
-          key={i}
-          style={[
-            styles.bar,
-            { height },
-            progress > i / BAR_HEIGHTS.length ? styles.barOn : null,
-          ]}
-        />
+        <View key={i} style={[styles.bar, { height }]} />
       ))}
+      {progress && width > 0 ? (
+        <Animated.View pointerEvents="none" style={[styles.lineClip, clip]}>
+          <View style={[styles.lineRow, { width }]}>
+            {BAR_HEIGHTS.map((height, i) => (
+              <View key={i} style={[styles.bar, styles.barOn, { height }]} />
+            ))}
+          </View>
+        </Animated.View>
+      ) : null}
     </View>
   );
 }
@@ -62,12 +122,12 @@ function Line({ progress = 0 }: { progress?: number }) {
  * on first tap — a chat full of voice notes must not hold dozens of
  * live buffering players for messages nobody is listening to.
  */
-export function VoiceNoteBubble({ url, durationSeconds, mine, artist }: Props) {
+export function VoiceNoteBubble({ url, durationSeconds, mine, artist, pending }: Props) {
   const [activated, setActivated] = useState(false);
 
   if (!url) {
     return (
-      <Pill mine={mine} artist={artist}>
+      <Pill mine={mine} artist={artist} pending={pending}>
         <View style={styles.play}>
           <ActivityIndicator color="#000" size="small" />
         </View>
@@ -78,7 +138,7 @@ export function VoiceNoteBubble({ url, durationSeconds, mine, artist }: Props) {
   }
   if (!activated) {
     return (
-      <Pill mine={mine} artist={artist}>
+      <Pill mine={mine} artist={artist} pending={pending}>
         <Pressable
           style={styles.play}
           onPress={() => setActivated(true)}
@@ -91,28 +151,59 @@ export function VoiceNoteBubble({ url, durationSeconds, mine, artist }: Props) {
       </Pill>
     );
   }
-  return <Loaded url={url} durationSeconds={durationSeconds} mine={mine} artist={artist} />;
+  return (
+    <Loaded url={url} durationSeconds={durationSeconds} mine={mine} artist={artist} pending={pending} />
+  );
 }
 
-function Loaded({ url, durationSeconds, mine, artist }: Props & { url: string }) {
-  const player = useAudioPlayer(url);
+function Loaded({ url, durationSeconds, mine, artist, pending }: Props & { url: string }) {
+  const player = useAudioPlayer(url, { updateInterval: 250 });
   const status = useAudioPlayerStatus(player);
   const { pause: pauseMusic } = usePlayer();
   const [autoplayed, setAutoplayed] = useState(false);
+  // The glyph answers the TAP, not the next status poll. `intent` wins
+  // until the player catches up, then hands back to the real state.
+  // This component only mounts because the fan just tapped play.
+  const [intent, setIntent] = useState<boolean | null>(true);
+  const reduceMotion = useReduceMotion();
+  const progress = useSharedValue(0);
+  /** The pause handle THIS instance registered — never touch another's. */
+  const myPauseRef = useRef<(() => void) | null>(null);
 
   const playing = status.playing;
   const total = durationSeconds ?? (status.duration || 0);
   const shown = playing || status.currentTime > 0 ? status.currentTime : total;
 
+  useEffect(() => {
+    if (intent !== null && playing === intent) setIntent(null);
+  }, [intent, playing]);
+
+  // Smooth fill: on every status tick, glide to where playback will be at
+  // the NEXT tick, so the sweep never visibly steps.
+  useEffect(() => {
+    if (playing && total > 0) {
+      const next = Math.min(1, (status.currentTime + 0.25) / total);
+      progress.value = reduceMotion
+        ? Math.min(1, status.currentTime / total)
+        : withTiming(next, { duration: 250, easing: Easing.linear });
+    } else {
+      cancelAnimation(progress);
+      progress.value = reduceMotion ? 0 : withTiming(0, { duration: 150 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, status.currentTime, total, reduceMotion]);
+
   function startPlayback() {
     // The music player and other voice notes step aside.
     pauseMusic();
     pauseCurrentVoice?.();
-    pauseCurrentVoice = () => {
+    const handle = () => {
       try {
         player.pause();
       } catch {}
     };
+    myPauseRef.current = handle;
+    pauseCurrentVoice = handle;
     if (status.didJustFinish || (status.duration > 0 && status.currentTime >= status.duration)) {
       player.seekTo(0);
     }
@@ -128,38 +219,46 @@ function Loaded({ url, durationSeconds, mine, artist }: Props & { url: string })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoplayed, status.isLoaded]);
 
-  // If this bubble unmounts while registered as the active voice, drop
-  // the stale pause handle.
+  // If this bubble unmounts while registered as the active voice, drop the
+  // stale pause handle — but only OURS. Scrolling an old note out of the
+  // list window must not clear the handle of the one still playing, or two
+  // notes could end up playing at once.
   useEffect(() => {
     return () => {
-      pauseCurrentVoice = null;
+      if (pauseCurrentVoice && pauseCurrentVoice === myPauseRef.current) {
+        pauseCurrentVoice = null;
+      }
     };
   }, []);
 
   function toggle() {
     if (playing) {
+      setIntent(false);
       player.pause();
-      pauseCurrentVoice = null;
+      if (pauseCurrentVoice === myPauseRef.current) pauseCurrentVoice = null;
       return;
     }
+    setIntent(true);
     startPlayback();
   }
 
+  const showPause = intent ?? playing;
+
   return (
-    <Pill mine={mine} artist={artist}>
+    <Pill mine={mine} artist={artist} pending={pending}>
       <Pressable
         style={styles.play}
         onPress={toggle}
         hitSlop={8}
-        accessibilityLabel={playing ? 'Pause voice note' : 'Play voice note'}>
+        accessibilityLabel={showPause ? 'Pause voice note' : 'Play voice note'}>
         <Ionicons
-          name={playing ? 'pause' : 'play'}
+          name={showPause ? 'pause' : 'play'}
           size={12}
           color="#000"
-          style={playing ? undefined : styles.playGlyph}
+          style={showPause ? undefined : styles.playGlyph}
         />
       </Pressable>
-      <Line progress={total > 0 && playing ? shown / total : 0} />
+      <Line progress={progress} />
       <Text style={styles.time}>{formatSeconds(shown)}</Text>
     </Pill>
   );
@@ -194,6 +293,9 @@ const styles = StyleSheet.create({
   // The play triangle sits optically left of centre; nudge it back.
   playGlyph: { marginLeft: 1.5 },
   line: { flex: 1, height: 14, flexDirection: 'row', alignItems: 'center', gap: 2 },
+  // The playback sweep: a white copy of the bars, clipped to the played width.
+  lineClip: { position: 'absolute', left: 0, top: 0, bottom: 0, overflow: 'hidden' },
+  lineRow: { flexDirection: 'row', alignItems: 'center', gap: 2, height: 14 },
   bar: { width: 1, backgroundColor: 'rgba(255,255,255,0.38)' },
   barOn: { backgroundColor: '#ffffff' },
   time: { color: '#8a8a92', fontSize: 11, fontVariant: ['tabular-nums'] },

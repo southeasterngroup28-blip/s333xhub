@@ -149,10 +149,11 @@ export default function ChatListScreen() {
         return;
       }
     }
-    // The title rides along so the channel header never flashes a placeholder.
+    // The title and type ride along so the channel header never flashes a
+    // placeholder and the loading ghost wears the room's shape.
     router.push({
       pathname: '/channel/[id]',
-      params: { id: item.channelId, title: item.title },
+      params: { id: item.channelId, title: item.title, type: item.type },
     });
   }
 
@@ -168,7 +169,7 @@ export default function ChatListScreen() {
         ?.faces.find((f) => f.role === 'artist');
       router.push({
         pathname: '/channel/[id]',
-        params: { id: channelId, title: artist?.display_name ?? '' },
+        params: { id: channelId, title: artist?.display_name ?? '', type: 'dm' },
       });
     } catch (e) {
       setError((e as { message?: string })?.message ?? 'Could not open the DM.');

@@ -14,6 +14,11 @@ export function pressFeedback() {
   if (canBuzz) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
 }
 
+/** Selection tick — jumping to the latest message, picking from a set. */
+export function selectFeedback() {
+  if (canBuzz) Haptics.selectionAsync().catch(() => {});
+}
+
 /** Success buzz — unlocks, purchases, completed actions. */
 export function successFeedback() {
   if (canBuzz) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
