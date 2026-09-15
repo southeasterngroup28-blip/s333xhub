@@ -1,0 +1,424 @@
+{
+ "summary": "Whole-app feel spec for S333XHUB, merged from 50+ confirmed findings into 4 independently shippable build passes ordered by felt impact per effort. Pass 1 fixes the surface everyone lives on (feed, player, post cards, unlock flow, tab bar) plus the global re-render tax; Pass 2 brings the comments thread up to the chat house standard; Pass 3 covers the money surfaces (tickets, scanner, shows, drops, shop); Pass 4 covers compose, fan mail, auth, and account. Duplicated findings (feed pagination x2, comment optimistic send x2, unlock flow x4, keyboard x3, haptics x3, pull-to-refresh x3, error dead-ends x2) are merged; conflicts resolved: unlock uses the phase machine ('idle'/'buying'/'recording'/'pending' with onPaid + typed errors) rather than the parallel onStage variant, the compose lock toggle becomes core RN Switch (settings.tsx parity) rather than a custom animated knob, fan mail keyboard avoidance uses automaticallyAdjustKeyboardInsets (iOS-only app, no double-inset with a KAV), and the comment send adopts the stable clientKey keyExtractor variant so reconciles never replay the entrance. All motion is reanimated 4.5.1 only, purchases/tickets stay webhook-honest (pending feel, never optimistic completion), copy stays plain sentences with no em-dashes, and chat files are untouched.",
+ "root_causes": [
+  "The app was built request-first: almost every button silently waits for the server to answer before anything on screen changes. Big apps do the opposite - they show the result instantly (or honest progress) and settle up with the server afterward. That is why sends, deletes, pins, unlocks and buys all feel like dead air.",
+  "The feedback tools exist but were never wired in. There is a haptics helper and a professional animation library in the project, used beautifully in a handful of showcase spots (chat, reactions), but roughly 90 percent of screens never import either one. Screens were finished when they worked, and stopped one layer short of when they feel finished.",
+  "Failure was treated as a programming detail, not a design state. Errors are either swallowed silently or shown as raw server jargon in a small floating red line. So on a bad connection the app lies: a failed feed looks like an empty feed, a failed ticket lookup says the ticket does not exist, and there is almost never a Try Again button.",
+  "Waiting was treated as one generic state instead of a story. Long, multi-stage waits (Apple payment then webhook, big uploads, media signing) show one static spinner or one dimmed label the whole way through, and screen space is not reserved for content that is still loading - so things pop in late and shove the layout around under the reader's thumb.",
+  "A hidden performance tax: the music player broadcasts its clock to the entire app twice every second, quietly re-rendering the whole feed (every card, image and poll) the whole time a track is loaded. Fixing that one plumbing issue makes everything else feel lighter for free."
+ ],
+ "passes": [
+  {
+   "order": 1,
+   "name": "Feed, player, and global reflexes",
+   "rationale": "The feed is the home surface every fan touches every session, and it carries the app's single biggest payoff moment (the unlock) plus its biggest hidden tax (the player re-rendering everything twice a second). This pass also creates the two shared primitives (ScalePressable, the pressed-state pattern) and lands the two one-file global wins (navigation theme, tab bar). Conflict resolutions baked in here: the four unlock findings are merged into ONE phase machine (idle/buying/recording/pending via onPaid + PurchaseCancelledError/UnlockPendingError) - the alternative onStage('sheet'|'confirming') variant is dropped as redundant; the two feed-pagination findings merge into one paging state ('idle'|'loading'|'failed'). Later passes reference ScalePressable from this pass; if a later pass ships first, its call sites fall back to the function-style opacity pattern until this lands.",
+   "items": [
+    {
+     "change": "Split the player context so playback ticks stop re-rendering the whole app",
+     "exact": "In player-provider.tsx render two contexts from one provider: PlayerControlsContext {current, playTrack, toggle, seekTo, pause, stop} memoized on [current] with every function in useCallback and NO dependency on status (toggle reads player.playing/currentTime/duration synchronously; didJustFinish lives in a ref updated from the status hook), and PlayerStatusContext {status, starting} consumed only by MiniPlayer, AudioPlayerCard, VideoPlayerCard, VoiceNote. Migrate feed.tsx:45 and RootNavigator (_layout.tsx:62) to the controls context. Then wrap PostCard in React.memo, hoist feed.tsx renderItem (226-242) into useCallback, and replace the inline onUnlocked closure with a stable useCallback taking the post id (setPurchasedIds functional update + resolveMedia) so the memo actually bails. Keep the default 500ms status interval - do not lower it.",
+     "files": [
+      "C:/dev/s333xhub/src/providers/player-provider.tsx",
+      "C:/dev/s333xhub/src/components/feed.tsx",
+      "C:/dev/s333xhub/src/components/post-card.tsx",
+      "C:/dev/s333xhub/src/app/_layout.tsx"
+     ]
+    },
+    {
+     "change": "Failed tracks surface an error with tap-to-retry instead of 12 seconds of fake playing",
+     "exact": "Add failed: boolean to the player context. Set it when: (a) the starting timeout (shorten 12s to 8s) fires while !status?.playing; (b) status?.error is non-null with a current track. Clear it in playTrack and whenever status?.playing flips true. errorFeedback() on the false-to-true transition only. Retry lives in toggle(): if failed, player.replace({uri: current.url}); player.play(); setStarting(true); setFailed(false) - both discs already call toggle so both get retry free. MiniPlayer sub line: failed ? 'Could not play. Tap to retry.' : playing ? 'Now playing' : 'Paused', play glyph while failed. Loading feel: startingSlow boolean in the provider (600ms setTimeout keyed on starting); first 600ms keeps the instant glyph flip, then both discs show <ActivityIndicator size=\"small\" color=\"#0b0c0e\"/> (34px mini disc, 44px card disc), matching voice-note.tsx:128-137.",
+     "files": [
+      "C:/dev/s333xhub/src/providers/player-provider.tsx",
+      "C:/dev/s333xhub/src/components/mini-player.tsx",
+      "C:/dev/s333xhub/src/components/audio-player-card.tsx"
+     ]
+    },
+    {
+     "change": "Isolate the seek bar and drive it on the UI thread with glide and haptics",
+     "exact": "Extract the scrubber into its own child component below AudioCover. progress + dragging shared values; PanResponder grant/move sets progressSV.value = fraction directly. Fill: useAnimatedStyle width progressSV.value * barWidth; thumb: translateX progressSV.value * (barWidth - 12) plus scale withTiming(dragging ? 1.33 : 1, {duration: 120}) replacing the thumbActive width/height/top swap. At rest, write each 500ms status tick as progressSV.value = withTiming(next, {duration: 500, easing: Easing.linear}) so progress glides instead of stepping; keep the pendingSeekRef gate on those writes. Drag timestamp stays small local state updated only when Math.floor(fraction * duration) changes. Haptics: tapFeedback() on grant, selectFeedback() on release-to-seek; pressFeedback stays reserved for play/pause.",
+     "files": [
+      "C:/dev/s333xhub/src/components/audio-player-card.tsx"
+     ]
+    },
+    {
+     "change": "Mini player body opens the post and a progress hairline shows position",
+     "exact": "Wrap the art+meta block in one Pressable (style function, pressed opacity 0.7, body {flex:1, flexDirection:'row', alignItems:'center', gap:11}); onPress: tapFeedback() then router.push(`/post/${current.postId}`). Keep the disc as a sibling Pressable. Hairline: shared value fraction, useAnimatedStyle width `${prog.value*100}%`; effect on [status?.currentTime, status?.duration] sets prog.value = withTiming(currentTime/duration, {duration: 500, easing: Easing.linear}) when duration>0 && !starting; reset prog.value=0 directly on current.postId change. Track: absolute, left 11, right 11, bottom 3, height 2, borderRadius 1, rgba(255,255,255,0.14), overflow hidden, white fill - inset 11px so wrap's iOS shadow is not clipped. Hidden while starting or duration 0.",
+     "files": [
+      "C:/dev/s333xhub/src/components/mini-player.tsx"
+     ]
+    },
+    {
+     "change": "Video play tap gets a haptic, a shimmer while buffering, and a retry on failure",
+     "exact": "Poster onPress: pressFeedback() first, plus pressed style opacity 0.85. In ActiveVideo: const {status} = useEvent(player, 'statusChange', {status: player.status}); while not 'readyToPlay' render an absolute-fill overlay (backgroundColor '#14151a', borderRadius 12, pointerEvents 'none') with the existing Skeleton shimmer stretched to the video size plus the 52pt badge circle holding a small white ActivityIndicator; remove with exiting={FadeOut.duration(180)} at readyToPlay. On status 'error': Pressable retry (tapFeedback) calling player.replaceAsync(url), copy 'This video did not load. Tap to try again.'",
+     "files": [
+      "C:/dev/s333xhub/src/components/video-player-card.tsx"
+     ]
+    },
+    {
+     "change": "Reserve final-size space for unresolved media and sign URLs in parallel so the feed never reflows",
+     "exact": "post-card.tsx: replace every `if (!url) return null` media branch. Photos (line 482): <Skeleton height={imageWidth / aspect} radius={12} style={{marginTop: 12}}/> using the same aspect math/fallback as line 483. Video (line 465): a poster-sized View {width: imageWidth, height: imageWidth / (item.width && item.height ? item.width/item.height : 16/9)} with the play badge at 50% opacity, or a Skeleton at that size. Audio (line 447): render the AudioCover shell (aspectRatio 4/3, gradient fallback) with a disabled 44px disc holding a small ActivityIndicator. feed.tsx: move resolveMedia(fresh, purchased) into loadFresh's existing Promise.all (113-117) and resolveMedia(older, purchasedIds) into loadMore's (192-195); keep awaiting the combined Promise.all before finally; never clear mediaUrls on refresh.",
+     "files": [
+      "C:/dev/s333xhub/src/components/post-card.tsx",
+      "C:/dev/s333xhub/src/components/feed.tsx"
+     ]
+    },
+    {
+     "change": "One coherent unlock flow: staged honest pending, typed errors, background re-poll, and a blur-dissolve reveal (merged from 4 findings)",
+     "exact": "payments.ts: add PurchaseCancelledError (thrown at line 87 instead of generic Error) and UnlockPendingError with copy 'Payment went through. Your unlock is on its way.' (kills the em-dash); add onPaid?: () => void called right after purchaseStoreProduct resolves; reorder the webhook poll to check-then-sleep at 1000ms x20 so an instant webhook adds zero latency. post-card.tsx: replace boolean unlocking with phase 'idle'|'buying'|'recording'|'pending'. Pill: while busy, row with <ActivityIndicator size=\"small\" color=\"#14161a\"/> + staged copy 'Waiting for Apple…' (buying) then 'Payment received. Unlocking now.' (recording); drive recording/pending opacity with withRepeat(withTiming(1,{duration:700}),-1,true) from 0.55 (cancelAnimation + reset on phase exit) instead of static 0.6. Catch branches: PurchaseCancelledError -> setUnlockNotice(null), return, no haptic; UnlockPendingError -> phase 'pending', pill disabled 'Unlock on the way', persistent notice, NO errorFeedback, start a 5s setInterval on fetchMyPurchasedPostIds - when owned, clear interval, successFeedback(), onUnlocked() (interval id in a ref, cleared in useEffect cleanup); real failures -> errorFeedback(), notice in <Animated.View entering={FadeIn.duration(150)}> auto-clearing ~4s (flashNotice ref+setTimeout, clearTimeout on unmount), phase 'idle'. Reserve an ~18px minHeight notice slot below the pill so the tease never re-lays-out. Reveal: type onUnlocked as () => void | Promise<void>; handleSend order becomes await onUnlocked?.() THEN successFeedback(). feed.tsx onUnlocked: build next Set, try { await resolveMedia([item], next) } catch {} then setPurchasedIds(next) - catch mandatory so a signing blip degrades to late-pop, never tells a paid fan the purchase failed; optionally race a ~4s timeout. post-card reveal: layout={LinearTransition.duration(250)} on the card root so the height settles once; while justUnlocked, keep the blurred cover (expo-image blurRadius 22 + scrim, absoluteFill) as a sibling overlay above the real media (URL present in the same commit), fading out withTiming(0,{duration:450-500}) / exiting FadeOut(450); wrap the 'Unlocked' tag in Animated entering={FadeInDown.duration(220)}. No optimistic completion anywhere - webhook rules hold.",
+     "files": [
+      "C:/dev/s333xhub/src/lib/payments.ts",
+      "C:/dev/s333xhub/src/components/post-card.tsx",
+      "C:/dev/s333xhub/src/components/feed.tsx"
+     ]
+    },
+    {
+     "change": "Unlock pill gets a pressed scale and a real hit target",
+     "exact": "Extract an UnlockPill component mirroring ReactionChip (own useSharedValue + useAnimatedStyle): onPressIn scale withTiming(0.96,{duration:80}), onPressOut withTiming(1,{duration:140}). Raise paddingVertical 9 -> 12 and add hitSlop={8} (effective ~56pt; padding alone does not clear 44pt). Keep pressFeedback() in handleUnlock and keep the disabled busy branch honest.",
+     "files": [
+      "C:/dev/s333xhub/src/components/post-card.tsx"
+     ]
+    },
+    {
+     "change": "Delete a post with instant pending, local removal, and an exit fade instead of a full refetch",
+     "exact": "handleDelete: pressFeedback() first; local deleting state dims the card (shared value opacity withTiming(0.5,{duration:120})) and shows 'Deleting…' in the menu row; on failure restore opacity and keep the existing in-card actionError. feed.tsx: onDeleted={() => setPosts(prev => prev.filter(p => p.id !== item.id))} - no refetch. Add exiting={FadeOut.duration(180)} to PostCard's root Animated.View; switch feed's FlatList to reanimated Animated.FlatList with itemLayoutAnimation={LinearTransition.duration(220)} so rows below slide up.",
+     "files": [
+      "C:/dev/s333xhub/src/components/post-card.tsx",
+      "C:/dev/s333xhub/src/components/feed.tsx"
+     ]
+    },
+    {
+     "change": "Visible, recoverable pagination (merged from 2 findings)",
+     "exact": "Keep loadingMore.current as the re-entrancy guard; add const [paging, setPaging] = useState<'idle'|'loading'|'failed'>('idle'). Set 'loading' right after loadingMore.current = true; 'idle' on success AND on the stale-seq bail at line 183; 'failed' in the catch (stop swallowing); reset to 'idle' in loadFresh. ListFooterComponent: null when endReached or empty; 'loading' -> <PostSkeleton/>; 'failed' -> centered Pressable pill (minHeight 44, hitSlop 8, paddingHorizontal 18, borderRadius 22, translucent surface per constants/chat-surfaces.ts, pressed opacity 0.6) with copy \"Couldn't load older posts. Tap to retry.\", tapFeedback() on press, calling loadMore(); wrap footer content in Animated.View entering={FadeIn.duration(180)}. The existing guard absorbs the footer-mount onEndReached re-fire.",
+     "files": [
+      "C:/dev/s333xhub/src/components/feed.tsx"
+     ]
+    },
+    {
+     "change": "A failed first load stops masquerading as an empty feed",
+     "exact": "ListEmptyComponent becomes error-aware: when feedError, render EmptyState (icon 'cloud-offline-outline', title 'Could not load the feed', sub 'Check your connection and try again.' - never the raw error) plus a 'Try again' chip (menuChip look: #1e2126, borderRadius 999, paddingHorizontal 16, paddingVertical 10, hitSlop 8, marginTop 16) doing tapFeedback(); setFeedError(null); setLoading(true); loadFresh() so skeletons replay; wrap in Animated.View entering={FadeIn.duration(180)}. Floating red line renders only when feedError && posts.length > 0. In the catch also reset lastLoadAt.current = 0 so the next tab focus retries past the 120s throttle.",
+     "files": [
+      "C:/dev/s333xhub/src/components/feed.tsx"
+     ]
+    },
+    {
+     "change": "Entering animations fire only on genuine arrivals, never mid-scroll or on scroll-back",
+     "exact": "feed.tsx: const animateUntil = useRef(0); set animateUntil.current = Date.now() + 600 in loadFresh right before setPosts(fresh). renderItem passes animateIn={Date.now() < animateUntil.current} and index. post-card.tsx: entering={animateIn ? FadeInDown.duration(280).delay(Math.min(index ?? 0, 4) * 50) : undefined}. Initial reveal gets a capped 50ms stagger; virtualization remounts and pagination rows render statically; keyExtractor item.id means a refresh animates only genuinely new posts.",
+     "files": [
+      "C:/dev/s333xhub/src/components/feed.tsx",
+      "C:/dev/s333xhub/src/components/post-card.tsx"
+     ]
+    },
+    {
+     "change": "Poll bars glide and post menu/confirm rows ease in",
+     "exact": "Extract a PollBar component (hooks cannot live in the map): const w = useSharedValue(pct); useEffect w.value = withTiming(pct, {duration: 350}); useAnimatedStyle width `${w.value}%` on <Animated.View style={[styles.pollFill, fill]}/>. Post-card menu/confirm rows (314-343): wrap the appearing element in <Animated.View entering={FadeInDown.duration(160)}> - no exiting on inline swaps (reanimated absolutely positions exiting views and would double-stack the row).",
+     "files": [
+      "C:/dev/s333xhub/src/components/post-card.tsx"
+     ]
+    },
+    {
+     "change": "Kill the light-mode white navigation flash",
+     "exact": "Module-scope const AppTheme = {...DarkTheme, colors: {...DarkTheme.colors, background: '#000000', card: '#0b0c0e'}}; pass <ThemeProvider value={AppTheme}>; delete the useColorScheme call and the DefaultTheme import.",
+     "files": [
+      "C:/dev/s333xhub/src/app/_layout.tsx"
+     ]
+    },
+    {
+     "change": "Tab bar: press acknowledgment at finger-down, animated active pill, and re-tap scrolls to top",
+     "exact": "Extract TabButton (hooks cannot live in the routes map). Press: scale shared value, onPressIn tapFeedback() + withTiming(0.9,{duration:90}), onPressOut withTiming(1,{duration:130}) - move the haptic from onPress to onPressIn, keep navigation in onPress; apply via Animated.View around the Ionicons or createAnimatedComponent(Pressable) (reanimated exports no Animated.Pressable). Active pill: child Animated.View absoluteFill borderRadius 999 rgba(255,255,255,0.11), opacity withTiming(focused ? 1 : 0, {duration: 140}); same treatment on the shop circle (borderRadius 27). Re-tap: in feed.tsx subscribe useEffect(() => navigation.addListener('tabPress', () => { if (!navigation.isFocused()) return; listRef.current?.scrollToOffset({offset: 0, animated: true}); refreshIfNeeded(false); }), [navigation, refreshIfNeeded]) - the isFocused() guard is mandatory (tabPress also fires on switch-to, and feed preserves scroll on focus); pass false, not true. Same listener with scrollRef.current?.scrollTo({y: 0, animated: true}) in shows.tsx, fanmail.tsx, shop.tsx (two-line ref additions; note for pass 3/4 owners). Chat tab left alone per exclusion.",
+     "files": [
+      "C:/dev/s333xhub/src/app/(tabs)/_layout.tsx",
+      "C:/dev/s333xhub/src/components/feed.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shows.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/fanmail.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shop.tsx"
+     ]
+    },
+    {
+     "change": "Create ScalePressable and start the app-wide pressed-state sweep on this pass's surfaces",
+     "exact": "New src/components/ui/scale-pressable.tsx: AnimatedPressable = createAnimatedComponent(Pressable); scale shared value; onPressIn withTiming(0.97,{duration:90}), onPressOut withTiming(1,{duration:180}); useAnimatedStyle transform (UI thread, zero re-renders); when the system reduce-motion flag is on (house pattern voice-note.tsx:186-189) swap scale for a plain opacity dim. Use it here on: feed FAB (feed.tsx:295), unlock pill (via the UnlockPill item). Tier 2 for bare icon/text buttons (feed top-bar flag/settings icons): style={({pressed}) => [styles.x, pressed && {opacity: 0.55}]}. Keep all disabled/busy styles untouched - press feedback acknowledges the touch only.",
+     "files": [
+      "C:/dev/s333xhub/src/components/ui/scale-pressable.tsx",
+      "C:/dev/s333xhub/src/components/feed.tsx"
+     ]
+    }
+   ]
+  },
+  {
+   "order": 2,
+   "name": "Comments come alive",
+   "rationale": "Highest impact-per-effort pass: essentially two files (post/[id].tsx and lib/social.ts, plus one server migration and a small EmptyState extension) fix five high-severity findings. The thread sits one tap from every post and currently violates every house standard chat set: blocking send, zero haptics, frozen after first load, dead-end failures, teleporting pins and deletes, a desynced keyboard. Conflict resolution: the two optimistic-send findings merge into the stable-clientKey variant (keyExtractor item.clientKey ?? item.id) so the temp-to-server id swap never remounts and replays the entrance; the sending gate and its spinner are deleted so consecutive sends fire back-to-back. The Animated.FlatList + itemLayoutAnimation conversion is done ONCE and shared by pin, delete, and toolbar items. EmptyState's action/cta extension is built here and reused by pass 3.",
+   "items": [
+    {
+     "change": "Optimistic comment send with stable reconcile (merged from 2 findings)",
+     "exact": "handleSend builds a full local Comment synchronously: {id: `temp-${Date.now()}`, post_id: id, user_id: myUserId, body, pinned: false, created_at: new Date().toISOString(), deleted_at: null, author: {display_name, role, status, avatar_path, avatar_focus} from the auth Profile} typed as Row = Comment & {pending?: boolean; clientKey?: string}. Append, setDraft(''), pressFeedback() immediately; fire addComment without blocking. FlatList ref + requestAnimationFrame(() => listRef.current?.scrollToEnd({animated: true})) - same-tick scrollToEnd measures stale height. keyExtractor: (item) => item.clientKey ?? item.id; on success replace temp row with {...serverRow, clientKey: tempId} so the row never remounts. Pending rows: opacity 0.7, onLongPress skipped (server actions would 404), entering={FadeInDown.duration(200)} gated on pending/live rows only - never a blanket entering. On failure: remove temp row, errorFeedback(), setError, restore draft only if input still empty (setDraft(d => d.trim() ? d : body)). Delete the sending state, its ActivityIndicator swap, and the sending gate in canSend.",
+     "files": [
+      "C:/dev/s333xhub/src/app/post/[id].tsx"
+     ]
+    },
+    {
+     "change": "Wire haptics across the whole thread",
+     "exact": "pressFeedback() in handleSend AFTER the empty/in-flight guard; tapFeedback() inside the onLongPress gate (only when a toolbar actually opens); successFeedback() immediately before each flash() for pin/unpin, delete, report; errorFeedback() beside setError in the four user-action catch blocks only - never on passive load()/loadPost() failures.",
+     "files": [
+      "C:/dev/s333xhub/src/app/post/[id].tsx"
+     ]
+    },
+    {
+     "change": "Realtime arrivals plus pull-to-refresh",
+     "exact": "social.ts: fetchCommentById(id) (COMMENT_SELECT, .is('deleted_at', null), maybeSingle) and subscribeToComments(postId, onComment) via supabase.channel(`comments-${postId}`).on('postgres_changes', INSERT on post_comments filtered post_id, payload -> refetch full row) mirroring lib/chat.ts:408. REQUIRED server migration or it is a silent no-op: ALTER PUBLICATION supabase_realtime ADD TABLE post_comments. In the screen: subscribe in an effect keyed on id, dedupe by id (absorbs the echo of own sends), append at end (matches pinned-first/created-asc order), removeChannel on cleanup; track liveIds in a ref and gate entering={FadeInDown.duration(220)} to those ids. Pull-to-refresh: RefreshControl tintColor '#fff' running Promise.all([load(), loadPost()]) so a deleted post is noticed on the same gesture.",
+     "files": [
+      "C:/dev/s333xhub/src/lib/social.ts",
+      "C:/dev/s333xhub/src/app/post/[id].tsx"
+     ]
+    },
+    {
+     "change": "Failed loads get honest copy and a real Try Again everywhere on the screen",
+     "exact": "Dedicated const [loadFailed, setLoadFailed] - mandatory, because `error` is shared with send/pin/delete/report and keying retry UI off it would flip the thread into a reload card after a failed send. load(): clear on entry, set in catch, and stop routing raw Supabase text into the flash pill for load failures (copy: \"Comments didn't load.\"). ListEmptyComponent branches on loadFailed: solid #131519 card (this file's documented solid-fill decision), title \"COMMENTS DIDN'T LOAD\", sub 'Check your connection.', 'Try again' pill (borderRadius 999, borderWidth 1 #2a2e34, paddingVertical 10, hitSlop 8, minHeight 44, pressed opacity 0.7) doing haptic + setLoadFailed(false); setLoading(true); load() so CommentSkeletons replay; wrap in entering={FadeInDown.duration(220)}. 'NO COMMENTS YET' renders only when the fetch genuinely succeeded empty. Extend EmptyState with optional action?: {label, onPress} rendered as the same bordered pill (body font, not Anton, sidestepping the 1.2x lineHeight rule) and use it in the !post branch: 'Try again' resetting setError(null); setPostLoading(true); loadPost() plus the comments reload if that also failed. Also give EmptyState the house pop: custom entering worklet {initialValues: {opacity: 0, scale: 0.96}, animations: {opacity: withTiming(1,{duration:200}), scale: withSpring(1,{damping:18, stiffness:220})}} - upgrades every screen using it at once.",
+     "files": [
+      "C:/dev/s333xhub/src/app/post/[id].tsx",
+      "C:/dev/s333xhub/src/components/empty-state.tsx"
+     ]
+    },
+    {
+     "change": "Pin is optimistic and the row glides to the top",
+     "exact": "handlePin: next = !target.pinned; immediately setComments(prev => [...prev].map(c => ({...c, pinned: c.id === target.id ? next : false})).sort((a,b) => (Number(b.pinned)-Number(a.pinned)) || a.created_at.localeCompare(b.created_at))) - map clears other pins to match setPinned's exclusive semantics; successFeedback() + flash(next ? 'Pinned to the top.' : 'Unpinned.') right away; run setPinned without blocking; on catch errorFeedback(), setError('Could not pin.'), await load() to resync (never snapshot-revert - a concurrent send would be dropped); drop the success-path await load(). Convert FlatList to Animated.FlatList with itemLayoutAnimation={LinearTransition.duration(250)} (single-column, applies cleanly) - do this conversion once, shared with delete and toolbar items.",
+     "files": [
+      "C:/dev/s333xhub/src/app/post/[id].tsx"
+     ]
+    },
+    {
+     "change": "Delete is optimistic with an exit fade",
+     "exact": "Snapshot const before = comments; filter the row out immediately; await deleteComment; on catch setComments(before) (restores order) + errorFeedback(). Row root wrapped in Animated.View exiting={FadeOut.duration(160)}; the shared itemLayoutAnimation LinearTransition(250) closes the gap. No blanket entering on rows.",
+     "files": [
+      "C:/dev/s333xhub/src/app/post/[id].tsx"
+     ]
+    },
+    {
+     "change": "Long-press moderation acknowledges the hold and blooms instead of shoving",
+     "exact": "Row Pressable style becomes a function: held band styles plus pressed && {opacity: 0.85} - this also gives a fan holding their OWN comment an acknowledgment (no haptic there; a buzz with no menu reads broken). tapFeedback() inside the gate before setActionTarget. Toolbar strip: <Animated.View style={styles.toolbarStrip} entering={FadeInUp.duration(140)} exiting={FadeOut.duration(100)}> (FadeInUp - it sits above the comment, arrow pointing down; mini-player precedent). Animate the push two ways: the shared Animated.FlatList itemLayoutAnimation={LinearTransition.duration(160)} for rows below, AND layout={LinearTransition.duration(160)} on the held row's inner content (itemLayoutAnimation only moves item positions). Pill-to-report-menu morph: toolbar container layout={LinearTransition.duration(140)}, each reason row entering={FadeIn.duration(100)}. Strip stays in normal flow (Android touch-bounds comment holds).",
+     "files": [
+      "C:/dev/s333xhub/src/app/post/[id].tsx"
+     ]
+    },
+    {
+     "change": "Composer tracks the keyboard pixel-for-pixel and the thread drags it closed",
+     "exact": "Delete the KeyboardAvoidingView and the keyboardUp state/listeners. useAnimatedKeyboard(); composer becomes Animated.View at constant bottom insets.bottom + 14 with transform translateY: -Math.max(keyboard.height.value - insets.bottom, 0) - tracks open, close, and interactive drags on both platforms. ListFooterComponent gains an Animated.View spacer whose height is Math.max(keyboard.height.value - insets.bottom, 0); contentContainerStyle paddingBottom stays constant at insets.bottom + 130. keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}. scrollToEnd from the TextInput's onFocus (~50ms setTimeout to avoid racing footer growth) and after the optimistic append. FadeMask bottom simplifies to insets.bottom + 120 constant.",
+     "files": [
+      "C:/dev/s333xhub/src/app/post/[id].tsx"
+     ]
+    },
+    {
+     "change": "Real pagination replaces the hard 200-comment cap",
+     "exact": "social.ts: COMMENT_PAGE_SIZE = 40; fetchComments(postId, after?) ordered created_at asc, .limit(40), .gt('created_at', after) when cursored, .eq('pinned', false) on the paged query with the (at most one) pinned comment fetched in a parallel query merged into page one only. Screen: loadingMore/endReached state, onEndReached={loadNewer} onEndReachedThreshold={0.5}, in-flight guard, endReached when a page is short, ListFooterComponent CommentSkeleton while loading. Header count comes from the comment_counts RPC (or head:true count) so it stays honest with one page loaded. handleSend's local append stays when endReached; otherwise re-fetch from the last cursor after a successful send so the comment never jumps or duplicates across the boundary.",
+     "files": [
+      "C:/dev/s333xhub/src/lib/social.ts",
+      "C:/dev/s333xhub/src/app/post/[id].tsx"
+     ]
+    }
+   ]
+  },
+  {
+   "order": 3,
+   "name": "Money surfaces: tickets, scanner, shows, drops, shop",
+   "rationale": "These are the surfaces where trust is literally on the line: a paid fan staring at a dimmed 'BUYING…' for 22 seconds, a door scanner that says nothing while checking, an offline ticket screen that says the ticket does not exist. All flows stay webhook-honest - pending feel and staged copy, never optimistic completion. Files here (tickets.ts, shows.tsx, fan-tickets.tsx, scan.tsx, ticket/[id].tsx, show-new.tsx, drop/[id].tsx, shop.tsx, top8.tsx, reports.tsx) do not overlap with passes 1, 2, or 4 except the tiny scrollRef additions noted in pass 1 and the EmptyState cta extension built in pass 2 (if shipping before pass 2, include that extension here). Pressed-state items use ScalePressable from pass 1, with the function-style opacity fallback if this ships first.",
+   "items": [
+    {
+     "change": "Buy ticket: overlap the pre-sheet awaits and split the pending into honest phases",
+     "exact": "tickets.ts buyTicket: before functions.invoke start const sdkPromise = stripe() and const beforePromise = fetchMyTickets().catch(() => []), plus the profiles display_name select as a parallel promise when buyerName is empty; await sdkPromise before initPaymentSheet (keep the 'needs the latest version' mapping), resolve the name for defaultBillingDetails there, build `before` from beforePromise just before presentPaymentSheet - two network round trips plus the Stripe import leave the critical path. Add onPhase?: (p: 'issuing') => void called after the result.error checks, before the poll loop. fan-tickets.tsx: buyPhase state 'sheet'|'issuing' reset on buy; on 'issuing' record issuedAt, setBuyPhase, and fire successFeedback() THERE - delete the successFeedback at line 88 so the buzz fires once, at charge-confirmed. Gate the navigation yank: only router.push(`/ticket/${ticket.id}`) if Date.now() - issuedAt <= 5000; always setOwned so the MY TICKETS strip carries the slow case. shows.tsx pill: 'sheet' keeps dimmed 'BUYING…' but with row content (flexDirection row, gap 5) holding <ActivityIndicator size=\"small\" color=\"#0b0c0e\" style={{transform:[{scale:0.7}], marginVertical:-3}}/> and pillBusy softened 0.55 -> 0.85; 'issuing' renders FULL opacity 'PAID. GETTING YOUR TICKET' with the spinner, still disabled - a confirmed payment must not look more disabled than idle. Route the timeout's 'Payment went through' copy through a neutral style, never the red refusal slot.",
+     "files": [
+      "C:/dev/s333xhub/src/lib/tickets.ts",
+      "C:/dev/s333xhub/src/components/fan-tickets.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shows.tsx"
+     ]
+    },
+    {
+     "change": "Seed the ticket screen so the payoff never opens on a skeleton, and give the reveal a moment",
+     "exact": "tickets.ts: let seed: Ticket | null; seedTicket(t); peekTicketSeed(id) returning seed only on id match. Seed at ALL THREE call sites already holding the row: fan-tickets buy() before push, forRow's onTicket, MyTicketsStrip card onPress. ticket/[id].tsx: lazy initializers useState(() => id ? peekTicketSeed(id) : null) and setLoading(ticket === null); leave the useFocusEffect load() + 10s WATCH_MS reconcile untouched so the entering animation never replays. Motion: TicketCard root entering={FadeInDown.duration(280)} (house value, also softens the cold-open skeleton swap), qrPad entering={ZoomIn.delay(120).springify().damping(18)} - card lands, QR pops a beat later.",
+     "files": [
+      "C:/dev/s333xhub/src/lib/tickets.ts",
+      "C:/dev/s333xhub/src/components/fan-tickets.tsx",
+      "C:/dev/s333xhub/src/app/ticket/[id].tsx"
+     ]
+    },
+    {
+     "change": "Offline ticket screen stops claiming the ticket does not exist",
+     "exact": "Split the non-loading branch three ways: ticket -> TicketCard; error && !ticket -> offline card (EmptyState icon 'cloud-offline-outline', title \"Can't reach your ticket\", sub 'Your ticket is safe. Check your connection.', plus a RETRY pill copied from scan.tsx cta/ctaText: #fff, borderRadius 999, paddingVertical 14, paddingHorizontal 28, text #0b0c0e 800 13 letterSpacing 1, alignSelf center) whose onPress does tapFeedback() then setLoading(true) BEFORE load() so the TicketSkeleton returns instantly (load() alone never re-sets loading); !error && !ticket -> the existing 'No ticket here' EmptyState, now reserved for a successful null fetch. Floating red line renders only when error && ticket. Keep the silent 10s re-poll.",
+     "files": [
+      "C:/dev/s333xhub/src/app/ticket/[id].tsx"
+     ]
+    },
+    {
+     "change": "Scanner: instant 'Checking' state between QR catch and verdict",
+     "exact": "Banner tone gains 'checking'. In handleScan, immediately after busy.current = true: tapFeedback() and setBanner({tone: 'checking', title: 'Checking', detail: 'Hold on one second.', at: now}). styles.bannerChecking = {backgroundColor: '#1a1d22'} added to the style array; existing title/detail styles keep contrast against the #15803d/#b91c1c verdicts (Anton 24/30 already passes 1.2x lineHeight). REQUIRED: exempt 'checking' from the 6s auto-clear (`if (!banner || banner.tone === 'checking') return;`) or a slow RPC flips back to READY mid-flight; verdict/catch always replaces it and checkInTicket's error path guarantees no stuck state. Optional: frame borderColor interpolateColor '#c3cdd6' -> '#ffffff' withTiming(120) while checking; verdict color stays on the banner only.",
+     "files": [
+      "C:/dev/s333xhub/src/app/scan.tsx"
+     ]
+    },
+    {
+     "change": "Scanner verdicts crossfade and the door counter pops",
+     "exact": "Restructure: outer View keeps layout only (marginHorizontal 16, marginTop 14, minHeight 92, borderRadius 16, #131519, overflow hidden, justifyContent center); tone backgroundColor + padding move to an inner Animated.View keyed on banner ? String(banner.at) : 'ready', entering={FadeInDown.duration(150)} exiting={FadeOut.duration(200)}; READY idle content lives in the same keyed structure (key 'ready', FadeIn 200) so the 6s reset dissolves. Exiting snapshots render out of flow so the crossfade never doubles the height; minHeight 92 holds layout. Counter: countScale shared value on an Animated.Text; in the result.ok branch withSequence(withTiming(1.28,{duration:90}), withTiming(1,{duration:130})) - the exact house pop from post-card (1.28, not 1.2).",
+     "files": [
+      "C:/dev/s333xhub/src/app/scan.tsx"
+     ]
+    },
+    {
+     "change": "Door counter survives closing the scanner",
+     "exact": "When showId is present, seed on mount with the file's existing gone-flag effect pattern: fetchTicketsForShow(showId).then(ts => {if (gone) return; const server = ts.filter(t => t.status === 'checked_in').length; setCheckedIn(n => Math.max(n, server));}).catch(() => {}). Math.max functional update is load-bearing: a scan accepted mid-fetch counts in both, and a stale fetch must never lower a number the artist just watched rise. Without showId, relabel to CHECKED IN THIS SESSION.",
+     "files": [
+      "C:/dev/s333xhub/src/app/scan.tsx"
+     ]
+    },
+    {
+     "change": "A failed Shows load stops masquerading as no-shows",
+     "exact": "loadFailed state set in load()'s catch, cleared after successful setUpcoming/setPast (keep setError for the refresh-while-populated red line). Empty branch: when loadFailed, EmptyState icon 'cloud-offline-outline' title \"Couldn't load shows\" (Couldn&apos;t in JSX) sub 'Check your connection.' with cta='RETRY' via the pass-2 EmptyState extension (scan.tsx cta pill styles, marginTop 18, hitSlop 8); retry does tapFeedback(); setLoading(true); load() so the three ShowRowSkeletons replay. Suppress the floating red line while this state is on screen.",
+     "files": [
+      "C:/dev/s333xhub/src/app/(tabs)/shows.tsx",
+      "C:/dev/s333xhub/src/components/empty-state.tsx"
+     ]
+    },
+    {
+     "change": "Pressed states across the shows area and a real SCAN chip target",
+     "exact": "Text-on-dark controls (pastToggle, show-new chips/back, scan header buttons, the show row - disabled for fans so it never dims for them): style function with pressed opacity 0.6. White pills (BUY TICKET / TICKETS / YOUR TICKET, + button, scan CTA, MY TICKETS cards): ScalePressable from pass 1 (0.97 in 90ms, back in 130ms - the post-card heart-pop pair). Keep pillBusy as the disabled look. scanChip: paddingVertical 3 -> 6, hitSlop 6 -> 12 (~44pt; nested pressables win the touch so the slop is safe). tapFeedback() at the top of handleEdit to match handleTickets/handleScan.",
+     "files": [
+      "C:/dev/s333xhub/src/app/(tabs)/shows.tsx",
+      "C:/dev/s333xhub/src/components/fan-tickets.tsx",
+      "C:/dev/s333xhub/src/app/scan.tsx",
+      "C:/dev/s333xhub/src/app/show-new.tsx"
+     ]
+    },
+    {
+     "change": "Show form: full haptic wiring and validation that waits for blur",
+     "exact": "Haptics: tapFeedback() first line of every chip onPress (timezone 586 + OTHER 595, sales mode 627, status 698) and the delete-reveal; pressFeedback() AFTER the guards in handleSubmit and handleDelete; successFeedback() after each await create/update/deleteShow before goBack(); errorFeedback() in both catches; Cancel pressables stay silent (dismissals do not buzz). Validation: blurred flags per field ('date'|'time'|'price'|'capacity'|'zone'|'ticket'); set UNCONDITIONALLY at the top of tidyDate/tidyTime (before the parse-fail early return - that is exactly the case needing the hint); onBlur setters on price, capacity, custom-zone, ticket-link inputs; gate every red hint on its flag including the 'N already sold' capacity branch and the ticketOk URL hint ('htt' mid-word currently reads red). Once blurred, live re-validation is free. No flags pre-set in edit mode. PAST section (shows.tsx): rows entering={FadeInDown.duration(160).delay(Math.min(i*25, 150))}; chevron becomes one 'chevron-down' glyph in an Animated.View rotating `${withTiming(pastOpen ? 180 : 0, {duration: 180})}deg` via a shared value.",
+     "files": [
+      "C:/dev/s333xhub/src/app/show-new.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shows.tsx"
+     ]
+    },
+    {
+     "change": "Drop detail: skeleton load, live auto-refresh, picker haptics, keyboard fix",
+     "exact": "Replace the bare-spinner early return: keep SafeAreaView, render AppBackground + header row (back chevron + 'DROP' placeholder) in BOTH branches so back is instantly tappable and the photo background never flashes black. DropSkeleton in body padding 14: art block {aspectRatio: 1/1.02, borderRadius 16, overflow hidden} wrapping a full-bleed Skeleton (or style={{height: undefined, aspectRatio: 1/1.02}} - style applies last), 30%-wide h10 kicker at marginTop 12, 40%-wide h28 price at marginTop 8, flexWrap row (gap 7, marginTop 22) of eight 46x38 radius-10 chips. Not-found: EmptyState icon 'bag-outline' title 'This drop is gone' sub 'It may have been taken down.'. RefreshControl on the ScrollView with onRefresh={async () => {setRefreshing(true); try {await load();} finally {setRefreshing(false);}}} (load() never manages a refreshing flag itself). While dropStatus(drop) === 'live', re-run load() on a 12s interval started in useFocusEffect and cleared in its cleanup - plain server reads, no webhook conflict. Number chips: selectFeedback() (the helper's 'picking from a set' generator) before setPickedNumber. keyboardShouldPersistTaps=\"handled\" on the ScrollView (fixes the eaten first SHIP tap). Confirm rows: entering={FadeInDown.duration(160)}, no exiting on inline swaps; flash notice gets entering FadeIn / exiting FadeOut since it is absolutely positioned.",
+     "files": [
+      "C:/dev/s333xhub/src/app/drop/[id].tsx"
+     ]
+    },
+    {
+     "change": "Shop: pull-to-refresh, honest failure state, pressed cards",
+     "exact": "RefreshControl (tintColor '#fff') on the ScrollView, handler managing its own refreshing flag around load(). When the list is empty AND error is set: error EmptyState (icon 'cloud-offline-outline', title \"Couldn't load\", sub 'Check your connection.') plus the retry pill calling setLoading(true) then load(); never render 'Nothing on the shelf yet' while error is set; suppress the floating red line in that case. Drop cards get ScalePressable.",
+     "files": [
+      "C:/dev/s333xhub/src/app/(tabs)/shop.tsx"
+     ]
+    },
+    {
+     "change": "Top 8 and Reports: busy states, guards, and honest vs optimistic split",
+     "exact": "Both files: const [busyId, setBusyId] = useState<string | null>(null) (top8 clear() uses `slot-N`); guard `if (busyId) return;` at the top of every handler; busyId set in a finally-cleared try; pending control swaps its label for <ActivityIndicator size=\"small\" color=\"#8f99a3\"/> and disables (openArtistDm pattern). top8: keyboardShouldPersistTaps=\"handled\" on the ScrollView (autoFocus search eats the first result tap); assign() keeps the picker open with spinner on the tapped row and all rows disabled, closes + reloads + success haptic on resolve; clear() swaps the close-circle icon for the spinner. reports: handleResolve goes optimistic with restore-on-failure and a reanimated FadeOut/LinearTransition row exit; handleDeleteContent and handleBan stay honest-pending (destructive moderation - spinner in the tapped chip, card chips disabled); on ban success patch the one row locally (setRows map on target_id -> targetBannedAt) instead of re-running the serial three-phase load(); loading state swaps the spinner for two or three card-shaped Skeleton ghosts.",
+     "files": [
+      "C:/dev/s333xhub/src/app/top8.tsx",
+      "C:/dev/s333xhub/src/app/reports.tsx"
+     ]
+    }
+   ]
+  },
+  {
+   "order": 4,
+   "name": "Compose, fan mail, auth, and account",
+   "rationale": "The creation and identity surfaces: uploads that currently freeze the JS thread behind a bare spinner, drafts that die on a swipe, a GIF grid that blanks on every keystroke, auth screens with raw API error strings and dead-feeling buttons, and settings/account screens that lie on failure. Both upload findings merge into ONE signed-URL streaming helper (posts.ts) consumed by compose and fan mail - this is the only structural build in the pass and it deletes the base64 freeze for good. Conflict resolutions: compose lock toggle becomes core RN Switch (exact settings.tsx sibling parity) instead of the custom translateX knob; fan mail keyboard avoidance is automaticallyAdjustKeyboardInsets + keyboardShouldPersistTaps (iOS-only app; avoids stacking a KeyboardAvoidingView on top of insets), with the scrollToEnd-on-focus idea dropped because past submissions render below the card. The return-to-feed item touches feed.tsx only inside refreshIfNeeded and posts.ts only in markFeedStale/createPost - additive, no collision with pass 1's feed edits.",
+   "items": [
+    {
+     "change": "One signed-URL streaming upload helper with real progress; kills the base64 JS-thread freeze (merged from 2 findings)",
+     "exact": "posts.ts: uploadWithProgress(path, uri | Blob, contentType, onBytes): native path calls supabase.storage.from(bucket).createSignedUploadUrl(path) then createUploadTask from 'expo-file-system/legacy' (the entry posts.ts:192 already imports - NOT the package root, whose SDK 57 default is the new File API without createUploadTask) with {httpMethod: 'PUT', uploadType: FileSystemUploadType.BINARY_CONTENT, headers: {'content-type': mimeType}}, progress callback totalBytesSent/totalBytesExpectedToSend, .uploadAsync(); treat status outside 200-299 as thrown. PUT to the signed URL is exactly what storage-js uploadToSignedUrl does (token in the query string). Web keeps the Blob upload path, reported as one completed step. createPost threads onProgress(bytesSent, totalBytes, fileIndex, fileCount) - totals via FileSystem.getInfoAsync per uri (Blob .size on web), uploads stay sequential, images route through their previewUri so they get byte progress too and base64 leaves the pipeline. fanmail.ts submitFanMail: branch on item.uri && !item.file, use the same helper against the 'fan-mail' bucket with FileSystemSessionType.BACKGROUND (survives app switches); non-2xx throws so the existing insert-failure rollback still runs; add onProgress?: (fraction) => void.",
+     "files": [
+      "C:/dev/s333xhub/src/lib/posts.ts",
+      "C:/dev/s333xhub/src/lib/fanmail.ts"
+     ]
+    },
+    {
+     "change": "Compose shows real upload progress for every media type",
+     "exact": "Replace uploadingNote with a full-width 3px reanimated bar directly under the top bar for ALL media posts, images included: shared value, useAnimatedStyle width, withTiming(progress, {duration: 200}); caption 'Uploading 2 of 4 · 61%' (plain text, no em-dash). successFeedback() when createPost resolves, before leaving. errorFeedback() in the catch.",
+     "files": [
+      "C:/dev/s333xhub/src/app/compose.tsx"
+     ]
+    },
+    {
+     "change": "Fan mail send: live percent, cancellable, and a real success moment",
+     "exact": "handleSubmit passes onProgress driving progress.value = withTiming(fraction, {duration: 200}); while sending, a 3px absolute-bottom bar inside the send button (#0b0c0e on the white button) and 'Sending 43%' with fontVariant ['tabular-nums'] from a state mirror of the fraction; at fraction 1 with the insert pending, 'Delivering...'. Keep the X enabled during send, cancelling via uploadTask.cancelAsync() - a fan on cell data is never trapped. pressFeedback() after the guard, successFeedback() right after submitFanMail resolves (direct submit, not webhook-gated, so the buzz is honest), errorFeedback() in the catch. Success motion: notice becomes an Animated.View pill at insets.top + 48 with entering={FadeInDown.duration(280)} exiting={FadeOut.duration(200)}; cooldown row / draftRow / pickRow each get entering FadeIn(220) exiting FadeOut(150) (wrap the !nextAt Fragment in an Animated.View or exiting cannot attach); the card and the YOUR SUBMISSIONS wrapper get layout={LinearTransition.duration(250)} so the height collapse glides; each submission card entering FadeInDown(280).",
+     "files": [
+      "C:/dev/s333xhub/src/app/(tabs)/fanmail.tsx"
+     ]
+    },
+    {
+     "change": "Compose drafts cannot be silently destroyed, even mid-upload",
+     "exact": "dirty = body.trim().length > 0 || images.length > 0 || !!audio || !!video || pollMode. import { usePreventRemove } from 'expo-router/build/react-navigation/core' (vendored path - expo-router does not export it publicly and @react-navigation/native is not installed; leave a one-line comment so an SDK bump revisits). usePreventRemove((dirty || posting) && !leavingRef.current, ({data}) => {pendingAction.current = data.action; setConfirmDiscard(true);}) - catches Cancel's back, iOS swipe-down (via preventNativeDismiss, so the modal physically cannot be flicked away mid-upload), and Android back. Confirm pill styled like channel's floating bar (insets.top + 58), entering FadeInDown(180), warning haptic on appear: while posting, 'Still uploading. Keep this screen open.' with a single OK (never offer Discard mid-upload); otherwise 'Discard this post?' with Discard -> navigation.dispatch(pendingAction.current) and Keep -> dismiss. On success set leavingRef.current = true immediately before goToFeed() (setPosting(false) alone is not enough - state updates batch).",
+     "files": [
+      "C:/dev/s333xhub/src/app/compose.tsx"
+     ]
+    },
+    {
+     "change": "Compose controls: real Switch, animated price row, haptics, hit targets, keyboard",
+     "exact": "Replace the hand-rolled lockToggle/lockKnob with core RN Switch (settings.tsx:257 parity): trackColor {false: '#333', true: '#c3cdd6'}, thumbColor locked ? '#0b0c0e' : '#888', whole lockRow stays Pressable. priceRow becomes Animated.View entering={FadeInDown.duration(180)} exiting={FadeOut.duration(120)}; optionally layout={LinearTransition.duration(180)} on the conditional uploadingNote below if the shift snaps. Haptics: tapFeedback() on project chips, poll toggle, poll duration chips, lock toggle, price chips; pressFeedback() at the top of handlePost after the guard. Price chips: hitSlop={6} (33pt + 12 ≈ 45pt, no visual change). Keyboard: automaticallyAdjustKeyboardInsets on the ScrollView so poll Option 3/4 and duration chips are never typed at blind (persistTaps already present).",
+     "files": [
+      "C:/dev/s333xhub/src/app/compose.tsx"
+     ]
+    },
+    {
+     "change": "After posting, the feed opens at the top with the new post already in place",
+     "exact": "posts.ts: markFeedStale(opts?: {scrollToTop?: boolean; post?: Post}) storing the payload beside the boolean; consumeFeedStale() returns and clears it; existing callers pass nothing and keep today's behavior. createPost returns fetchPostById(post.id) after the media loop (never the insert-time row - post_media and cover_path land later). compose handlePost: const post = await createPost(...); successFeedback(); markFeedStale({scrollToTop: true, post}); goToFeed(). feed.tsx refreshIfNeeded: on payload, scrollToOffset({offset: 0, animated: true}) when scrollToTop; prepend setPosts(prev => [post, ...prev.filter(p => p.id !== post.id)]) + resolveMedia([post], purchasedIds), then loadFresh() as today (setPosts(fresh) dedupes by id). PostCard's existing FadeInDown mount animates the arrival free.",
+     "files": [
+      "C:/dev/s333xhub/src/lib/posts.ts",
+      "C:/dev/s333xhub/src/app/compose.tsx",
+      "C:/dev/s333xhub/src/components/feed.tsx"
+     ]
+    },
+    {
+     "change": "Fan mail loading honesty: pull-to-refresh, split error states, and no lying send form",
+     "exact": "RefreshControl matching chat.tsx:259-267 (tintColor '#fff', handler manages its own refreshing flag around load()). Split error: keep `error` for transient picker/submit failures (floating red line, give it the notice's 3s auto-clear) and add loadError set only in load()'s catch, cleared at load() top - required so the retry screen never swallows the form mid-composition. When loadError && !loading: instead of the form card render EmptyState icon 'mail-open-outline' title \"Can't load fan mail\" sub 'Check your connection and try again.' plus a centered 'Try again' pill using the already-defined-unused styles.openPill/openPillText, tap haptic, pressed opacity 0.7, onPress setLoading(true) then load() so the ChatRowSkeleton shows. Hiding the form here also fixes the honesty bug: today a cooldown fan on a failed load sees the send form and uploads a whole media file before bouncing off the weekly RLS rule. Keyboard: keyboardShouldPersistTaps=\"handled\" + automaticallyAdjustKeyboardInsets on the fan-branch ScrollView (first tap on Send lands; the multiline note grows and the button stays reachable). Error state stays inside the FadeMask/ScrollView so pull-to-refresh works from it.",
+     "files": [
+      "C:/dev/s333xhub/src/app/(tabs)/fanmail.tsx"
+     ]
+    },
+    {
+     "change": "Attach buttons acknowledge the press and stay honest while the picker opens",
+     "exact": "All three buttons: style function with attachPressed {opacity: 0.6, transform: [{scale: 0.97}]} (same on compact); tapFeedback() first line of each pick(); const [picking, setPicking] with try/finally reset so cancel/error always clears it; disabled={disabled || picking} so a second tap cannot launch a concurrent picker; while picking swap the 20px Ionicons for <ActivityIndicator size=\"small\"/> (color '#fff', '#6c7078' compact) - size \"small\", NEVER numeric (numeric is Android-only; \"small\" is 20px on iOS, exact icon footprint, no layout shift). Apply to video and audio buttons too - the 0.5-1s sheet-presentation dead time is shared, and DocumentPicker's copyToCacheDirectory adds a beat.",
+     "files": [
+      "C:/dev/s333xhub/src/components/media-pickers.tsx"
+     ]
+    },
+    {
+     "change": "GIF picker: iMessage-grade search feel",
+     "exact": "Move setLoading(true) inside the 400ms debounce setTimeout (keep setError(null) synchronous). Replace the hard `loading ? spinner : grid` ternary with an always-mounted FlatList in an Animated.View dimming to withTiming(loading && results.length > 0 ? 0.5 : 1, {duration: 150}) - old results stay tappable. Centered ActivityIndicator only when loading && results.length === 0, absolutely overlaid. ListEmptyComponent gated on !loading so 'Nothing found.' never renders under the spinner. Cells: entering={FadeIn.duration(180)} (accepting the virtualization replay at that duration) and tapFeedback() on cell press. keyboardShouldPersistTaps=\"handled\" + keyboardDismissMode=\"on-drag\" on the FlatList (autoFocus keyboard covers half the 3-column grid: tap picks, drag dismisses).",
+     "files": [
+      "C:/dev/s333xhub/src/components/gif-picker.tsx"
+     ]
+    },
+    {
+     "change": "Auth: buttons that tell the truth, human error copy, haptics, motion, and keyboard flow",
+     "exact": "sign-in: canSubmit = !submitting && email.trim() && password.trim(); style AND disabled both keyed on it (today the button looks live while swallowing taps); delete the unconditional setSubmitting(false) - call it only in the if (signInError) branch so the spinner holds until the Protected stack swap; open handleSignIn with if (submitting) return. sign-up: same - move setSubmitting(false) inside if (signUpError) only. New src/lib/auth-errors.ts: authErrorCopy(error) matching error.code first then message substrings: invalid_credentials -> \"That email and password don't match. Check them and try again, or reset your password.\"; user_already_exists -> \"There is already an account with this email. Try signing in instead.\"; rate limits -> \"Too many tries. Wait a minute and try again.\"; weak_password -> \"Your password needs at least 8 characters.\"; email_not_confirmed -> \"Confirm your email first. Check your inbox.\" (also fixes the existing em-dash; keep the unconfirmedEmail check so ResendConfirmation still appears); network -> \"Could not reach the server. Check your connection and try again.\"; fallback -> \"Something went wrong. Try again in a moment.\" All three screens: setError(authErrorCopy(x)) + errorFeedback() on the same line. forgot-password sent branch: cooldown state (30s one-second tick), notice 'Sent again ✓' green #4fc07a 13px + successFeedback() on resend success, error rendered IN the sent branch (today a failed resend is invisible), Pressable disabled while submitting or cooldown > 0, label `Send the email again (${cooldown}s)`, hitSlop 8; resend calls resetPasswordForEmail with RESET_PAGE_URL, never the signup resend. Touch/motion: submit Pressables get pressed {scale: 0.97, opacity: 0.9}; terms/resend/back rows pressed opacity 0.6; footer links become <Link asChild><Pressable style function>; pressFeedback() first line of each handler, tapFeedback() on the checkbox; error as <Animated.Text entering={FadeInDown.duration(180)} exiting={FadeOut.duration(120)}> with layout={LinearTransition.duration(180)} on the DISPLACED siblings (AnimatedPressable submit button, Animated.View footer rows); ResendConfirmation mount and the sent-state swap get the same entering/exiting wrappers. Keyboard: Keyboard.dismiss() first line of each submit handler; return-key chains - sign-in email next->password, password go with the same guard as the button; sign-up name->email->password, password go GUARDED on canSubmit else Keyboard.dismiss() (never call handleSignUp unguarded - it has no terms check); forgot-password returnKeyType 'send'; textContentType username/password/newPassword/name/emailAddress for QuickType autofill.",
+     "files": [
+      "C:/dev/s333xhub/src/app/(auth)/sign-in.tsx",
+      "C:/dev/s333xhub/src/app/(auth)/sign-up.tsx",
+      "C:/dev/s333xhub/src/app/(auth)/forgot-password.tsx",
+      "C:/dev/s333xhub/src/lib/auth-errors.ts"
+     ]
+    },
+    {
+     "change": "Settings: restore purchases actually restores the feed, and mount fetches stop lying",
+     "exact": "Restore: call markFeedStale() unconditionally right after restorePurchases() resolves (feed's useFocusEffect consumes it and refetches purchasedIds - fixes 'All set' over a still-locked feed); successFeedback() when count > 0, silent at 0, errorFeedback() in the catch; while restoring swap the refresh Ionicon for <ActivityIndicator size=\"small\" color=\"#8f99a3\"/>; flashRestore(text) helper auto-clearing the notice at 3s with the timeout id in a ref cleared on re-press; copy `All set. ${count} unlock${count === 1 ? '' : 's'} on this account.` (no em-dash). Mount fetches: replace the useEffect with load() in useFocusEffect (self-heals on return) keeping the prefsDirty guard so a refetch never undoes a just-flipped switch; per-section failed flags {blocked, prefs, pieces}; BLOCKED USERS renders a pressable \"Couldn't load. Tap to retry.\" line (hitSlop 8, light haptic) instead of the false \"You haven't blocked anyone.\"; NOTIFICATIONS renders the retry line IN PLACE of the four switches (DEFAULT_PREFS switches must not be tappable - setNotificationPref upserts the whole row and would overwrite real opt-outs); MY PIECES keeps its section label with the retry line instead of vanishing. Unblock goes optimistic (remove row immediately, selectFeedback(), restore + setError on failure); errorFeedback() in the unblock/delete-account catches; the bare onPress={signOut} at line 368 gets the same signingOut pending treatment as account-suspended.",
+     "files": [
+      "C:/dev/s333xhub/src/app/settings.tsx"
+     ]
+    },
+    {
+     "change": "Suspended screen arrives deliberately and its Sign out works honestly",
+     "exact": "Wrap content in <Animated.View entering={FadeIn.duration(300)}> (mounts fresh when the guard flips, so it fires). signingOut state: if (signingOut) return; pressFeedback(); setSigningOut(true); try {await signOut();} catch {errorFeedback(); setSigningOut(false);} - the catch is load-bearing: offline signOut can reject, and without the reset this trades a dead wait for an infinite spinner. Pressable: disabled={signingOut}, pressed/signingOut opacity 0.85, <ActivityIndicator color=\"#0b0c0e\"/> replacing the label. Support email: import SUPPORT_EMAIL from '@/lib/legal-content', nested underlined Text with Linking.openURL(`mailto:${SUPPORT_EMAIL}`).",
+     "files": [
+      "C:/dev/s333xhub/src/components/account-suspended.tsx"
+     ]
+    },
+    {
+     "change": "Profile card never silently closes itself",
+     "exact": "Track status 'loading'|'error'|'gone'|'ready' instead of inferring from profile === null; destructure error from the profiles query; keep lastUserId in a ref. Loading: replace the bare spinner with a mini skeleton (Skeleton 84x84 r42 avatar; 150x16 name at marginTop 16; 90x10 tag at 8; 130x10 member-since at 14). Network error: card stays open with \"Couldn't load this profile.\" / 'Check your connection.' and a 'Try again' text button (hitSlop 12, tapFeedback) re-running showProfile(lastUserId.current). Truly-missing row (!p, no error): \"This profile is gone.\", no retry, backdrop dismisses. Never call setOpen(false) from the fetch path.",
+     "files": [
+      "C:/dev/s333xhub/src/components/profile-card.tsx"
+     ]
+    }
+   ]
+  }
+ ]
+}
