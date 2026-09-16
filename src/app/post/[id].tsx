@@ -26,14 +26,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppBackground } from '@/components/app-background';
 import { Avatar } from '@/components/avatar';
 import { EdgeGlass, FadeMask } from '@/components/edge-fade';
-import { EmptyState } from '@/components/empty-state';
+import { ErrorCard } from '@/components/empty-state';
 import { useProfileCard } from '@/components/profile-card';
 import { CommentSkeleton, Skeleton } from '@/components/skeleton';
-import { DISPLAY_FONT } from '@/constants/type';
+import { REPORT_FAILED, REPORT_SENT } from '@/constants/copy';
+import { DISPLAY_FONT, eyebrow, sectionHead } from '@/constants/type';
 import { errorFeedback, pressFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import { fileReport, REPORT_REASONS } from '@/lib/moderation';
 import { fetchPostById, timeAgo, type Post, type Project } from '@/lib/posts';
 import { cleanMessage } from '@/lib/profanity';
+import { displayName } from '@/lib/profiles';
 import {
   addComment,
   COMMENT_PAGE_SIZE,
@@ -66,8 +68,8 @@ const STAGE_TINT: Record<Project, { fill: string; line: string }> = {
 const SILVER = '#c3cdd6';
 /** The floating header's height below the status bar. */
 const HEADER_HEIGHT = 52;
-/** The load-failure pill copy — matched on success so only IT clears. */
-const LOAD_FAILED_COPY = "Comments didn't load.";
+/** The load-failure pill copy, matched on success so only IT clears. */
+const LOAD_FAILED_COPY = 'Could not load comments.';
 
 /**
  * A rendered thread row: a server comment, or my own send still on its
@@ -185,6 +187,7 @@ export default function CommentsScreen() {
       if (err?.code === '22P02' || /invalid input syntax for type uuid/i.test(err?.message ?? '')) {
         setPostGone(true);
       } else {
+        console.warn('[comments] post fetch failed', e);
         setError('Could not load this post.');
       }
     } finally {
@@ -427,7 +430,7 @@ export default function CommentsScreen() {
         setComments((prev) => prev.filter((c) => c.id !== tempId));
         setCommentCount((count) => (count === null ? count : Math.max(0, count - 1)));
         errorFeedback();
-        setError('Comment failed to post.');
+        setError('Could not post the comment.');
         // Give the words back — unless they already started typing again.
         setDraft((d) => (d.trim() ? d : body));
       })
@@ -457,7 +460,7 @@ export default function CommentsScreen() {
     flash(next ? 'Pinned to the top.' : 'Unpinned.');
     setPinned(target, next).catch(async () => {
       errorFeedback();
-      setError('Could not pin.');
+      setError(next ? 'Could not pin the comment.' : 'Could not unpin the comment.');
       // Resync rather than snapshot-revert — a concurrent send would be
       // dropped by a snapshot.
       await load();
@@ -480,7 +483,7 @@ export default function CommentsScreen() {
       );
       setCommentCount((count) => (count === null ? count : count + 1));
       errorFeedback();
-      setError('Could not delete.');
+      setError('Could not delete the comment.');
     });
   }
 
@@ -491,10 +494,11 @@ export default function CommentsScreen() {
     try {
       await fileReport('comment', target.id, reason);
       successFeedback();
-      flash('Reported. Reviewed within 24 hours.');
-    } catch {
+      flash(REPORT_SENT);
+    } catch (e) {
+      console.warn('[comments] report failed', e);
       errorFeedback();
-      setError('Could not report.');
+      setError(REPORT_FAILED);
     }
   }
 
@@ -560,7 +564,7 @@ export default function CommentsScreen() {
     const mine = item.user_id === myUserId;
     const isArtistComment = item.author?.role === 'artist';
     const held = actionTarget?.id === item.id;
-    const name = item.author?.display_name ?? 'Deleted user';
+    const name = displayName(item.author);
     const when = timeAgo(item.created_at);
     // Entrances belong to genuinely new rows only: my own pending sends
     // and live arrivals — never a page load, a refetch, or a scroll-back.
@@ -660,33 +664,24 @@ export default function CommentsScreen() {
             ))}
           </View>
         ) : postGone ? (
-          <View style={styles.goneWrap}>
-            <EmptyState
-              icon="eye-off-outline"
-              title="This post is gone"
-              sub="It may have been taken down. The feed has the latest."
-            />
+          <View style={[styles.gone, { paddingTop: listTop }]}>
+            <Text style={styles.goneTitle}>THIS POST IS GONE</Text>
           </View>
         ) : !post ? (
-          <View style={styles.goneWrap}>
-            <EmptyState
-              icon="cloud-offline-outline"
-              title="Couldn't load this post"
-              sub="Check your connection and try again."
-              action={{
-                label: 'Try again',
-                onPress: () => {
-                  tapFeedback();
-                  setError(null);
-                  setPostLoading(true);
-                  loadPost();
-                  if (loadFailed) {
-                    // The comments fetch failed too — retry both at once.
-                    setLoadFailed(false);
-                    setLoading(true);
-                    load();
-                  }
-                },
+          <View style={[styles.gone, { paddingTop: listTop }]}>
+            <ErrorCard
+              title="COULDN'T LOAD THIS POST"
+              onRetry={() => {
+                tapFeedback();
+                setError(null);
+                setPostLoading(true);
+                loadPost();
+                if (loadFailed) {
+                  // The comments fetch failed too; retry both at once.
+                  setLoadFailed(false);
+                  setLoading(true);
+                  load();
+                }
               }}
             />
           </View>
@@ -725,26 +720,12 @@ export default function CommentsScreen() {
               }
               ListEmptyComponent={
                 loadFailed ? (
-                  <Animated.View
-                    style={styles.failedCard}
-                    entering={reduceMotion ? undefined : FadeInDown.duration(220)}>
-                    <Text style={styles.emptyTitle}>{"COMMENTS DIDN'T LOAD"}</Text>
-                    <Text style={styles.emptySub}>Check your connection.</Text>
-                    <Pressable
-                      style={({ pressed }) => [styles.retryPill, pressed && styles.retryPillPressed]}
-                      hitSlop={8}
-                      onPress={retryLoad}>
-                      <Text style={styles.retryPillText}>Try again</Text>
-                    </Pressable>
-                  </Animated.View>
+                  <ErrorCard title="COULDN'T LOAD COMMENTS" onRetry={retryLoad} />
                 ) : (
                   // Only a fetch that genuinely succeeded empty says so.
                   <View style={styles.empty}>
                     <Image source={emblem} style={styles.emptyEmblem} contentFit="contain" />
-                    <View style={styles.emptyText}>
-                      <Text style={styles.emptyTitle}>NO COMMENTS YET</Text>
-                      <Text style={styles.emptySub}>Be the first to say something.</Text>
-                    </View>
+                    <Text style={styles.emptyTitle}>NO COMMENTS</Text>
                   </View>
                 )
               }
@@ -775,7 +756,7 @@ export default function CommentsScreen() {
           <View style={styles.titleBlock} pointerEvents="none">
             <Text style={styles.title}>COMMENTS</Text>
             <Text style={styles.subtitle} numberOfLines={1}>
-              {postLoading ? '' : (post?.title ?? 'Post')}
+              {postLoading || !post ? '' : displayName(post.author)}
             </Text>
           </View>
           <View style={styles.backButton} />
@@ -875,7 +856,8 @@ const styles = StyleSheet.create({
   skeletons: { paddingHorizontal: 14 },
   skeletonLabel: { marginBottom: 14 },
   skeletonRow: { marginBottom: 10 },
-  goneWrap: { flex: 1, justifyContent: 'center' },
+  gone: { paddingHorizontal: 14 },
+  goneTitle: { ...sectionHead, paddingVertical: 8 },
 
   // ---- thread ----
   list: { paddingHorizontal: 14, flexGrow: 1 },
@@ -887,13 +869,7 @@ const styles = StyleSheet.create({
     paddingTop: 2,
     paddingBottom: 10,
   },
-  threadLabelText: {
-    color: '#fff',
-    fontFamily: DISPLAY_FONT,
-    fontSize: 13,
-    lineHeight: 16,
-    letterSpacing: 2,
-  },
+  threadLabelText: { ...sectionHead, lineHeight: 19 },
   threadCount: {
     color: '#55585f',
     fontSize: 11.5,
@@ -922,12 +898,11 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     flexShrink: 1,
   },
+  // The sans eyebrow (Anton never goes below 12px), ruled off from the name.
   pinned: {
-    color: SILVER,
-    fontFamily: DISPLAY_FONT,
+    ...eyebrow,
     fontSize: 10,
     lineHeight: 13,
-    letterSpacing: 2,
     paddingLeft: 8,
     borderLeftWidth: 1,
     borderLeftColor: 'rgba(195, 205, 214, 0.35)',
@@ -1029,7 +1004,10 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '45deg' }],
   },
 
-  // ---- empty + failed ----
+  // ---- empty ----
+  // The reference empty: the project emblem, left-aligned, inside the
+  // list card. Solid fill on purpose, a read surface over fan photo
+  // backgrounds. The failed card is the shared ErrorCard.
   empty: {
     backgroundColor: '#131519',
     borderRadius: 14,
@@ -1040,37 +1018,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   emptyEmblem: { width: 26, height: 26, opacity: 0.45 },
-  emptyText: { flex: 1 },
-  emptyTitle: {
-    color: '#e8e9eb',
-    fontFamily: DISPLAY_FONT,
-    fontSize: 13,
-    lineHeight: 16,
-    letterSpacing: 1.6,
-  },
-  emptySub: { color: '#6d7076', fontSize: 12.5, marginTop: 2 },
-  // Solid fill on purpose — this file's documented decision for read
-  // surfaces over fan photo backgrounds.
-  failedCard: {
-    backgroundColor: '#131519',
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 13,
-  },
-  retryPill: {
-    alignSelf: 'flex-start',
-    marginTop: 12,
-    minHeight: 44,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#2a2e34',
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  retryPillPressed: { opacity: 0.7 },
-  retryPillText: { color: '#e8e9eb', fontSize: 13, fontWeight: '600' },
+  emptyTitle: { ...sectionHead, lineHeight: 19, flex: 1 },
 
   // ---- composer: a pill floating over the bottom fade ----
   composerWrap: { position: 'absolute', left: 16, right: 16, zIndex: 20 },

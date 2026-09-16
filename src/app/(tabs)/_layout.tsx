@@ -257,11 +257,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 10 },
     elevation: 14,
   },
+  // The chip convention (shows.tsx, fan-tickets.tsx): 9/800/1.
   circleLabel: {
     color: '#8d97a0',
-    fontSize: 6.5,
-    fontWeight: '700',
-    letterSpacing: 0.8,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
   circleLabelOn: { color: '#ffffff' },
 });

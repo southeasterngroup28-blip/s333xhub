@@ -1,5 +1,7 @@
 import { Linking } from 'react-native';
 
+import { MONTHS } from '@/lib/dates';
+import { FanError } from '@/lib/fan-error';
 import { markFeedStale } from '@/lib/posts';
 import { supabase, requireUserId } from '@/lib/supabase';
 
@@ -121,7 +123,7 @@ export function statusLabel(show: Show): string {
 }
 
 /**
- * Supabase errors carry raw Postgres text - fans never see that. A
+ * Supabase errors carry raw Postgres text. Fans never see that. A
  * write the database refused (RLS) means a non-artist tried to manage
  * shows; a foreign-key refusal means sold tickets are pinning the show
  * (tickets.show_id is `on delete restrict`); everything else gets the
@@ -130,14 +132,14 @@ export function statusLabel(show: Show): string {
 function friendly(error: { message?: string; code?: string } | null, copy: string): Error {
   const text = error?.message ?? '';
   if (error?.code === '42501' || text.includes('row-level security')) {
-    return new Error('Only the artist can manage shows.');
+    return new FanError('Only the artist can manage shows.');
   }
   if (error?.code === '23503') {
-    return new Error(
-      'Fans already bought tickets for this show — mark it cancelled instead of deleting it.'
+    return new FanError(
+      'Fans already bought tickets for this show. Mark it cancelled instead of deleting it.'
     );
   }
-  return new Error(copy);
+  return new FanError(copy);
 }
 
 function cutoffIso(): string {
@@ -151,7 +153,7 @@ export async function fetchUpcomingShows(): Promise<Show[]> {
     .select(SHOW_COLUMNS)
     .gte('starts_at', cutoffIso())
     .order('starts_at', { ascending: true });
-  if (error) throw friendly(error, 'Could not load shows - check your connection and try again.');
+  if (error) throw friendly(error, 'Could not load shows. Check your connection and try again.');
   return (data as unknown as Show[]) ?? [];
 }
 
@@ -163,7 +165,7 @@ export async function fetchPastShows(limit = 20): Promise<Show[]> {
     .lt('starts_at', cutoffIso())
     .order('starts_at', { ascending: false })
     .limit(limit);
-  if (error) throw friendly(error, 'Could not load past shows - try again in a moment.');
+  if (error) throw friendly(error, 'Could not load past shows. Try again in a moment.');
   return (data as unknown as Show[]) ?? [];
 }
 
@@ -174,7 +176,7 @@ export async function fetchShow(id: string): Promise<Show | null> {
     .select(SHOW_COLUMNS)
     .eq('id', id)
     .maybeSingle();
-  if (error) throw friendly(error, 'Could not load that show - try again in a moment.');
+  if (error) throw friendly(error, 'Could not load that show. Try again in a moment.');
   return (data as unknown as Show) ?? null;
 }
 
@@ -188,7 +190,7 @@ export function normalizeTicketUrl(url: string | null | undefined): string | nul
   const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
   // Web links only: never javascript:, tel:, intent: and friends.
   if (!/^https?:\/\/\S+$/i.test(withScheme)) {
-    throw new Error('Ticket links must start with http:// or https://');
+    throw new FanError('Ticket links must start with http:// or https://');
   }
   return withScheme;
 }
@@ -210,7 +212,7 @@ export async function createShow(input: NewShow): Promise<Show> {
     })
     .select(SHOW_COLUMNS)
     .single();
-  if (error) throw friendly(error, 'Could not save the show - check the details and try again.');
+  if (error) throw friendly(error, 'Could not save the show. Check the details and try again.');
   markFeedStale(); // the feed's Shows card re-reads on focus only when told to
   return data as unknown as Show;
 }
@@ -235,8 +237,8 @@ export async function updateShow(id: string, patch: ShowPatch): Promise<Show> {
     .eq('id', id)
     .select(SHOW_COLUMNS)
     .maybeSingle();
-  if (error) throw friendly(error, 'Could not save your changes - try again in a moment.');
-  if (!data) throw new Error("That show isn't there anymore - it may have been deleted.");
+  if (error) throw friendly(error, 'Could not save your changes. Try again in a moment.');
+  if (!data) throw new FanError("That show isn't there anymore. It may have been deleted.");
   markFeedStale();
   return data as unknown as Show;
 }
@@ -244,24 +246,24 @@ export async function updateShow(id: string, patch: ShowPatch): Promise<Show> {
 export async function deleteShow(id: string): Promise<void> {
   await requireUserId();
   const { error } = await supabase.from('shows').delete().eq('id', id);
-  if (error) throw friendly(error, 'Could not delete the show - try again in a moment.');
+  if (error) throw friendly(error, 'Could not delete the show. Try again in a moment.');
   markFeedStale();
 }
 
-/** Opens the ticket link in the browser. Does nothing when there isn't one yet. */
+/** Opens the ticket link in the browser. Does nothing when there is no link. */
 export async function openTickets(show: Show): Promise<void> {
   let url: string | null;
   try {
     url = normalizeTicketUrl(show.ticket_url);
   } catch {
-    throw new Error("That ticket link isn't a web address.");
+    throw new FanError("That ticket link isn't a web address.");
   }
   if (!url) return;
   try {
     if (!(await Linking.canOpenURL(url))) throw new Error('unsupported');
     await Linking.openURL(url);
   } catch {
-    throw new Error("Couldn't open the ticket link - try again in a moment.");
+    throw new FanError('Could not open the ticket link. Try again in a moment.');
   }
 }
 
@@ -323,28 +325,42 @@ function part(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPart['t
   return parts.find((p) => p.type === type)?.value ?? '';
 }
 
-/**
- * The pieces a poster-style date block wants — { month: 'Sep', day: '14',
- * weekday: 'Sat', time: '8:00 PM', zone: 'EDT' } — in the show's zone.
- * Casing is left to the screen (Anton headings uppercase via style).
- */
-export function showDateParts(show: Show): {
+export type ShowDateParts = {
+  /** Intl's short month ('Sep'): the poster date block only, uppercased there. */
   month: string;
+  /** AP month ('Sept'): every sentence and line of prose. */
+  monthAP: string;
   day: string;
   weekday: string;
   time: string;
   zone: string;
-} {
-  const when = new Date(show.starts_at);
-  const f = formattersFor(show.timezone);
+};
+
+/**
+ * The pieces a date line wants, in a given zone: { month: 'Sep', monthAP:
+ * 'Sept', day: '14', weekday: 'Sat', time: '8:00 PM', zone: 'EDT' }.
+ * Casing is left to the screen (Anton headings uppercase via style).
+ */
+export function datePartsAt(startsAt: string | Date, timeZone: string): ShowDateParts {
+  const when = new Date(startsAt);
+  const f = formattersFor(timeZone);
   const parts = f.display.formatToParts(when);
+  // The month NUMBER in the venue's zone indexes the AP table; the
+  // formatter's own short name stays for the poster block.
+  const monthIndex = parseInt(part(f.ymd.formatToParts(when), 'month'), 10) - 1;
   return {
     month: part(parts, 'month'),
+    monthAP: MONTHS[monthIndex] ?? part(parts, 'month'),
     day: part(parts, 'day'),
     weekday: part(parts, 'weekday'),
     time: f.time.format(when),
     zone: part(parts, 'timeZoneName'),
   };
+}
+
+/** A show's date parts, in the venue's zone. */
+export function showDateParts(show: Show): ShowDateParts {
+  return datePartsAt(show.starts_at, show.timezone);
 }
 
 /** Days since the epoch for the calendar date `ms` falls on in `timeZone`. */

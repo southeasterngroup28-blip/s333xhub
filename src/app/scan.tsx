@@ -15,8 +15,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PushedHeader } from '@/components/pushed-header';
 import { ScalePressable } from '@/components/ui/scale-pressable';
-import { DISPLAY_FONT } from '@/constants/type';
+import { DISPLAY_FONT, capLabel, capLabelAccent, pillText } from '@/constants/type';
+import { fanCopy } from '@/lib/fan-error';
 import { errorFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { fetchShow, showDateParts } from '@/lib/shows';
@@ -25,10 +27,10 @@ import { useAuth } from '@/providers/auth-provider';
 
 // expo-camera looks up its native module the moment the package is
 // imported, so a build made before the scanner was added throws right
-// there — and a route module that throws takes the whole router down with
+// there, and a route module that throws takes the whole router down with
 // it ("Cannot read property 'ErrorBoundary' of undefined"). So the camera
 // is required lazily, inside the screen, and a miss shows a note instead.
-// (Only the type comes in at the top — types are erased, they can't throw.)
+// (Only the type comes in at the top; types are erased, they can't throw.)
 type CameraModule = typeof import('expo-camera');
 let cameraModule: CameraModule | null | undefined;
 
@@ -37,7 +39,7 @@ function loadCamera(): CameraModule | null {
   try {
     cameraModule = require('expo-camera') as CameraModule;
   } catch (e) {
-    console.warn('[scan] expo-camera is missing from this build — scanner disabled.', e);
+    console.warn('[scan] expo-camera is missing from this build; scanner disabled.', e);
     cameraModule = null;
   }
   return cameraModule;
@@ -72,7 +74,7 @@ type Banner = {
   at: number;
 };
 
-/** "9:52 PM" in the phone's zone — the phone is at the door. */
+/** "9:52 PM" in the phone's zone. The phone is at the door. */
 function clockLabel(iso: string | null | undefined): string | null {
   if (!iso) return null;
   const when = new Date(iso);
@@ -105,7 +107,7 @@ function refusedBanner(result: ScanOutcome, at: number): Banner {
       return {
         tone: 'bad',
         title: 'Refunded',
-        detail: [who, result.show_title].filter(Boolean).join(' · ') || 'This ticket was refunded — no entry.',
+        detail: [who, result.show_title].filter(Boolean).join(' · ') || 'Refunded ticket. No entry.',
         at,
       };
     default:
@@ -142,9 +144,8 @@ export default function ScanScreen() {
   if (profile.role !== 'artist') {
     return (
       <ScanNotice
-        icon="lock-closed-outline"
         title="ARTIST ONLY"
-        sub="The door scanner is for checking fans in on show night. Your own tickets live on the Shows tab."
+        sub="Only the artist can check tickets in. Your own tickets live on the Shows tab."
         cta="BACK TO SHOWS"
         onClose={close}
       />
@@ -155,9 +156,8 @@ export default function ScanScreen() {
   if (!camera) {
     return (
       <ScanNotice
-        icon="cloud-download-outline"
         title="UPDATE THE APP"
-        sub="This version of the app doesn't have the camera scanner yet. Update the app to use the scanner at the door."
+        sub="This version of the app doesn't have the camera scanner. Update the app to use it at the door."
         cta="BACK TO SHOWS"
         onClose={close}
       />
@@ -167,34 +167,45 @@ export default function ScanScreen() {
   return <Scanner camera={camera} showId={showId} onClose={close} />;
 }
 
+/** The close X in the header's left wing. */
+function CloseButton({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={12}
+      style={({ pressed }) => [styles.headerButton, pressed && styles.pressedDim]}
+      accessibilityLabel="Close">
+      <Ionicons name="close" size={22} color="#f4f5f6" />
+    </Pressable>
+  );
+}
+
+/** The four corners the scanner draws around its frame, reused on the notices. */
+function Reticle() {
+  return (
+    <View style={styles.reticle} pointerEvents="none">
+      <View style={[styles.corner, styles.cornerTL]} />
+      <View style={[styles.corner, styles.cornerTR]} />
+      <View style={[styles.corner, styles.cornerBL]} />
+      <View style={[styles.corner, styles.cornerBR]} />
+    </View>
+  );
+}
+
 type NoticeProps = {
-  icon: keyof typeof Ionicons.glyphMap;
   title: string;
   sub: string;
   cta: string;
   onClose: () => void;
 };
 
-/** The scanner's frame with one solid card in it — for when there's no camera to show. */
-function ScanNotice({ icon, title, sub, cta, onClose }: NoticeProps) {
+/** The scanner's frame with one solid card in it, for when there's no camera to show. */
+function ScanNotice({ title, sub, cta, onClose }: NoticeProps) {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={onClose}
-          hitSlop={12}
-          style={({ pressed }) => [styles.headerButton, pressed && styles.pressedDim]}>
-          <Ionicons name="close" size={22} color="#f4f5f6" />
-        </Pressable>
-        <View style={styles.headerMiddle}>
-          <Text style={styles.headerTitle}>SCAN TICKETS</Text>
-        </View>
-        <View style={styles.headerSpacer} />
-      </View>
+      <PushedHeader title="SCAN TICKETS" left={<CloseButton onPress={onClose} />} />
       <View style={[styles.permission, styles.noticeCard]}>
-        <View style={styles.iconRing}>
-          <Ionicons name={icon} size={26} color="#8f99a3" />
-        </View>
+        <Reticle />
         <Text style={styles.permissionTitle}>{title}</Text>
         <Text style={styles.permissionSub}>{sub}</Text>
         <ScalePressable
@@ -253,7 +264,7 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
       .then((show) => {
         if (gone || !show) return;
         const date = showDateParts(show);
-        setShowLabel(`${show.title ?? show.venue} · ${date.weekday} ${date.month} ${date.day}`);
+        setShowLabel(`${show.title ?? show.venue} · ${date.weekday}, ${date.monthAP} ${date.day}`);
       })
       .catch(() => {});
     return () => {
@@ -302,7 +313,7 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
     lastSeen.current = { token, at: now };
     if (busy.current) return;
     busy.current = true;
-    // The door hears the catch instantly — never dead air while the server thinks.
+    // The door hears the catch instantly: never dead air while the server thinks.
     tapFeedback();
     setBanner({ tone: 'checking', title: 'Checking', detail: 'Hold on one second.', at: now });
     try {
@@ -327,7 +338,7 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
           title: 'Checked in',
           detail:
             [result.buyer_name, result.show_title].filter(Boolean).join(' · ') ||
-            'Ticket accepted — let them through.',
+            'Ticket accepted.',
           at,
         });
       } else {
@@ -336,11 +347,12 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
       }
     } catch (e) {
       errorFeedback();
+      // A plain verdict up top; the lib's sentence says why (it names a
+      // dead connection itself, so nothing here repeats it).
       setBanner({
         tone: 'bad',
-        title: "Couldn't check that ticket",
-        detail:
-          (e as { message?: string })?.message ?? 'Check your connection and scan it again.',
+        title: 'Not checked',
+        detail: fanCopy(e, 'Could not check that ticket. Try scanning again.'),
         at: Date.now(),
       });
     } finally {
@@ -350,49 +362,41 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={onClose}
-          hitSlop={12}
-          style={({ pressed }) => [styles.headerButton, pressed && styles.pressedDim]}>
-          <Ionicons name="close" size={22} color="#f4f5f6" />
-        </Pressable>
-        <View style={styles.headerMiddle}>
-          <Text style={styles.headerTitle}>SCAN TICKETS</Text>
-          <Text style={styles.headerSub} numberOfLines={1}>
-            {showLabel ?? 'Any upcoming show'}
-          </Text>
-        </View>
-        <Pressable
-          onPress={() => {
-            tapFeedback();
-            setTorch((on) => !on);
-          }}
-          hitSlop={12}
-          disabled={!permission?.granted}
-          style={({ pressed }) => [
-            styles.headerButton,
-            torch && styles.headerButtonOn,
-            pressed && styles.pressedDim,
-          ]}>
-          <Ionicons
-            name={torch ? 'flashlight' : 'flashlight-outline'}
-            size={20}
-            color={torch ? '#0b0c0e' : '#f4f5f6'}
-          />
-        </Pressable>
-      </View>
+      <PushedHeader
+        title="SCAN TICKETS"
+        sub={showLabel ?? 'Any upcoming show'}
+        left={<CloseButton onPress={onClose} />}
+        right={
+          <Pressable
+            onPress={() => {
+              tapFeedback();
+              setTorch((on) => !on);
+            }}
+            hitSlop={12}
+            disabled={!permission?.granted}
+            style={({ pressed }) => [
+              styles.headerButton,
+              torch && styles.headerButtonOn,
+              pressed && styles.pressedDim,
+            ]}
+            accessibilityLabel={torch ? 'Torch off' : 'Torch on'}>
+            <Ionicons
+              name={torch ? 'flashlight' : 'flashlight-outline'}
+              size={20}
+              color={torch ? '#0b0c0e' : '#f4f5f6'}
+            />
+          </Pressable>
+        }
+      />
 
       {!permission ? (
         <View style={styles.camera} />
       ) : !permission.granted ? (
         <View style={styles.permission}>
-          <View style={styles.iconRing}>
-            <Ionicons name="camera-outline" size={26} color="#8f99a3" />
-          </View>
+          <Reticle />
           <Text style={styles.permissionTitle}>CAMERA NEEDED</Text>
           <Text style={styles.permissionSub}>
-            Point the camera at a fan&apos;s ticket and it checks them in — no typing at the door.
+            Point the camera at a fan&apos;s ticket and it checks them in. No typing at the door.
           </Text>
           <ScalePressable
             style={styles.cta}
@@ -407,7 +411,7 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
           </ScalePressable>
           {!permission.canAskAgain ? (
             <Text style={styles.permissionHint}>
-              Camera access is off for S333XHUB — switch it on in Settings and come back.
+              Camera access is off for S333XHUB. Switch it on in Settings and come back.
             </Text>
           ) : null}
         </View>
@@ -427,7 +431,7 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
       )}
 
       {/* The outer shell holds layout (minHeight 92) while keyed inner views
-          crossfade — an exiting snapshot renders out of flow, so the card
+          crossfade: an exiting snapshot renders out of flow, so the card
           never doubles in height mid-swap. */}
       <View style={styles.banner}>
         {banner ? (
@@ -457,7 +461,7 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
             exiting={FadeOut.duration(200)}>
             <Text style={styles.bannerIdleTitle}>READY</Text>
             <Text style={styles.bannerIdle}>
-              Line up the QR code on a fan&apos;s ticket — it checks in on its own.
+              Line up the QR code on a fan&apos;s ticket. It checks in on its own.
             </Text>
           </Animated.View>
         )}
@@ -475,13 +479,6 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
   headerButton: {
     width: 36,
     height: 36,
@@ -491,17 +488,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerButtonOn: { backgroundColor: '#fff' },
-  /** Keeps the title centred when there's no torch button on the right. */
-  headerSpacer: { width: 36 },
-  headerMiddle: { flex: 1, alignItems: 'center' },
-  headerTitle: {
-    color: '#fff',
-    fontSize: 17,
-    lineHeight: 21,
-    fontFamily: DISPLAY_FONT,
-    letterSpacing: 2,
-  },
-  headerSub: { color: '#8f99a3', fontSize: 11.5, marginTop: 2 },
   camera: {
     flex: 1,
     marginHorizontal: 16,
@@ -536,17 +522,18 @@ const styles = StyleSheet.create({
   },
   /** The notice stands alone (no banner or counter under it), so it keeps its own bottom margin. */
   noticeCard: { marginBottom: 16 },
-  iconRing: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#14171b',
-    borderWidth: 1,
-    borderColor: '#23262b',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
+  // The scanner's own reticle, drawn as four corners around the notice's words.
+  reticle: { position: 'absolute', top: 20, left: 20, right: 20, bottom: 20 },
+  corner: {
+    position: 'absolute',
+    width: 22,
+    height: 22,
+    borderColor: '#c3cdd6',
   },
+  cornerTL: { top: 0, left: 0, borderTopWidth: 2, borderLeftWidth: 2, borderTopLeftRadius: 8 },
+  cornerTR: { top: 0, right: 0, borderTopWidth: 2, borderRightWidth: 2, borderTopRightRadius: 8 },
+  cornerBL: { bottom: 0, left: 0, borderBottomWidth: 2, borderLeftWidth: 2, borderBottomLeftRadius: 8 },
+  cornerBR: { bottom: 0, right: 0, borderBottomWidth: 2, borderRightWidth: 2, borderBottomRightRadius: 8 },
   permissionTitle: {
     color: '#e8e9eb',
     fontSize: 18,
@@ -577,7 +564,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     alignItems: 'center',
   },
-  ctaText: { color: '#0b0c0e', fontWeight: '800', fontSize: 13, letterSpacing: 1 },
+  ctaText: pillText,
   banner: {
     marginHorizontal: 16,
     marginTop: 14,
@@ -599,7 +586,7 @@ const styles = StyleSheet.create({
   pressedDim: { opacity: 0.6 },
   bannerTitle: { color: '#fff', fontSize: 24, lineHeight: 30, fontFamily: DISPLAY_FONT, letterSpacing: 1 },
   bannerDetail: { color: '#fff', fontSize: 14, lineHeight: 20, marginTop: 4, fontWeight: '600' },
-  bannerIdleTitle: { color: '#c3cdd6', fontSize: 10.5, fontWeight: '700', letterSpacing: 1.6 },
+  bannerIdleTitle: capLabelAccent,
   bannerIdle: { color: '#8f99a3', fontSize: 13, lineHeight: 19, marginTop: 4 },
   counter: {
     flexDirection: 'row',
@@ -613,6 +600,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     backgroundColor: '#101216',
   },
-  counterLabel: { color: '#6d7076', fontSize: 10.5, fontWeight: '700', letterSpacing: 1.6 },
+  counterLabel: capLabel,
   counterValue: { color: '#fff', fontSize: 28, lineHeight: 34, fontFamily: DISPLAY_FONT },
 });

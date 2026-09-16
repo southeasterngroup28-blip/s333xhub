@@ -103,23 +103,38 @@ set search_path = public
 as $$
 declare
   msgs jsonb;
+  local_at timestamp;
   when_label text;
 begin
   begin
     -- Only a fresh, future announcement is news. Back-filling an old
     -- date for the archive, or adding a sold-out/cancelled row, stays quiet.
     if new.status <> 'announced' or new.starts_at < now() then return new; end if;
-    -- "Sep 6" in the venue's own zone; a bad zone name falls back to UTC
+    -- The venue's own wall clock; a bad zone name falls back to UTC
     -- rather than losing the push.
     begin
-      when_label := to_char(new.starts_at at time zone new.timezone, 'Mon FMDD');
+      local_at := new.starts_at at time zone new.timezone;
     exception when others then
-      when_label := to_char(new.starts_at at time zone 'UTC', 'Mon FMDD');
+      local_at := new.starts_at at time zone 'UTC';
     end;
+    -- "Sept 6", AP style, the way the chat and the ticket read a date.
+    when_label := case extract(month from local_at)
+      when 3 then 'March'
+      when 4 then 'April'
+      when 6 then 'June'
+      when 7 then 'July'
+      when 9 then 'Sept'
+      else to_char(local_at, 'Mon')
+    end || ' ' || extract(day from local_at)::int;
     select jsonb_agg(jsonb_build_object(
       'to', pt.token,
-      'title', 'New show announced',
-      'body', new.city || ' · ' || new.venue || ' · ' || when_label,
+      -- A named show is the title and the city joins the body; otherwise
+      -- the city is the title.
+      'title', coalesce(nullif(new.title, ''), new.city),
+      'body', case
+        when nullif(new.title, '') is null then new.venue || ' · ' || when_label
+        else new.city || ' · ' || new.venue || ' · ' || when_label
+      end,
       'sound', 'default',
       'data', jsonb_build_object('url', '/shows')
     ))

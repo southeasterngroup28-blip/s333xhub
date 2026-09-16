@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useState, type PropsWithChildren 
 import { AppState } from 'react-native';
 
 import { unregisterPushToken } from '@/lib/notifications';
+import { isUnnamed } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
 
 export type Profile = {
@@ -19,10 +20,16 @@ export type Profile = {
 type AuthContextValue = {
   session: Session | null;
   profile: Profile | null;
-  /** Set when the profile lookup fails — surfaced for debugging. */
+  /** Set when the profile lookup fails, surfaced for debugging. */
   profileError: string | null;
   /** True until we've checked whether a saved login exists. */
   isLoading: boolean;
+  /**
+   * The profile still carries the database's placeholder name (or none).
+   * The root layout routes to the name screen before the tabs while this
+   * is true; it is never true while the profile is still loading.
+   */
+  needsName: boolean;
   /** Re-fetches the cached profile (call after editing it, e.g. new avatar). */
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -33,6 +40,7 @@ const AuthContext = createContext<AuthContextValue>({
   profile: null,
   profileError: null,
   isLoading: true,
+  needsName: false,
   refreshProfile: async () => {},
   signOut: async () => {},
 });
@@ -105,7 +113,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
         if (attempt < 4) {
           setTimeout(() => load(attempt + 1), 700);
         } else {
-          setProfileError((e as { message?: string })?.message ?? 'profile fetch failed');
+          console.warn('[auth] profile fetch failed', e);
+          setProfileError('Could not load your profile.');
         }
       }
     };
@@ -125,6 +134,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         profile,
         profileError,
         isLoading,
+        needsName: !!session && !!profile && isUnnamed(profile.display_name),
         refreshProfile: async () => {
           if (!session) return;
           const { data } = await supabase

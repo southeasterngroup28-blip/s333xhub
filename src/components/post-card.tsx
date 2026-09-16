@@ -26,15 +26,15 @@ import Animated, {
 import { AudioCover, AudioPlayerCard, projectLabel } from '@/components/audio-player-card';
 import { Avatar } from '@/components/avatar';
 import { Skeleton } from '@/components/skeleton';
+import { REPORT_FAILED, REPORT_SENT } from '@/constants/copy';
+import { chip, confirmDanger, confirmQuestion, confirmWord, eyebrow } from '@/constants/type';
+import { fanCopy } from '@/lib/fan-error';
 import { errorFeedback, pressFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
-import {
-  PaymentsNotLiveError,
-  PurchaseCancelledError,
-  UnlockPendingError,
-  purchasePost,
-} from '@/lib/payments';
+import { PurchaseCancelledError, UnlockPendingError, purchasePost } from '@/lib/payments';
+import { displayName } from '@/lib/profiles';
 import { fetchMyPurchasedPostIds } from '@/lib/purchases';
 import { useProfileCard } from '@/components/profile-card';
+import { priceLabel } from '@/lib/shop';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { VideoPlayerCard } from '@/components/video-player-card';
 import {
@@ -178,7 +178,7 @@ function UnlockPill({
         ? 'Payment received. Unlocking now.'
         : phase === 'pending'
           ? 'Unlock on the way'
-          : `Unlock · $${(priceCents / 100).toFixed(2)}`;
+          : `Unlock · ${priceLabel(priceCents)}`;
 
   return (
     <Animated.View style={animated}>
@@ -236,10 +236,8 @@ function PollBar({
     <Pressable style={styles.pollBar} onPress={onPress}>
       <Animated.View style={[styles.pollFill, fill]} />
       <View style={styles.pollRow}>
-        <Text style={[styles.pollLabel, mine && styles.pollLabelMine]}>
-          {mine ? '● ' : ''}
-          {label}
-        </Text>
+        {/* My own vote: the weight and the fill are the mark. */}
+        <Text style={[styles.pollLabel, mine && styles.pollLabelMine]}>{label}</Text>
         <Text style={styles.pollPct}>{pct}%</Text>
       </View>
     </Pressable>
@@ -439,13 +437,8 @@ export const PostCard = memo(function PostCard({
         startPendingPoll();
         return;
       }
-      if (e instanceof PaymentsNotLiveError) {
-        flashNotice('Purchases arrive with the App Store version.');
-        setPhase('idle');
-        return;
-      }
       errorFeedback();
-      flashNotice((e as { message?: string })?.message ?? 'The purchase did not go through.');
+      flashNotice(fanCopy(e, 'The purchase did not go through.'));
       setPhase('idle');
     }
   }
@@ -514,7 +507,7 @@ export const PostCard = memo(function PostCard({
       await votePoll(post.id, optionId);
     } catch (e) {
       setPollState(previous);
-      setActionError((e as { message?: string })?.message ?? 'Vote failed.');
+      setActionError(fanCopy(e, 'Could not send your vote.'));
     }
   }
 
@@ -525,7 +518,7 @@ export const PostCard = memo(function PostCard({
   const imageWidth = Math.min(windowWidth, 800) - 60;
 
   const media = [...post.post_media].sort((a, b) => a.position - b.position);
-  const authorName = post.author?.display_name ?? 'Unknown';
+  const authorName = displayName(post.author);
 
   /** Opens the delete confirm — a paid post with buyers can't be deleted at all. */
   async function openDeleteConfirm() {
@@ -541,7 +534,7 @@ export const PostCard = memo(function PostCard({
         return;
       }
     } catch {
-      // Couldn't check — show the confirm anyway; the DB still refuses a protected delete.
+      // Couldn't check. Show the confirm anyway; the DB still refuses a protected delete.
     }
     setMenu('confirm-delete');
   }
@@ -559,7 +552,7 @@ export const PostCard = memo(function PostCard({
       dim.value = withTiming(1, { duration: 120 });
       setDeleting(false);
       setMenu('closed');
-      setActionError((e as { message?: string })?.message ?? 'Could not delete the post.');
+      setActionError(fanCopy(e, 'Could not delete the post.'));
     }
   }
 
@@ -568,8 +561,9 @@ export const PostCard = memo(function PostCard({
     try {
       await fileReport('post', post.id, reason);
     } catch (e) {
+      console.warn('[post-card] report failed', e);
       setMenu('closed');
-      setActionError((e as { message?: string })?.message ?? 'Could not send the report.');
+      setActionError(REPORT_FAILED);
     }
   }
 
@@ -597,7 +591,13 @@ export const PostCard = memo(function PostCard({
       ]}>
       <View style={styles.header}>
         <Pressable onPress={() => showProfile(post.author_id)} hitSlop={6}>
-          <Avatar path={post.author?.avatar_path} focus={post.author?.avatar_focus} name={authorName} size={34} />
+          {/* The raw name seeds the initial; a gone author gets the '?' placeholder, never a 'D'. */}
+          <Avatar
+            path={post.author?.avatar_path}
+            focus={post.author?.avatar_focus}
+            name={post.author?.display_name}
+            size={34}
+          />
         </Pressable>
         <View style={styles.who}>
           <View style={styles.nameRow}>
@@ -669,7 +669,7 @@ export const PostCard = memo(function PostCard({
 
       {menu === 'reported' ? (
         <Animated.View entering={rowEnter}>
-          <Text style={styles.reportedNote}>Reported — reviewed within 24 hours.</Text>
+          <Text style={styles.reportedNote}>{REPORT_SENT}</Text>
         </Animated.View>
       ) : null}
 
@@ -686,9 +686,7 @@ export const PostCard = memo(function PostCard({
               : undefined
           }
           style={styles.unlockedTag}>
-          {viewerIsArtist
-            ? `Locked post · $${((post.price_cents ?? 0) / 100).toFixed(2)}`
-            : 'Unlocked'}
+          {viewerIsArtist ? `Locked post · ${priceLabel(post.price_cents ?? 0)}` : 'Unlocked'}
         </Animated.Text>
       ) : null}
 
@@ -724,7 +722,7 @@ export const PostCard = memo(function PostCard({
           <AudioCover
             project={post.project}
             eyebrow={`LOCKED · ${projectLabel(post.project)}`}
-            title={post.title ?? 'Exclusive drop'}
+            title={post.title ?? ''}
             coverUrl={post.cover_path ? mediaUrls[post.cover_path] : undefined}
             coverFocus={post.cover_focus ?? 0.5}
             locked>
@@ -770,9 +768,14 @@ export const PostCard = memo(function PostCard({
           <View style={styles.teaseScrim} />
           <View style={styles.teaseContent}>
             <Ionicons name="lock-closed" size={20} color="#e8e9eb" />
-            <Text style={styles.teaseTitle} numberOfLines={1}>
-              {post.title ?? 'Exclusive drop'}
-            </Text>
+            {post.title ? (
+              <Text style={styles.teaseTitle} numberOfLines={1}>
+                {post.title}
+              </Text>
+            ) : (
+              // No title: the same small silver eyebrow the audio cover wears.
+              <Text style={styles.teaseEyebrow}>{`LOCKED · ${projectLabel(post.project)}`}</Text>
+            )}
             {unlockPill}
             {/* Reserved slot: the notice appears without shoving the tease. */}
             <View style={styles.noticeSlot}>
@@ -799,7 +802,7 @@ export const PostCard = memo(function PostCard({
                       key={item.id}
                       project={post.project}
                       eyebrow={projectLabel(post.project)}
-                      title={post.title ?? 'Untitled track'}
+                      title={post.title ?? projectLabel(post.project)}
                       coverUrl={post.cover_path ? mediaUrls[post.cover_path] : undefined}
                       coverFocus={post.cover_focus ?? 0.5}>
                       <View style={styles.pendingControls}>
@@ -814,7 +817,7 @@ export const PostCard = memo(function PostCard({
                   <AudioPlayerCard
                     key={item.id}
                     postId={post.id}
-                    title={post.title ?? 'Untitled track'}
+                    title={post.title ?? projectLabel(post.project)}
                     url={url}
                     project={post.project}
                     coverUrl={post.cover_path ? mediaUrls[post.cover_path] : undefined}
@@ -901,8 +904,8 @@ export const PostCard = memo(function PostCard({
               ? 'No video attached'
               : 'No photos attached'}
           {post.is_locked
-            ? ' — the upload didn’t finish. Fans see a paywall with nothing behind it; delete this post before anyone buys it and post it again.'
-            : ' — the upload didn’t finish. Fans only see the text; delete this post and post it again.'}
+            ? ". The upload didn't finish. Fans see a paywall with nothing behind it; delete this post before anyone buys it and post it again."
+            : ". The upload didn't finish. Fans only see the text; delete this post and post it again."}
         </Text>
       ) : null}
 
@@ -954,16 +957,12 @@ const styles = StyleSheet.create({
   body: { color: '#cbcdd1', fontSize: 14, lineHeight: 22 },
   image: { borderRadius: 12, marginTop: 12, backgroundColor: '#1a1d22' },
   mediaGap: { marginTop: 12 },
+  // The inline confirm: the chip row every other confirm copies (tokens in constants/type).
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 },
-  menuLabel: { color: '#9a9ba3', fontSize: 13, flexShrink: 1 },
-  menuChip: {
-    backgroundColor: '#1e2126',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  menuText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  menuDanger: { color: '#f87171', fontSize: 13, fontWeight: '600' },
+  menuLabel: { ...confirmQuestion, flexShrink: 1 },
+  menuChip: chip,
+  menuText: confirmWord,
+  menuDanger: confirmDanger,
   reportedNote: { color: '#4fc07a', fontSize: 13, marginBottom: 8 },
   actionError: { color: '#f87171', fontSize: 13, marginBottom: 8 },
   missingMedia: { color: '#e6b45c', fontSize: 12.5, lineHeight: 18, marginTop: 10 },
@@ -1005,6 +1004,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowRadius: 8,
+  },
+  // AudioCover's eyebrow treatment, in the sans token, for a locked tease with no title.
+  teaseEyebrow: {
+    ...eyebrow,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowRadius: 6,
   },
   teaseSub: { color: '#aab2ba', fontSize: 11.5, textAlign: 'center' },
   noticeSlot: { minHeight: 18, justifyContent: 'center' },

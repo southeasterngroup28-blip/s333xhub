@@ -1,14 +1,15 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Component, useCallback, useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { EmptyState } from '@/components/empty-state';
+import { ErrorCard } from '@/components/empty-state';
+import { PushedHeader } from '@/components/pushed-header';
 import { Skeleton } from '@/components/skeleton';
-import { ScalePressable } from '@/components/ui/scale-pressable';
-import { DISPLAY_FONT } from '@/constants/type';
+import { TopNotice } from '@/components/top-notice';
+import { DISPLAY_FONT, capLabel, eyebrowLg, sectionHead } from '@/constants/type';
+import { fanCopy } from '@/lib/fan-error';
 import { tapFeedback } from '@/lib/haptics';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { showDateParts, showRelative } from '@/lib/shows';
@@ -29,7 +30,7 @@ function loadQrCode(): QrComponent | null {
   try {
     qrComponent = (require('react-native-qrcode-svg') as QrModule).default ?? null;
   } catch (e) {
-    console.warn('[ticket] QR code module is missing from this build — code hidden.', e);
+    console.warn('[ticket] QR code module is missing from this build; code hidden.', e);
     qrComponent = null;
   }
   return qrComponent;
@@ -43,11 +44,9 @@ const WATCH_MS = 10_000;
 
 export default function TicketScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
 
   // The buy flow and the ticket strips seed the row they already hold, so
-  // the payoff screen paints instantly — the fetch below still reconciles.
+  // the payoff screen paints instantly; the fetch below still reconciles.
   const [ticket, setTicket] = useState<Ticket | null>(() => (id ? peekTicketSeed(id) : null));
   const [loading, setLoading] = useState(ticket === null);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +60,7 @@ export default function TicketScreen() {
       setTicket(await fetchTicket(id));
       setError(null);
     } catch (e) {
-      setError((e as { message?: string })?.message ?? 'Could not load the ticket.');
+      setError(fanCopy(e, 'Could not load the ticket.'));
     } finally {
       setLoading(false);
     }
@@ -75,58 +74,34 @@ export default function TicketScreen() {
     }, [load])
   );
 
-  function goBack() {
-    if (router.canGoBack()) router.back();
-    else router.replace('/(tabs)/shows' as never);
-  }
-
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      <PushedHeader title="TICKET" fallback="/(tabs)/shows" />
+      {error && ticket ? (
+        <TopNotice tone="error" text={error} onDismiss={() => setError(null)} />
+      ) : null}
       <ScrollView contentContainerStyle={styles.body}>
         {loading ? (
           <TicketSkeleton />
         ) : ticket ? (
           <TicketCard ticket={ticket} />
         ) : error ? (
-          // Offline is not "gone" — the ticket row is safe on the server.
-          <View>
-            <EmptyState
-              icon="cloud-offline-outline"
-              title="Can't reach your ticket"
-              sub="Your ticket is safe. Check your connection."
-            />
-            <ScalePressable
-              style={styles.retry}
-              hitSlop={8}
-              onPress={() => {
-                tapFeedback();
-                // Before load(): load() alone never re-sets loading, and the
-                // skeleton coming back instantly is the acknowledgment.
-                setLoading(true);
-                load();
-              }}>
-              <Text style={styles.retryText}>RETRY</Text>
-            </ScalePressable>
-          </View>
-        ) : (
-          // A fetch that genuinely came back empty — this one CAN say gone.
-          <EmptyState
-            icon="ticket-outline"
-            title="No ticket here"
-            sub="This ticket isn't yours, or it doesn't exist."
+          // Offline is not "gone": the ticket row is safe on the server.
+          <ErrorCard
+            title="COULDN'T LOAD YOUR TICKET"
+            onRetry={() => {
+              tapFeedback();
+              // Before load(): load() alone never re-sets loading, and the
+              // skeleton coming back instantly is the acknowledgment.
+              setLoading(true);
+              load();
+            }}
           />
+        ) : (
+          // A fetch that genuinely came back empty. This one CAN say gone.
+          <Text style={styles.goneTitle}>THIS TICKET IS GONE</Text>
         )}
       </ScrollView>
-
-      <View style={[styles.topBar, { top: insets.top }]} pointerEvents="box-none">
-        <Pressable onPress={goBack} hitSlop={12} style={styles.back}>
-          <Ionicons name="chevron-back" size={24} color="#fff" />
-        </Pressable>
-        <Text style={styles.title}>TICKET</Text>
-      </View>
-      {error && ticket ? (
-        <Text style={[styles.error, { top: insets.top + 48 }]}>{error}</Text>
-      ) : null}
     </SafeAreaView>
   );
 }
@@ -158,7 +133,7 @@ class QrBoundary extends Component<BoundaryProps, BoundaryState> {
   }
 
   componentDidCatch(error: unknown) {
-    console.warn('[ticket] QR code failed to draw — showing the note instead.', error);
+    console.warn('[ticket] QR code failed to draw; showing the note instead.', error);
   }
 
   render() {
@@ -166,17 +141,13 @@ class QrBoundary extends Component<BoundaryProps, BoundaryState> {
   }
 }
 
-/** Solid stand-in for the QR when this build can't draw one. */
+/** Solid stand-in for the QR when this build can't draw one: two lines in the QR-sized tile. */
 function QrUnavailable() {
   return (
     <View style={styles.qrMissing}>
-      <View style={styles.qrMissingRing}>
-        <Ionicons name="qr-code-outline" size={26} color="#8f99a3" />
-      </View>
       <Text style={styles.qrMissingTitle}>UPDATE THE APP</Text>
       <Text style={styles.qrMissingSub}>
-        This version of the app can&apos;t draw your ticket&apos;s code yet. Update the app to
-        view your ticket.
+        This version of the app can&apos;t draw your ticket&apos;s code. Update the app to see it.
       </Text>
     </View>
   );
@@ -193,7 +164,7 @@ function TicketCard({ ticket }: { ticket: Ticket }) {
 
   const statusLine =
     ticket.status === 'checked_in'
-      ? `CHECKED IN${ticket.checked_in_at ? ` at ${clockAt(ticket.checked_in_at, show?.timezone)}` : ''}`
+      ? `CHECKED IN${ticket.checked_in_at ? ` · ${clockAt(ticket.checked_in_at, show?.timezone)}` : ''}`
       : ticket.status === 'refunded'
         ? 'REFUNDED'
         : `PAID · ${priceLabel(ticket.amount_cents)}`;
@@ -216,7 +187,7 @@ function TicketCard({ ticket }: { ticket: Ticket }) {
           <Text style={styles.city}>{show.city}</Text>
           {date ? (
             <Text style={styles.when}>
-              {date.weekday}, {date.month} {date.day} · {date.time} {date.zone}
+              {date.weekday}, {date.monthAP} {date.day} · {date.time} {date.zone}
             </Text>
           ) : null}
         </>
@@ -273,12 +244,12 @@ function TicketCard({ ticket }: { ticket: Ticket }) {
       <Text style={styles.order}>ORDER {orderId}</Text>
       <Text style={styles.note}>
         {ticket.status === 'refunded'
-          ? 'This ticket was refunded — it won’t scan at the door.'
+          ? "Refunded. This ticket won't scan at the door."
           : ticket.status === 'checked_in'
-            ? 'You’re in. Enjoy the show.'
+            ? "You're in. Enjoy the show."
             : QRCode
               ? 'Show this at the door.'
-              : 'Your ticket is saved — update the app and its code will show here.'}
+              : 'Ticket saved. Update the app to see the code.'}
       </Text>
     </Animated.View>
   );
@@ -304,43 +275,15 @@ function TicketSkeleton() {
 const styles = StyleSheet.create({
   // Solid black on purpose: the QR needs contrast, not atmosphere.
   safe: { flex: 1, backgroundColor: '#000000' },
-  topBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    zIndex: 20,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  back: { position: 'absolute', left: 12 },
-  title: {
-    color: '#f4f5f6',
-    fontSize: 22,
-    lineHeight: 27,
-    fontFamily: DISPLAY_FONT,
-    letterSpacing: 2,
-  },
-  error: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    zIndex: 20,
-    textAlign: 'center',
-    color: '#f87171',
-    paddingHorizontal: 16,
-    fontSize: 13,
-  },
-  body: { padding: 14, paddingTop: 60, paddingBottom: 40 },
+  body: { padding: 14, paddingTop: 6, paddingBottom: 40 },
+  goneTitle: { ...sectionHead, paddingVertical: 8 },
   card: {
     backgroundColor: '#1a1d22',
     borderRadius: 22,
     padding: 22,
     overflow: 'hidden',
   },
-  eyebrow: { color: '#c3cdd6', fontSize: 10, fontWeight: '700', letterSpacing: 1.6, marginBottom: 6 },
+  eyebrow: { ...eyebrowLg, marginBottom: 6 },
   showTitle: {
     color: '#fff',
     fontFamily: DISPLAY_FONT,
@@ -412,17 +355,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     paddingVertical: 24,
   },
-  qrMissingRing: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#14171b',
-    borderWidth: 1,
-    borderColor: '#23262b',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
   qrMissingTitle: {
     color: '#e8e9eb',
     fontSize: 18,
@@ -449,25 +381,8 @@ const styles = StyleSheet.create({
   },
   statusIn: { color: '#7ed354' },
   statusRefunded: { color: '#f87171' },
-  order: {
-    color: '#55585f',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1.6,
-    textAlign: 'center',
-    marginTop: 10,
-  },
+  order: { ...capLabel, color: '#55585f', textAlign: 'center', marginTop: 10 },
   note: { color: '#8f99a3', fontSize: 12.5, textAlign: 'center', marginTop: 16, lineHeight: 18 },
-  // The scanner CTA look — a way out that reads as the main action.
-  retry: {
-    backgroundColor: '#fff',
-    borderRadius: 999,
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    alignItems: 'center',
-    alignSelf: 'center',
-  },
-  retryText: { color: '#0b0c0e', fontWeight: '800', fontSize: 13, letterSpacing: 1 },
   skeletonGap: { marginTop: 12 },
   skeletonGapSmall: { marginTop: 7 },
 });

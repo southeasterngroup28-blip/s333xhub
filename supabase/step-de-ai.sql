@@ -1,13 +1,49 @@
 -- ============================================================
--- Launch infrastructure: tappable pushes + in-house crash log.
--- Run once in: SQL Editor → New query
+-- De-AI pass: shipped data and defaults. Run once in the Supabase
+-- SQL Editor (New query). Nothing here is destructive; every
+-- statement re-declares something that already exists.
+--
+-- 1) No fan is ever named 'fan'. The column default and the sign-up
+--    trigger fall back to '' and the app forces a real name on first
+--    open (src/app/name.tsx). Not raised in the trigger, not derived
+--    from the email.
+-- 2) Push copy: no 'in the app', no 'cast your vote', no emoji, no
+--    'Someone'; the shipped push is titled 'Shipped'; the show push
+--    names the show or the city and reads its month AP style ('Sept 6').
+--
+-- The canonical function bodies live in step-launch.sql (posts,
+-- messages, shipped) and step-shows.sql (shows); this file mirrors them
+-- so the live database can be brought up to date in one run.
 -- ============================================================
 
--- ------------------------------------------------------------
--- 1) Every push now carries the screen it should open. Tapping
---    "MAZZE just dropped" lands on that post, a DM push opens
---    that chat, a drop push opens the drop.
--- ------------------------------------------------------------
+-- ---- 1) the placeholder name ----------------------------------------
+
+alter table public.profiles alter column display_name set default ''; -- app forces a name on first open
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, display_name, accepted_tos_at)
+  values (
+    new.id,
+    -- '' when sign-up sent no name: the app forces a name on first open.
+    coalesce(nullif(trim(new.raw_user_meta_data ->> 'display_name'), ''), ''),
+    now()
+  );
+  return new;
+end;
+$$;
+
+-- Rows that still carry the old placeholder get routed to the name
+-- screen on their next open (the app treats 'fan' and '' the same), so
+-- no data rewrite is needed here.
+
+-- ---- 2) push copy -----------------------------------------------------
+
 create or replace function public.push_on_new_post()
 returns trigger
 language plpgsql
@@ -100,37 +136,6 @@ begin
 end;
 $$;
 
-create or replace function public.push_on_drop_publish()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  msgs jsonb;
-begin
-  begin
-    if old.is_published or not new.is_published then return new; end if;
-    select jsonb_agg(jsonb_build_object(
-      'to', pt.token,
-      'title', case when new.project = 's333xgod' then 'S333XGOD' else 'MAZZE' end || ' DROP',
-      'body', new.title || ' · ' || new.run_size || ' numbered. Gone when they''re gone.',
-      'sound', 'default',
-      'data', jsonb_build_object('url', '/drop/' || new.id)
-    ))
-    into msgs
-    from public.push_tokens pt
-    join public.profiles pr on pr.id = pt.user_id and pr.role <> 'artist'
-    left join public.notification_prefs np on np.user_id = pt.user_id
-    where coalesce(np.new_posts, true);
-    if msgs is not null then perform public.send_expo_push(msgs); end if;
-  exception when others then
-    raise warning 'drop push failed: %', sqlerrm;
-  end;
-  return new;
-end;
-$$;
-
 create or replace function public.push_on_claim_shipped()
 returns trigger
 language plpgsql
@@ -162,25 +167,58 @@ begin
 end;
 $$;
 
--- ------------------------------------------------------------
--- 2) In-house crash log: fatal app errors land here, owned by us,
---    readable in the dashboard (and by the artist later if wanted).
--- ------------------------------------------------------------
-create table public.client_errors (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references public.profiles (id) on delete set null,
-  message text not null,
-  stack text,
-  fatal boolean not null default true,
-  platform text,
-  app_version text,
-  created_at timestamptz not null default now()
-);
-
-alter table public.client_errors enable row level security;
-grant insert on public.client_errors to authenticated;
-
-create policy "users file their own crash reports"
-  on public.client_errors for insert to authenticated
-  with check (user_id is null or user_id = auth.uid());
--- No select policy for app roles: reports are read via the dashboard.
+create or replace function public.push_on_show_announced()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  msgs jsonb;
+  local_at timestamp;
+  when_label text;
+begin
+  begin
+    -- Only a fresh, future announcement is news. Back-filling an old
+    -- date for the archive, or adding a sold-out/cancelled row, stays quiet.
+    if new.status <> 'announced' or new.starts_at < now() then return new; end if;
+    -- The venue's own wall clock; a bad zone name falls back to UTC
+    -- rather than losing the push.
+    begin
+      local_at := new.starts_at at time zone new.timezone;
+    exception when others then
+      local_at := new.starts_at at time zone 'UTC';
+    end;
+    -- "Sept 6", AP style, the way the chat and the ticket read a date.
+    when_label := case extract(month from local_at)
+      when 3 then 'March'
+      when 4 then 'April'
+      when 6 then 'June'
+      when 7 then 'July'
+      when 9 then 'Sept'
+      else to_char(local_at, 'Mon')
+    end || ' ' || extract(day from local_at)::int;
+    select jsonb_agg(jsonb_build_object(
+      'to', pt.token,
+      -- A named show is the title and the city joins the body; otherwise
+      -- the city is the title.
+      'title', coalesce(nullif(new.title, ''), new.city),
+      'body', case
+        when nullif(new.title, '') is null then new.venue || ' · ' || when_label
+        else new.city || ' · ' || new.venue || ' · ' || when_label
+      end,
+      'sound', 'default',
+      'data', jsonb_build_object('url', '/shows')
+    ))
+    into msgs
+    from public.push_tokens pt
+    join public.profiles pr on pr.id = pt.user_id and pr.role <> 'artist'
+    left join public.notification_prefs np on np.user_id = pt.user_id
+    where coalesce(np.shows, true);
+    if msgs is not null then perform public.send_expo_push(msgs); end if;
+  exception when others then
+    raise warning 'show push failed: %', sqlerrm;
+  end;
+  return new;
+end;
+$$;

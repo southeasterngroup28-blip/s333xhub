@@ -4,7 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { ScalePressable } from '@/components/ui/scale-pressable';
-import { DISPLAY_FONT } from '@/constants/type';
+import { DISPLAY_FONT, eyebrow, sectionHead } from '@/constants/type';
+import { fanCopy } from '@/lib/fan-error';
 import { errorFeedback, pressFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import { showDateParts, showRelative, type Show } from '@/lib/shows';
 import {
@@ -119,11 +120,11 @@ export function useFanTickets({
         if (isPurchaseCancelled(e)) {
           // Backing out of the payment sheet isn't an error worth a red line.
         } else if (e instanceof TicketPendingError) {
-          // Paid, record lagging — honest and calm, never the red refusal slot.
+          // Paid, record lagging: honest and calm, never the red refusal slot.
           onNotice?.(e.message);
         } else {
           errorFeedback();
-          onError((e as { message?: string })?.message ?? 'The purchase did not go through.');
+          onError(fanCopy(e, 'The purchase did not go through.'));
         }
       } finally {
         setBuyingId(null);
@@ -179,7 +180,7 @@ export function MyTicketsStrip({ tickets }: { tickets: Ticket[] }) {
       {tickets.map((ticket) => {
         const show = ticket.show;
         const date = show ? showDateParts(show) : null;
-        const when = date ? `${date.weekday}, ${date.month} ${date.day} · ${date.time}` : '';
+        const when = date ? `${date.weekday}, ${date.monthAP} ${date.day} · ${date.time}` : '';
         const title = show?.title || show?.venue || 'Show';
         const sub = show
           ? `${show.title ? show.venue : show.city} · ${when}`
@@ -224,14 +225,7 @@ export function MyTicketsStrip({ tickets }: { tickets: Ticket[] }) {
 
 const styles = StyleSheet.create({
   strip: { marginBottom: 6 },
-  label: {
-    color: '#6d7076',
-    fontSize: 10.5,
-    fontWeight: '700',
-    letterSpacing: 1.6,
-    marginTop: 10,
-    marginBottom: 10,
-  },
+  label: { ...sectionHead, marginTop: 10, marginBottom: 10 },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -253,7 +247,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   meta: { flex: 1 },
-  eyebrow: { color: '#c3cdd6', fontSize: 9.5, fontWeight: '700', letterSpacing: 1.4, marginBottom: 2 },
+  eyebrow: { ...eyebrow, marginBottom: 2 },
   title: { color: '#fff', fontFamily: DISPLAY_FONT, fontSize: 15, lineHeight: 19, letterSpacing: 1 },
   sub: { color: '#8f99a3', fontSize: 11.5, marginTop: 2 },
   chip: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 },

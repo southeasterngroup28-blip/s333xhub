@@ -42,7 +42,7 @@ function loadStripeProvider(): StripeModule['StripeProvider'] | null {
     } catch (e) {
       // No native Stripe on this build (older dev client): the app still
       // runs, just without checkout — buyTicket says so in its own words.
-      console.warn('[stripe] native module is missing from this build — checkout disabled.', e);
+      console.warn('[stripe] native module is missing from this build; checkout disabled.', e);
       stripeProvider = null;
     }
   }
@@ -65,7 +65,7 @@ function StripeGate({ children }: { children: ReactNode }) {
 }
 
 function RootNavigator() {
-  const { session, profile, isLoading } = useAuth();
+  const { session, profile, isLoading, needsName } = useAuth();
   const { current: loadedTrack, stop: stopPlayer } = usePlayerControls();
   const [fontsLoaded] = useFonts({
     Anton_400Regular,
@@ -98,7 +98,12 @@ function RootNavigator() {
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Protected guard={!!session}>
+      {/* A profile still wearing the placeholder name gets the name screen
+          and nothing else until it has a real one. */}
+      <Stack.Protected guard={!!session && needsName}>
+        <Stack.Screen name="name" />
+      </Stack.Protected>
+      <Stack.Protected guard={!!session && !needsName}>
         {/* Stable identity: deep links (push taps) navigate INTO the mounted
             tab group instead of stacking a second one. */}
         <Stack.Screen name="(tabs)" getId={() => '(tabs)'} />
@@ -107,7 +112,7 @@ function RootNavigator() {
         <Stack.Screen name="settings" />
         <Stack.Screen name="reports" />
         <Stack.Screen name="post/[id]" />
-        <Stack.Screen name="top8" />
+        <Stack.Screen name="top3" />
         <Stack.Screen name="drop/[id]" />
         <Stack.Screen name="drop-new" options={{ presentation: 'modal' }} />
         <Stack.Screen name="drop-edit/[id]" options={{ presentation: 'modal' }} />

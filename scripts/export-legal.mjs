@@ -70,7 +70,7 @@ ${body}
 const pages = {
   'privacy.html': page('Privacy Policy', legal.PRIVACY_SECTIONS, 'How S333XHUB handles your data'),
   'terms.html': page('Terms of Service', legal.TERMS_SECTIONS, 'The rules for using S333XHUB'),
-  'shop-terms.html': page('S333XSHOP Terms', legal.SHOP_TERMS_SECTIONS, 'Buying a numbered piece'),
+  'shop-terms.html': page('Shop Terms', legal.SHOP_TERMS_SECTIONS, 'Buying a numbered piece'),
 };
 for (const [name, html] of Object.entries(pages)) {
   writeFileSync(join(outDir, name), html);

@@ -2,6 +2,7 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 
 import { base64ToArrayBuffer, filePayload } from '@/lib/posts';
 import { cleanMessage } from '@/lib/profanity';
+import { displayName } from '@/lib/profiles';
 import { supabase, requireUserId } from '@/lib/supabase';
 
 export type ChannelType = 'group' | 'dm';
@@ -275,7 +276,7 @@ export async function fetchChatList(
       return {
         channelId: r.channel_id,
         type,
-        title: type === 'group' ? 'S333XHUB' : other?.display_name ?? (r.channel_id in others ? 'Deleted user' : 'DM'),
+        title: type === 'group' ? 'S333XHUB' : displayName(other),
         mutedAt: r.muted_at,
         leftAt: r.left_at,
         memberCount,

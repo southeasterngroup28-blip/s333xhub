@@ -5,8 +5,12 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useProfileCard } from '@/components/profile-card';
 import { avatarUrl } from '@/lib/avatars';
+import { displayName } from '@/lib/profiles';
 import type { TopFan } from '@/lib/social';
-import { DISPLAY_FONT } from '@/constants/type';
+import { sectionHead } from '@/constants/type';
+
+// TODO(merge): rename this file to top3-card.tsx and the export to Top3Card
+// once feed.tsx (which imports both names) is back from its feel pass.
 
 type Props = {
   fans: TopFan[];
@@ -27,7 +31,8 @@ export function Top8Card({ fans, viewerIsArtist }: Props) {
         <Text style={styles.title}>TOP 3</Text>
         <Text style={styles.sub}>picked by the artist</Text>
         {viewerIsArtist ? (
-          <Pressable onPress={() => router.push('/top8')} hitSlop={10} style={styles.edit}>
+          // Typed routes only regenerate while the dev server runs; the cast goes when they do.
+          <Pressable onPress={() => router.push('/top3' as never)} hitSlop={10} style={styles.edit}>
             <Ionicons name="pencil" size={14} color="#8f99a3" />
           </Pressable>
         ) : null}
@@ -54,13 +59,15 @@ export function Top8Card({ fans, viewerIsArtist }: Props) {
                     transition={150}
                   />
                 ) : (
+                  // The raw name seeds the initial, the same rule as avatar.tsx: a
+                  // gone or blank name shows '?', never a 'D' and never nothing.
                   <Text style={styles.letter}>
-                    {fan ? (fan.profile?.display_name ?? '?').slice(0, 1).toUpperCase() : '?'}
+                    {((fan?.profile?.display_name ?? '').trim() || '?').slice(0, 1).toUpperCase()}
                   </Text>
                 )}
               </View>
               <Text style={styles.name} numberOfLines={1}>
-                {fan ? fan.profile?.display_name ?? '?' : 'you?'}
+                {fan ? displayName(fan.profile) : viewerIsArtist ? 'open' : 'you?'}
               </Text>
             </Pressable>
           );
@@ -84,7 +91,7 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
   head: { flexDirection: 'row', alignItems: 'baseline', gap: 10 },
-  title: { color: '#f4f5f6', fontFamily: DISPLAY_FONT, fontSize: 15, letterSpacing: 2 },
+  title: sectionHead,
   sub: { color: '#6d7076', fontSize: 11 },
   edit: { marginLeft: 'auto' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 12 },

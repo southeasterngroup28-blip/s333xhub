@@ -1,28 +1,19 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/providers/auth-provider';
 
-import { DISPLAY_FONT } from '@/constants/type';
+import { Chip, ChipRow, Field, FieldLabel, FormNote, PrimaryButton } from '@/components/form';
+import { PushedHeader } from '@/components/pushed-header';
+import { TopNotice } from '@/components/top-notice';
+import { DROP_WHEN_OPTIONS } from '@/constants/drops';
+import { fanCopy } from '@/lib/fan-error';
 import { fetchDrop, updateDrop } from '@/lib/shop';
 
-const WHEN_OPTIONS = [
-  { label: 'KEEP AS SET', hours: 0 },
-  { label: 'IN 1 HOUR', hours: 1 },
-  { label: 'IN 24 HOURS', hours: 24 },
-  { label: 'IN 3 DAYS', hours: 72 },
-  { label: 'IN 7 DAYS', hours: 168 },
-] as const;
+/** Editing adds "leave the countdown where it is" ahead of the shared list. */
+const WHEN_OPTIONS = [{ label: 'KEEP AS SET', hours: 0 }, ...DROP_WHEN_OPTIONS] as const;
 
 export default function EditDropScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -43,7 +34,7 @@ export default function EditDropScreen() {
     fetchDrop(id)
       .then((drop) => {
         if (!drop) {
-          setError('Drop not found.');
+          setError('This drop is gone.');
           return;
         }
         setTitle(drop.title);
@@ -51,7 +42,7 @@ export default function EditDropScreen() {
         setRunSize(String(drop.run_size));
         setOriginalDropsAt(drop.drops_at);
       })
-      .catch((e) => setError((e as { message?: string })?.message ?? 'Could not load.'))
+      .catch((e) => setError(fanCopy(e, 'Could not load the drop.')))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -75,7 +66,7 @@ export default function EditDropScreen() {
       });
       router.back();
     } catch (e) {
-      setError((e as { message?: string })?.message ?? 'Could not save.');
+      setError(fanCopy(e, 'Could not save the draft.'));
       setSaving(false);
     }
   }
@@ -87,15 +78,16 @@ export default function EditDropScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Text style={styles.cancel}>Cancel</Text>
-        </Pressable>
-        <Text style={styles.headerTitle}>EDIT DRAFT</Text>
-        <View style={{ width: 48 }} />
-      </View>
+      <PushedHeader
+        title="EDIT DRAFT"
+        left={
+          <Pressable onPress={() => router.back()} hitSlop={12}>
+            <Text style={styles.cancel}>Cancel</Text>
+          </Pressable>
+        }
+      />
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <TopNotice tone="error" text={error} onDismiss={() => setError(null)} /> : null}
 
       {loading ? (
         <View style={styles.center}>
@@ -103,55 +95,39 @@ export default function EditDropScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.body}>
-          <Text style={styles.label}>TITLE</Text>
-          <TextInput style={styles.input} value={title} onChangeText={setTitle} maxLength={60} />
+          <FieldLabel>TITLE</FieldLabel>
+          <Field value={title} onChangeText={setTitle} maxLength={60} />
 
           <View style={styles.pairRow}>
             <View style={styles.pairCell}>
-              <Text style={styles.label}>PRICE ($)</Text>
-              <TextInput
-                style={styles.input}
-                keyboardType="decimal-pad"
-                value={price}
-                onChangeText={setPrice}
-              />
+              <FieldLabel>PRICE ($)</FieldLabel>
+              <Field keyboardType="decimal-pad" value={price} onChangeText={setPrice} />
             </View>
             <View style={styles.pairCell}>
-              <Text style={styles.label}>RUN SIZE</Text>
-              <TextInput
-                style={styles.input}
-                keyboardType="number-pad"
-                value={runSize}
-                onChangeText={setRunSize}
-              />
+              <FieldLabel>RUN SIZE</FieldLabel>
+              <Field keyboardType="number-pad" value={runSize} onChangeText={setRunSize} />
             </View>
           </View>
 
-          <Text style={styles.label}>COUNTDOWN ENDS</Text>
-          <View style={styles.whenRow}>
+          <FieldLabel>COUNTDOWN ENDS</FieldLabel>
+          <ChipRow style={styles.whenRow}>
             {WHEN_OPTIONS.map((option) => (
-              <Pressable
+              <Chip
                 key={option.hours}
-                style={[styles.whenChip, whenHours === option.hours && styles.whenChipOn]}
-                onPress={() => setWhenHours(option.hours)}>
-                <Text style={[styles.whenText, whenHours === option.hours && styles.whenTextOn]}>
-                  {option.label}
-                </Text>
-              </Pressable>
+                label={option.label}
+                on={whenHours === option.hours}
+                onPress={() => setWhenHours(option.hours)}
+              />
             ))}
-          </View>
+          </ChipRow>
 
-          <Pressable
-            style={[styles.save, (!valid || saving) && styles.saveDisabled]}
-            disabled={!valid || saving}
-            onPress={handleSave}>
-            {saving ? (
-              <ActivityIndicator color="#0b0c0e" />
-            ) : (
-              <Text style={styles.saveText}>SAVE CHANGES</Text>
-            )}
-          </Pressable>
-          <Text style={styles.sub}>Only drafts can be edited — published drops are locked.</Text>
+          <PrimaryButton
+            label="SAVE CHANGES"
+            disabled={!valid}
+            busy={saving}
+            onPress={handleSave}
+          />
+          <FormNote center>Only drafts can be edited. Published drops are locked.</FormNote>
         </ScrollView>
       )}
     </SafeAreaView>
@@ -161,53 +137,9 @@ export default function EditDropScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  headerTitle: { color: '#fff', fontSize: 17, fontFamily: DISPLAY_FONT, letterSpacing: 2 },
   cancel: { color: '#8f99a3', fontSize: 15 },
-  error: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 },
   body: { padding: 16, paddingBottom: 60 },
-  label: {
-    color: '#6d7076',
-    fontSize: 10.5,
-    fontWeight: '700',
-    letterSpacing: 1.6,
-    marginBottom: 7,
-    marginTop: 6,
-  },
-  input: {
-    backgroundColor: '#131519',
-    color: '#fff',
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 15,
-    marginBottom: 12,
-  },
   pairRow: { flexDirection: 'row', gap: 10 },
   pairCell: { flex: 1 },
-  whenRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 8 },
-  whenChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#1a1d22',
-  },
-  whenChipOn: { backgroundColor: '#c3cdd6' },
-  whenText: { color: '#8f99a3', fontWeight: '700', fontSize: 10.5, letterSpacing: 1 },
-  whenTextOn: { color: '#0b0c0e' },
-  save: {
-    backgroundColor: '#ffffff',
-    borderRadius: 999,
-    padding: 15,
-    alignItems: 'center',
-    marginTop: 18,
-  },
-  saveDisabled: { opacity: 0.4 },
-  saveText: { color: '#0b0c0e', fontWeight: '800', fontSize: 14, letterSpacing: 0.5 },
-  sub: { color: '#55585f', fontSize: 11.5, textAlign: 'center', marginTop: 10 },
+  whenRow: { marginBottom: 8 },
 });

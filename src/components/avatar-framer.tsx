@@ -144,8 +144,8 @@ function FramerStage({
       </View>
       <Text style={styles.hint}>
         {maxOffset > 0
-          ? 'Drag the circle — what’s inside it is your profile photo'
-          : 'This photo fits the circle exactly'}
+          ? "Drag the circle. What's inside it is your profile photo."
+          : 'This photo fits the circle exactly.'}
       </Text>
     </View>
   );

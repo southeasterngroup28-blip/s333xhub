@@ -5,9 +5,11 @@
 
 -- Every signed-up user gets a profile row. `role` is how the app
 -- knows who the artist is: everyone starts as 'fan'.
+-- display_name has no real default: the app forces a name on first open
+-- (a blank one routes to the name screen before the tabs).
 create table public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
-  display_name text not null default 'fan',
+  display_name text not null default '', -- app forces a name on first open
   role text not null default 'fan' check (role in ('fan', 'artist')),
   accepted_tos_at timestamptz,
   created_at timestamptz not null default now()
@@ -50,7 +52,9 @@ begin
   insert into public.profiles (id, display_name, accepted_tos_at)
   values (
     new.id,
-    coalesce(nullif(trim(new.raw_user_meta_data ->> 'display_name'), ''), 'fan'),
+    -- '' when sign-up sent no name: the app forces a name on first open.
+    -- Never raise here, never derive one from the email.
+    coalesce(nullif(trim(new.raw_user_meta_data ->> 'display_name'), ''), ''),
     now()
   );
   return new;

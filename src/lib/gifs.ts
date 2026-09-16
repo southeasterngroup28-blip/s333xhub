@@ -1,6 +1,8 @@
 // GIF search via Tenor (Google). Free API key from
-// https://developers.google.com/tenor — until one is set in .env as
+// https://developers.google.com/tenor. Until one is set in .env as
 // EXPO_PUBLIC_TENOR_API_KEY, the GIF button stays hidden.
+
+import { FanError } from '@/lib/fan-error';
 
 const TENOR_KEY = process.env.EXPO_PUBLIC_TENOR_API_KEY ?? '';
 
@@ -30,7 +32,7 @@ async function tenor(path: string, params: Record<string, string>): Promise<GifR
     ...params,
   });
   const res = await fetch(`https://tenor.googleapis.com/v2/${path}?${query}`);
-  if (!res.ok) throw new Error('GIF search is not responding — try again.');
+  if (!res.ok) throw new FanError('GIF search is not responding. Try again.');
   const json = (await res.json()) as TenorResponse;
   return (json.results ?? [])
     .map((r) => ({

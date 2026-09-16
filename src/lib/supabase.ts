@@ -3,6 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
 
+import { FanError, SESSION_COPY } from '@/lib/fan-error';
+
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -36,10 +38,10 @@ if (hasWindow) {
   });
 }
 
-/** The signed-in user's id — or a human-readable error, never a TypeError. */
+/** The signed-in user's id, or a fan-facing sentence, never a TypeError. */
 export async function requireUserId(): Promise<string> {
   const { data } = await supabase.auth.getUser();
   const id = data.user?.id;
-  if (!id) throw new Error('Your session expired - please sign in again.');
+  if (!id) throw new FanError(SESSION_COPY);
   return id;
 }

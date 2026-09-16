@@ -1,5 +1,4 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -12,7 +11,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PushedHeader } from '@/components/pushed-header';
+import { TopNotice } from '@/components/top-notice';
+import { fanCopy } from '@/lib/fan-error';
 import { errorFeedback, successFeedback } from '@/lib/haptics';
+import { displayName } from '@/lib/profiles';
 import {
   fetchTopFans,
   removeTopFan,
@@ -23,9 +26,8 @@ import {
 import { useAuth } from '@/providers/auth-provider';
 import { DISPLAY_FONT } from '@/constants/type';
 
-export default function Top8ManagerScreen() {
+export default function Top3ManagerScreen() {
   const { profile } = useAuth();
-  const router = useRouter();
   const [fans, setFans] = useState<TopFan[]>([]);
   const [pickingSlot, setPickingSlot] = useState<number | null>(null);
   const [query, setQuery] = useState('');
@@ -38,7 +40,7 @@ export default function Top8ManagerScreen() {
     try {
       setFans(await fetchTopFans());
     } catch (e) {
-      setError((e as { message?: string })?.message ?? 'Could not load the Top 8.');
+      setError(fanCopy(e, 'Could not load the Top 3.'));
     }
   }, []);
 
@@ -64,7 +66,7 @@ export default function Top8ManagerScreen() {
     return (
       <SafeAreaView style={styles.safe}>
         <View style={styles.center}>
-          <Text style={styles.muted}>Only the artist can manage the Top 8.</Text>
+          <Text style={styles.muted}>Only the artist can pick the Top 3.</Text>
         </View>
       </SafeAreaView>
     );
@@ -83,7 +85,7 @@ export default function Top8ManagerScreen() {
       setQuery('');
     } catch (e) {
       errorFeedback();
-      setError((e as { message?: string })?.message ?? 'Could not set that fan.');
+      setError(fanCopy(e, 'Could not set that fan.'));
     } finally {
       setBusyId(null);
     }
@@ -97,7 +99,7 @@ export default function Top8ManagerScreen() {
       await load();
     } catch (e) {
       errorFeedback();
-      setError((e as { message?: string })?.message ?? 'Could not remove.');
+      setError(fanCopy(e, 'Could not clear that spot.'));
     } finally {
       setBusyId(null);
     }
@@ -105,22 +107,14 @@ export default function Top8ManagerScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
-          hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color="#fff" />
-        </Pressable>
-        <Text style={styles.headerTitle}>Top 3</Text>
-        <View style={{ width: 24 }} />
-      </View>
+      <PushedHeader title="TOP 3" />
 
       <Text style={styles.hint}>
         Your three hand-picked fans, shown to everyone at the top of the feed. Change it
-        weekly — three spots keeps them fighting for it.
+        weekly. Three spots keep them fighting for it.
       </Text>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <TopNotice tone="error" text={error} onDismiss={() => setError(null)} /> : null}
 
       <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
         {Array.from({ length: 3 }, (_, i) => i + 1).map((position) => {
@@ -130,7 +124,7 @@ export default function Top8ManagerScreen() {
               <Text style={styles.slotNumber}>{position}</Text>
               {fan ? (
                 <>
-                  <Text style={styles.slotName}>{fan.profile?.display_name ?? '?'}</Text>
+                  <Text style={styles.slotName}>{displayName(fan.profile)}</Text>
                   <Pressable
                     onPress={() => clear(position)}
                     hitSlop={8}
@@ -195,16 +189,7 @@ export default function Top8ManagerScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
   hint: { color: '#6d7076', fontSize: 12.5, paddingHorizontal: 16, paddingBottom: 12, lineHeight: 18 },
-  error: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 8 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   muted: { color: '#6d7076' },
   list: { paddingHorizontal: 16, paddingBottom: 48 },

@@ -44,7 +44,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AppBackground } from '@/components/app-background';
 import { Avatar } from '@/components/avatar';
 import { EdgeGlass, FadeMask } from '@/components/edge-fade';
-import { EmptyState } from '@/components/empty-state';
 import { useProfileCard } from '@/components/profile-card';
 import { GifPicker } from '@/components/gif-picker';
 import { PickPhotosButton, type PickedImageDraft } from '@/components/media-pickers';
@@ -69,6 +68,7 @@ import {
 } from '@/lib/chat';
 import { segmentBody } from '@/lib/chat-links';
 import { clockTime, dayKey, separatorLabel } from '@/lib/chat-time';
+import { fanCopy } from '@/lib/fan-error';
 import { GIFS_READY } from '@/lib/gifs';
 import { errorFeedback, pressFeedback, selectFeedback, tapFeedback } from '@/lib/haptics';
 import {
@@ -80,10 +80,19 @@ import {
   unblockUser,
 } from '@/lib/moderation';
 import { cleanMessage } from '@/lib/profanity';
+import { displayName } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { useAuth } from '@/providers/auth-provider';
-import { DISPLAY_FONT } from '@/constants/type';
+import { REPORT_FAILED, REPORT_SENT } from '@/constants/copy';
+import {
+  DISPLAY_FONT,
+  confirmDanger,
+  confirmQuestion,
+  confirmWord,
+  eyebrow,
+  sectionHead,
+} from '@/constants/type';
 import {
   CHAT_COMPOSER,
   CHAT_HAIRLINE,
@@ -418,7 +427,7 @@ function Composer({
       ) : null}
       <TextInput
         style={styles.input}
-        placeholder="Write something"
+        placeholder="Write something…"
         placeholderTextColor="#55555c"
         value={draft}
         onChangeText={setDraft}
@@ -668,7 +677,7 @@ export default function ChannelScreen() {
           })
           .catch(() => {});
       } catch (e) {
-        if (!cancelled) setError((e as { message?: string })?.message ?? 'Could not load the chat.');
+        if (!cancelled) setError(fanCopy(e, 'Could not load the chat.'));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -912,7 +921,7 @@ export default function ChannelScreen() {
       setRecording(true);
     } catch (e) {
       await restorePlaybackMode();
-      setError((e as { message?: string })?.message ?? 'Could not start recording.');
+      setError(fanCopy(e, 'Could not start recording.'));
     }
   }
 
@@ -993,7 +1002,7 @@ export default function ChannelScreen() {
       await setMuted(id, myUserId, next);
     } catch (e) {
       setInfo(info); // revert on failure
-      setError((e as { message?: string })?.message ?? 'Could not change mute.');
+      setError(fanCopy(e, 'Could not change the mute setting.'));
     }
   }
 
@@ -1015,7 +1024,7 @@ export default function ChannelScreen() {
     } catch (e) {
       // The confirm and the error share the slot under the header.
       setConfirmLeave(false);
-      setError((e as { message?: string })?.message ?? 'Could not leave.');
+      setError(fanCopy(e, 'Could not leave the community.'));
     }
   }
 
@@ -1033,9 +1042,10 @@ export default function ChannelScreen() {
     setActionTarget(null);
     try {
       await fileReport('message', target.id, reason);
-      flashNotice('Reported. The artist reviews reports within 24 hours.');
+      flashNotice(REPORT_SENT);
     } catch (e) {
-      setError((e as { message?: string })?.message ?? 'Could not send the report.');
+      console.warn('[channel] report failed', e);
+      setError(REPORT_FAILED);
     }
   }
 
@@ -1059,7 +1069,7 @@ export default function ChannelScreen() {
         flashNotice('Blocked. Their messages are hidden from you.');
       }
     } catch (e) {
-      setError((e as { message?: string })?.message ?? 'Could not update the block.');
+      setError(fanCopy(e, 'Could not update the block.'));
     }
   }
 
@@ -1072,7 +1082,7 @@ export default function ChannelScreen() {
       setMessages((prev) => prev.filter((m) => m.id !== target.id));
       flashNotice('Message deleted.');
     } catch (e) {
-      setError((e as { message?: string })?.message ?? 'Could not delete the message.');
+      setError(fanCopy(e, 'Could not delete the message.'));
     }
   }
 
@@ -1118,14 +1128,14 @@ export default function ChannelScreen() {
     return null;
   }, [runs, otherLastReadAt, info?.type]);
 
-  // The Anton eyebrow under the title: the room and its size, or the DM.
-  const eyebrow = !info
+  // The eyebrow under the title: the community and its size, or the DM.
+  const eyebrowText = !info
     ? ''
     : isGroup
       ? info.memberCount
-        ? `Community · ${info.memberCount}`
-        : 'Community'
-      : 'Direct message';
+        ? `COMMUNITY · ${info.memberCount}`
+        : 'COMMUNITY'
+      : 'DIRECT MESSAGE';
 
   /** Can this message share tightened corners with a neighbour in its run? */
   const chainable = (m: Message) => m.kind === 'text' || m.kind === 'gif' || m.kind === 'image';
@@ -1237,7 +1247,7 @@ export default function ChannelScreen() {
                     accessibilityRole="link"
                     onPress={() => {
                       Linking.openURL(seg.href!).catch(() =>
-                        setError("Couldn't open that link.")
+                        setError('Could not open that link.')
                       );
                     }}
                     onLongPress={longPress}>
@@ -1302,9 +1312,9 @@ export default function ChannelScreen() {
                   <Image source={ARTIST_EMBLEM} style={styles.emblem} contentFit="contain" />
                 ) : null}
                 <Text style={[styles.name, run.artist && styles.nameArtist]} numberOfLines={1}>
-                  {run.sender?.display_name ?? 'Deleted user'}
+                  {displayName(run.sender)}
                 </Text>
-                {run.artist ? <Text style={styles.artistTag}>The artist</Text> : null}
+                {run.artist ? <Text style={styles.artistTag}>THE ARTIST</Text> : null}
               </View>
             ) : null}
             {run.messages.map((m, i) => {
@@ -1384,12 +1394,10 @@ export default function ChannelScreen() {
                     ) : null
                   }
                   ListEmptyComponent={
-                    <View style={styles.centerInverted}>
-                      <EmptyState
-                        icon="chatbubbles-outline"
-                        title={isGroup ? 'The room is quiet' : 'No messages yet'}
-                        sub={isGroup ? 'Say hi to the community.' : 'Start the conversation.'}
-                      />
+                    // One line under the header. The list is inverted, so the
+                    // wrapper un-flips itself and its layout top is the visual top.
+                    <View style={styles.emptyInverted}>
+                      <Text style={styles.emptyLine}>{isGroup ? 'QUIET IN HERE' : 'NO MESSAGES'}</Text>
                     </View>
                   }
                 />
@@ -1418,9 +1426,9 @@ export default function ChannelScreen() {
             entering={reduceMotion ? undefined : toolbarEnter}
             style={styles.actionBar}>
             <Text style={styles.actionTitle} numberOfLines={1}>
-              {actionTarget.sender?.display_name ?? 'Message'}:{' '}
+              {displayName(actionTarget.sender)}:{' '}
               {actionTarget.kind === 'text'
-                ? `“${actionTarget.body}”`
+                ? `"${actionTarget.body}"`
                 : actionTarget.kind === 'gif'
                   ? 'GIF'
                   : actionTarget.kind === 'voice'
@@ -1526,7 +1534,7 @@ export default function ChannelScreen() {
             {info?.title ?? titleParam ?? ''}
           </Text>
           <Text style={styles.eyebrow} numberOfLines={1}>
-            {eyebrow}
+            {eyebrowText}
           </Text>
         </View>
         <Pressable onPress={goBack} hitSlop={12} style={styles.back} accessibilityLabel="Back">
@@ -1552,8 +1560,11 @@ export default function ChannelScreen() {
       </View>
 
       {confirmLeave ? (
+        // The inline confirm in its floating form: same question / go word /
+        // Cancel tokens as the chip row elsewhere (constants/type), on the
+        // pill this screen shares with its error bar.
         <View style={[styles.floating, { top: insets.top + 58 }]}>
-          <Text style={styles.confirmText}>Leave the community chat?</Text>
+          <Text style={styles.confirmText}>Leave the community?</Text>
           <Pressable onPress={handleLeave} hitSlop={8}>
             <Text style={styles.confirmYes}>Leave</Text>
           </Pressable>
@@ -1630,13 +1641,12 @@ const styles = StyleSheet.create({
     fontFamily: DISPLAY_FONT,
     letterSpacing: 1.5,
   },
+  // The sans eyebrow token (Anton never goes below 12px); the fixed height
+  // keeps the block's shape before the channel info lands.
   eyebrow: {
-    color: SILVER,
-    fontSize: 9,
+    ...eyebrow,
     lineHeight: 12,
     height: 12,
-    fontFamily: DISPLAY_FONT,
-    letterSpacing: 2.2,
     marginTop: 3,
   },
   actions: {
@@ -1665,21 +1675,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 9,
   },
-  confirmText: { color: '#e6e8ea', flex: 1, fontSize: 13 },
-  confirmYes: { color: '#f87171', fontWeight: '700', fontSize: 13 },
-  confirmNo: { color: '#8a8a92', fontSize: 13 },
+  confirmText: { ...confirmQuestion, flex: 1 },
+  confirmYes: confirmDanger,
+  confirmNo: confirmWord,
   errorBar: { borderColor: 'rgba(248,113,113,0.45)' },
   error: { color: '#f87171', flex: 1, fontSize: 13, lineHeight: 18 },
   notice: { color: '#4fc07a', paddingHorizontal: 16, paddingVertical: 6, fontSize: 13 },
 
   // ---- thread ----
-  centerInverted: {
+  // Un-flipped inside the inverted list; its layout top is the visual top,
+  // directly under the header (the list's paddingBottom clears it).
+  emptyInverted: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 64,
-    transform: [{ scaleY: -1 }], // un-flip inside the inverted list
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+    paddingTop: 8,
+    transform: [{ scaleY: -1 }],
   },
+  emptyLine: sectionHead,
   // Inverted list: paddingBottom is the VISUAL top (clears the header).
   list: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 66, flexGrow: 1 },
   // In an inverted list the footer is the VISUAL top — where older pages load.
@@ -1755,14 +1768,7 @@ const styles = StyleSheet.create({
   emblem: { width: 18, height: 14 },
   name: { color: '#8a8a92', fontSize: 12, flexShrink: 1, ...TEXT_SHADOW },
   nameArtist: { color: SILVER, fontWeight: '600' },
-  artistTag: {
-    color: SILVER,
-    fontSize: 9,
-    lineHeight: 12,
-    fontFamily: DISPLAY_FONT,
-    letterSpacing: 2,
-    ...TEXT_SHADOW,
-  },
+  artistTag: { ...eyebrow, lineHeight: 12, ...TEXT_SHADOW },
   bubble: {
     borderWidth: 1,
     borderColor: HAIRLINE,

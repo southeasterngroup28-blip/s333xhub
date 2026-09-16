@@ -1,12 +1,16 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeOut, LinearTransition } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PushedHeader } from '@/components/pushed-header';
 import { Skeleton } from '@/components/skeleton';
+import { TopNotice } from '@/components/top-notice';
+import { chip, confirmDanger, confirmQuestion, confirmWord } from '@/constants/type';
+import { fanCopy } from '@/lib/fan-error';
 import { errorFeedback, successFeedback } from '@/lib/haptics';
+import { displayName } from '@/lib/profiles';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 import {
   banUser,
@@ -31,7 +35,6 @@ type ReportRow = Report & {
 
 export default function ReportsScreen() {
   const { profile } = useAuth();
-  const router = useRouter();
   const reduceMotion = useReduceMotion();
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,7 +61,7 @@ export default function ReportsScreen() {
       setRows(withPreviews);
       setError(null);
     } catch (e) {
-      setError((e as { message?: string })?.message ?? 'Could not load reports.');
+      setError(fanCopy(e, 'Could not load reports.'));
     } finally {
       setLoading(false);
     }
@@ -68,7 +71,7 @@ export default function ReportsScreen() {
     load();
   }, [load]);
 
-  // Dismiss is reversible bookkeeping — optimistic, restore on failure.
+  // Dismiss is reversible bookkeeping: optimistic, restore on failure.
   async function handleResolve(report: ReportRow) {
     if (busyId) return;
     setBusyId(report.id);
@@ -80,7 +83,7 @@ export default function ReportsScreen() {
     } catch (e) {
       setRows(before);
       errorFeedback();
-      setError((e as { message?: string })?.message ?? 'Could not resolve.');
+      setError(fanCopy(e, 'Could not dismiss the report.'));
     } finally {
       setBusyId(null);
     }
@@ -104,7 +107,7 @@ export default function ReportsScreen() {
       setRows((prev) => prev.filter((r) => r.id !== report.id));
     } catch (e) {
       errorFeedback();
-      setError((e as { message?: string })?.message ?? 'Could not delete the content.');
+      setError(fanCopy(e, 'Could not delete the content.'));
     } finally {
       setBusyId(null);
     }
@@ -118,7 +121,7 @@ export default function ReportsScreen() {
     try {
       await banUser(report.target_id, banning);
       successFeedback();
-      // Patch the affected rows locally — no need to re-run the serial
+      // Patch the affected rows locally; no need to re-run the serial
       // three-phase load() for one flag.
       const targetBannedAt = banning ? new Date().toISOString() : null;
       setRows((prev) =>
@@ -150,23 +153,21 @@ export default function ReportsScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
-          hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color="#fff" />
-        </Pressable>
-        <Text style={styles.headerTitle}>Reports</Text>
-        <Pressable onPress={load} hitSlop={12}>
-          <Ionicons name="refresh" size={20} color="#888" />
-        </Pressable>
-      </View>
+      <PushedHeader
+        title="REPORTS"
+        fallback="/(tabs)"
+        right={
+          <Pressable onPress={load} hitSlop={12} accessibilityLabel="Refresh">
+            <Ionicons name="refresh" size={20} color="#8f99a3" />
+          </Pressable>
+        }
+      />
 
       <Text style={styles.slaNote}>
-        Apple expects reported content to be acted on within 24 hours — check this screen daily.
+        Apple expects reported content to be acted on within 24 hours. Check this screen daily.
       </Text>
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <TopNotice tone="error" text={error} onDismiss={() => setError(null)} /> : null}
 
       {loading ? (
         <View style={styles.list}>
@@ -189,13 +190,15 @@ export default function ReportsScreen() {
                 <Text style={styles.when}>{timeAgo(item.created_at)}</Text>
               </View>
               <Text style={styles.reason}>
-                “{item.reason}” — reported by {item.reporter?.display_name ?? 'unknown'}
+                {`"${item.reason}" reported by ${displayName(item.reporter)}`}
               </Text>
               <Text style={styles.preview} numberOfLines={3}>
                 {item.preview}
               </Text>
               {confirmBanId === item.id ? (
-                // Inline confirm (RN Alert doesn't work on web) — same pattern as chat leave.
+                // The inline confirm (RN Alert doesn't work on web): the same
+                // question / go word / Cancel chips as the feed's delete, the
+                // drop page and the show form; tokens live in constants/type.
                 <View style={styles.actions}>
                   <Text style={styles.confirmText}>
                     {item.targetBannedAt ? 'Unban this user?' : 'Ban this user from the app?'}
@@ -252,7 +255,7 @@ export default function ReportsScreen() {
           )}
           ListEmptyComponent={
             <View style={styles.center}>
-              <Text style={styles.muted}>No open reports. All clear. ✓</Text>
+              <Text style={styles.muted}>No open reports.</Text>
             </View>
           }
         />
@@ -281,30 +284,21 @@ function ReportSkeleton() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  slaNote: { color: '#666', fontSize: 12, paddingHorizontal: 16, paddingBottom: 10 },
-  error: { color: '#f87171', paddingHorizontal: 16, paddingVertical: 6 },
+  slaNote: { color: '#6d7076', fontSize: 12, paddingHorizontal: 16, paddingBottom: 10 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
-  muted: { color: '#555' },
+  muted: { color: '#6d7076' },
   list: { padding: 16, flexGrow: 1 },
   card: { backgroundColor: '#131519', borderRadius: 12, padding: 14, marginBottom: 10 },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   type: { color: '#c3cdd6', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
-  when: { color: '#555', fontSize: 12 },
-  reason: { color: '#ccc', fontSize: 14 },
-  preview: { color: '#777', fontSize: 13, marginTop: 6, fontStyle: 'italic' },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
-  confirmText: { color: '#ccc', flex: 1, fontSize: 13 },
-  chip: { backgroundColor: '#222226', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7 },
-  chipText: { color: '#fff', fontSize: 13, fontWeight: '600' },
-  chipDanger: { color: '#f87171', fontSize: 13, fontWeight: '600' },
+  when: { color: '#55585f', fontSize: 12 },
+  reason: { color: '#cbcdd1', fontSize: 14 },
+  preview: { color: '#8f99a3', fontSize: 13, marginTop: 6 },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' },
+  confirmText: { ...confirmQuestion, flexShrink: 1 },
+  chip,
+  chipText: confirmWord,
+  chipDanger: confirmDanger,
   skeletonGap: { marginTop: 8 },
   skeletonChips: { flexDirection: 'row', gap: 8, marginTop: 12 },
 });

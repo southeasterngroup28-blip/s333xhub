@@ -1,3 +1,5 @@
+import { FanError } from '@/lib/fan-error';
+import { GONE_NAME, displayName } from '@/lib/profiles';
 import { supabase, requireUserId } from '@/lib/supabase';
 
 export type ReportTargetType = 'post' | 'message' | 'user' | 'comment';
@@ -49,7 +51,7 @@ export async function fetchBlockedUsers(): Promise<{ id: string; name: string }[
   if (error) throw error;
   return (
     (data as unknown as { blocked_id: string; profile: { display_name: string } | null }[]) ?? []
-  ).map((row) => ({ id: row.blocked_id, name: row.profile?.display_name ?? 'Unknown user' }));
+  ).map((row) => ({ id: row.blocked_id, name: displayName(row.profile) }));
 }
 
 export async function fileReport(
@@ -92,7 +94,7 @@ export async function deleteMessage(messageId: string): Promise<void> {
   if (error) throw error;
 }
 
-/** Friendly copy for the paid-post delete guard (the DB refuses with PROTECTED_POST). */
+/** The paid-post delete guard's sentence (the DB refuses with PROTECTED_POST). */
 export function paidPostBlockedMessage(buyers?: number): string {
   const who = buyers && buyers > 0 ? `${buyers} fan${buyers === 1 ? '' : 's'}` : 'Fans';
   return `${who} paid for this post. Paid posts with buyers can't be deleted.`;
@@ -109,8 +111,8 @@ export async function countPostBuyers(postId: string): Promise<number> {
 export async function deletePost(postId: string): Promise<void> {
   const { error } = await supabase.from('posts').delete().eq('id', postId);
   if (error) {
-    // The DB blocks deleting a paid post fans have bought — never surface the raw trigger error.
-    if (error.message?.includes('PROTECTED_POST')) throw new Error(paidPostBlockedMessage());
+    // The DB blocks deleting a paid post fans have bought. Never surface the raw trigger error.
+    if (error.message?.includes('PROTECTED_POST')) throw new FanError(paidPostBlockedMessage());
     throw error;
   }
 }
@@ -155,7 +157,7 @@ export async function fetchReportTargetPreview(report: Report): Promise<string> 
       if (!data) return '(comment no longer exists)';
       const author = (data as unknown as { author: { display_name: string } | null }).author
         ?.display_name;
-      return `${author ?? 'Unknown'} commented: ${data.body}${data.deleted_at ? ' (already deleted)' : ''}`;
+      return `${author ?? GONE_NAME} commented: ${data.body}${data.deleted_at ? ' (already deleted)' : ''}`;
     }
     if (report.target_type === 'message') {
       const { data } = await supabase
@@ -166,7 +168,7 @@ export async function fetchReportTargetPreview(report: Report): Promise<string> 
       if (!data) return '(message no longer exists)';
       const sender = (data as unknown as { sender: { display_name: string } | null }).sender
         ?.display_name;
-      return `${sender ?? 'Unknown'}: ${data.body}${data.deleted_at ? ' (already deleted)' : ''}`;
+      return `${sender ?? GONE_NAME}: ${data.body}${data.deleted_at ? ' (already deleted)' : ''}`;
     }
     const { data } = await supabase
       .from('profiles')

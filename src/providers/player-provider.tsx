@@ -20,6 +20,8 @@ import { errorFeedback } from '@/lib/haptics';
 export type Track = {
   postId: string;
   title: string;
+  /** The performer as the lock screen names it: 'S333XGOD' or 'Mazze'. */
+  artist: string;
   url: string;
   artworkUrl?: string;
 };
@@ -167,7 +169,6 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   useEffect(() => {
     if (!current || !status?.playing) return;
     const anyPlayer = player as unknown as Record<string, unknown>;
-    // TEMP DEBUG: report what the native side actually exposes.
     try {
       (anyPlayer.setActiveForLockScreen as (
         active: boolean,
@@ -175,11 +176,11 @@ export function PlayerProvider({ children }: PropsWithChildren) {
         options?: { showSeekBackward?: boolean; showSeekForward?: boolean }
       ) => void)(
         true,
-        { title: current.title, artist: 'S333XHUB', artworkUrl: current.artworkUrl },
+        { title: current.title, artist: current.artist, artworkUrl: current.artworkUrl },
         { showSeekBackward: true, showSeekForward: true }
       );
     } catch {
-      // No lock screen on this platform (web) — fine.
+      // No lock screen on this platform (web). Fine.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.postId, status?.playing]);

@@ -1,11 +1,19 @@
-// S333XHUB — emails each fan-mail submission to the artist's private
-// address. Deployed as a Supabase Edge Function; the app calls it right
-// after a submission is saved.
+// S333XHUB: emails each fan-mail submission to the artist's private
+// address. Deployed as a Supabase Edge Function (`supabase functions deploy
+// fanmail-email`); the app calls it right after a submission is saved.
 //
-// Required secrets (Dashboard → Edge Functions → Secrets):
-//   RESEND_API_KEY   — from resend.com (sign up WITH the destination email)
-//   FANMAIL_TO_EMAIL — the private inbox that receives submissions
+// Required secrets (Dashboard > Edge Functions > Secrets):
+//   RESEND_API_KEY     from resend.com, with s333xhub.com verified as a sending domain
+//   FANMAIL_TO_EMAIL   the private inbox that receives submissions
+//   FANMAIL_FROM_EMAIL optional; defaults to fanmail@s333xhub.com
 import { createClient } from 'npm:@supabase/supabase-js@2';
+
+/** The same three words the app's Fan Mail screen uses for a submission's kind. */
+const FAN_MAIL_KIND_LABEL: Record<string, string> = {
+  picture: 'Photo',
+  video: 'Video',
+  audio: 'Beat',
+};
 
 // Browsers send a CORS "preflight" request before the real one; answer it.
 const corsHeaders = {
@@ -26,7 +34,7 @@ Deno.serve(async (req) => {
     if (!fan_mail_id) return reply('missing fan_mail_id', 400);
 
     // Act AS the calling fan: row-level security already lets senders read
-    // their own submission and their own uploaded file — no admin key needed.
+    // their own submission and their own uploaded file. No admin key needed.
     const client = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_ANON_KEY')!,
@@ -55,6 +63,8 @@ Deno.serve(async (req) => {
     if (signError || !signed) return reply(`sign failed: ${signError?.message}`, 500);
 
     const senderName = profile?.display_name ?? 'a fan';
+    const label = FAN_MAIL_KIND_LABEL[row.kind] ?? row.kind;
+    const from = Deno.env.get('FANMAIL_FROM_EMAIL') ?? 'fanmail@s333xhub.com';
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -62,13 +72,13 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'S333XHUB Fan Mail <onboarding@resend.dev>',
+        from: `S333XHUB <${from}>`,
         to: [Deno.env.get('FANMAIL_TO_EMAIL')],
-        subject: `Fan mail — ${row.kind} from ${senderName}`,
+        subject: `Fan mail: ${label} from ${senderName}`,
         html: `
           <h2>New fan mail</h2>
           <p><b>From:</b> ${senderName}</p>
-          <p><b>Type:</b> ${row.kind}</p>
+          <p><b>Type:</b> ${label}</p>
           ${row.note ? `<p><b>Note:</b> ${row.note.replace(/</g, '&lt;')}</p>` : ''}
           <p><a href="${signed.signedUrl}">Open the file</a> (link works for 7 days)</p>
         `,

@@ -1,10 +1,9 @@
-// Plain-language legal documents for S333XHUB.
-// ⚠️ These are carefully written templates, not legal advice — have a
-// lawyer review them before public launch. Update EFFECTIVE_DATE and
-// GOVERNING_STATE when finalized.
+// Legal copy for S333XHUB. Source of truth for the in-app legal screens and
+// the s333xgod site: node scripts/export-legal.mjs C:\dev\s333xgod.
+// TODO before launch: one-hour lawyer read.
 
 export const APP_NAME = 'S333XHUB';
-export const SUPPORT_EMAIL = 'southeasterngroup28@gmail.com';
+export const SUPPORT_EMAIL = 'support@s333xhub.com';
 export const EFFECTIVE_DATE = 'August 23, 2026';
 export const GOVERNING_STATE = 'Florida';
 
@@ -17,18 +16,18 @@ export const TERMS_SECTIONS: LegalSection[] = [
   },
   {
     heading: 'Who can use it',
-    body: `You must be at least 17 years old to use ${APP_NAME}. By signing up you confirm you meet this requirement. Accounts are personal — don't share your login or use someone else's.`,
+    body: `You must be at least 17 years old to use ${APP_NAME}. By signing up you confirm you meet this requirement. Accounts are personal. Don't share your login or use someone else's.`,
   },
   {
     heading: 'Your account',
-    body: `Fan accounts are free. There are no subscriptions and never will be — some individual posts can be unlocked with a one-time purchase. You're responsible for what happens under your account. You can delete your account at any time in Settings, which permanently removes your data.`,
+    body: `Fan accounts are free. There are no subscriptions and never will be. Some individual posts can be unlocked with a one-time purchase. You're responsible for what happens under your account. You can delete your account at any time in Settings, which permanently removes your data.`,
   },
   {
     heading: 'Purchases',
-    body: `Unlocks are one-time purchases made through Apple's or Google's in-app purchase system, and they follow those stores' payment terms. An unlock gives you permanent personal access to that post inside the app — it is not a download, a license to redistribute, or ownership of the music. Refunds are handled by Apple or Google under their policies, not by us. If you reinstall the app or switch phones, use "Restore Purchases" to get your unlocks back at no charge.`,
+    body: `Unlocks are one-time purchases made through Apple's or Google's in-app purchase system, and they follow those stores' payment terms. An unlock gives you permanent personal access to that post inside the app. It is not a download, a license to redistribute, or ownership of the music. Refunds are handled by Apple or Google under their policies, not by us. If you reinstall the app or switch phones, use "Restore Purchases" to get your unlocks back at no charge.`,
   },
   {
-    heading: 'The Artist’s content',
+    heading: "The Artist's content",
     body: `All music, photos, videos, and other content the Artist posts belongs to the Artist. You get a personal, non-transferable right to stream and view it inside the app. Recording, ripping, screenshotting to redistribute, re-uploading, or selling any of it is prohibited and may end your account.`,
   },
   {
@@ -56,7 +55,7 @@ export const TERMS_SECTIONS: LegalSection[] = [
 export const PRIVACY_SECTIONS: LegalSection[] = [
   {
     heading: 'What we collect',
-    body: `When you sign up: your email address and the display name you choose. When you use the app: the messages you send, your notification preferences, your block list, any reports you file, and a record of posts you've unlocked. If you allow notifications on the real app: a device push token. That's it — no contacts, no location, no tracking across other apps.`,
+    body: `When you sign up: your email address and the display name you choose. When you use the app: the messages you send, your notification preferences, your block list, any reports you file, and a record of posts you've unlocked. If you allow notifications on the real app: a device push token. That's it. No contacts, no location, no tracking across other apps.`,
   },
   {
     heading: 'How we use it',
@@ -64,7 +63,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
   },
   {
     heading: 'Where it lives',
-    body: `Your data is stored with Supabase (our database and file-storage provider) on servers in the United States. Purchases are processed by Apple or Google and our payment partner RevenueCat — we never see your card details. These providers process data on our behalf under their own security commitments.`,
+    body: `Your data is stored with Supabase (our database and file-storage provider) on servers in the United States. Purchases are processed by Apple or Google and our payment partner RevenueCat. We never see your card details. These providers process data on our behalf under their own security commitments.`,
   },
   {
     heading: 'Who can see what',
@@ -76,7 +75,7 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
   },
   {
     heading: 'Deleting your account',
-    body: `In the app: Settings → Delete my account. Without the app: email ${SUPPORT_EMAIL} from your account's email address, or use our account-deletion web page, and we'll delete your account within 30 days.`,
+    body: `In the app, open Settings and tap Delete my account. Without the app: email ${SUPPORT_EMAIL} from your account's email address, or use our account-deletion web page, and we'll delete your account within 30 days.`,
   },
   {
     heading: 'Children',
@@ -91,31 +90,31 @@ export const PRIVACY_SECTIONS: LegalSection[] = [
 export const SHOP_TERMS_SECTIONS: LegalSection[] = [
   {
     heading: 'What you are buying',
-    body: `S333XSHOP sells physical, hand-finished collectible pieces made in-house by the Artist in numbered limited runs. Each piece is one of a fixed run (for example, #7 of 50) and runs are never reproduced. Every piece is made to order or in small batches — minor variations are part of what makes each one unique, not defects.`,
+    body: `S333XSHOP sells physical, hand-finished collectible pieces made in-house by the Artist in numbered limited runs. Each piece is one of a fixed run (for example, #7 of 50) and runs are never reproduced. Every piece is made to order or in small batches. Minor variations are part of what makes each one unique, not defects.`,
   },
   {
     heading: 'Prices and payment',
-    body: `Prices are shown in US dollars and include standard shipping within the United States. Payment is processed securely by Stripe — we never see or store your card details. Applicable sales tax is calculated and added at checkout.`,
+    body: `Prices are shown in US dollars and include standard shipping within the United States. Payment is processed securely by Stripe. We never see or store your card details. Applicable sales tax is calculated and added at checkout.`,
   },
   {
     heading: 'Limits and the registry',
-    body: `Drops are limited to one piece per fan. Your edition number and display name appear in the drop's public registry inside the app — that visibility is part of owning a numbered piece.`,
+    body: `Drops are limited to one piece per fan. Your edition number and display name appear in the drop's public registry inside the app. That visibility is part of owning a numbered piece.`,
   },
   {
     heading: 'Shipping',
-    body: `Pieces ship from the Artist within 5–7 business days of your order (pieces still in production ship when the run is finished — the drop page says which). You'll get an in-app notification with a tracking number the moment yours ships. We currently ship within the United States only. Make sure your shipping address is correct at checkout; packages returned due to an incorrect address can be reshipped at your cost.`,
+    body: `Pieces ship from the Artist within 5 to 7 business days of your order (pieces still in production ship when the run is finished). You'll get an in-app notification with a tracking number the moment yours ships. We currently ship within the United States only. Make sure your shipping address is correct at checkout; packages returned due to an incorrect address can be reshipped at your cost.`,
   },
   {
     heading: 'Damaged, lost, or wrong items',
-    body: `If your piece arrives damaged, contact us at ${SUPPORT_EMAIL} within 7 days of delivery with photos of the piece and packaging — we'll replace it if the run allows, or refund you in full. If tracking shows your package lost in transit, we'll work with the carrier and make it right. If we somehow ship you the wrong number, we'll fix it at no cost to you.`,
+    body: `If your piece arrives damaged, contact us at ${SUPPORT_EMAIL} within 7 days of delivery with photos of the piece and packaging. We'll replace it if the run allows, or refund you in full. If tracking shows your package lost in transit, we'll work with the carrier and make it right. If we somehow ship you the wrong number, we'll fix it at no cost to you.`,
   },
   {
     heading: 'Returns and refunds',
-    body: `Because every piece is a numbered limited collectible, all sales are final — there are no returns or exchanges for change of mind. This does not affect the damaged/lost protections above, and nothing here limits your rights under applicable consumer law. Approved refunds go back to your original payment method; the refunded number returns to the run.`,
+    body: `Because every piece is a numbered limited collectible, all sales are final. There are no returns or exchanges for change of mind. This does not affect the damaged/lost protections above, and nothing here limits your rights under applicable consumer law. Approved refunds go back to your original payment method; the refunded number returns to the run.`,
   },
   {
     heading: 'Order issues and contact',
-    body: `For anything about an order — status, address changes before shipping, damage claims — email ${SUPPORT_EMAIL} with your order's drop number and edition number. We answer within 2 business days.`,
+    body: `For anything about an order (status, address changes before shipping, damage claims), email ${SUPPORT_EMAIL} with your order's drop number and edition number. We answer within 2 business days.`,
   },
   {
     heading: 'Governing law',

@@ -321,7 +321,15 @@ export function AudioPlayerCard({ postId, title, url, project, coverUrl, coverFo
     if (isCurrent) {
       toggle();
     } else {
-      playTrack({ postId, title, url, artworkUrl: coverUrl });
+      playTrack({
+        postId,
+        title,
+        // Title case, the name as it appears on streaming services, not
+        // the in-app eyebrow form.
+        artist: project === 's333xgod' ? 'S333XGOD' : 'Mazze',
+        url,
+        artworkUrl: coverUrl,
+      });
     }
   }
 

@@ -20,11 +20,20 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { AppBackground } from '@/components/app-background';
 import { EdgeGlass, FadeMask } from '@/components/edge-fade';
-import { EmptyState } from '@/components/empty-state';
+import { ErrorCard } from '@/components/empty-state';
 import { MyTicketsStrip, useFanTickets, type RowTicketing } from '@/components/fan-tickets';
+import {
+  ROOT_FADE_TOP,
+  ROOT_LIST_TOP,
+  ROOT_NOTICE_TOP,
+  RootHeader,
+} from '@/components/root-header';
 import { Skeleton } from '@/components/skeleton';
+import { TopNotice } from '@/components/top-notice';
 import { ScalePressable } from '@/components/ui/scale-pressable';
-import { DISPLAY_FONT } from '@/constants/type';
+import { CHAT_HAIRLINE_MINE, CHAT_SURFACE_ROW } from '@/constants/chat-surfaces';
+import { DISPLAY_FONT, eyebrow, sectionHead } from '@/constants/type';
+import { fanCopy } from '@/lib/fan-error';
 import { tapFeedback } from '@/lib/haptics';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 import {
@@ -66,9 +75,9 @@ export default function ShowsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** A paid-but-lagging buy — calm copy in a neutral color, never the red slot. */
+  /** A paid-but-lagging buy: calm copy in a neutral tone, never the red slot. */
   const [notice, setNotice] = useState<string | null>(null);
-  /** The last load() itself failed — the empty branch owns the story then. */
+  /** The last load() itself failed; the empty branch owns the story then. */
   const [loadFailed, setLoadFailed] = useState(false);
   /** Artist only: tickets sold per in-app show, for the "12 / 200 sold" line. */
   const [soldByShow, setSoldByShow] = useState<Record<string, number>>({});
@@ -92,7 +101,7 @@ export default function ShowsScreen() {
     buyerName: profile?.display_name,
     onError: setError,
     onNotice: (message) => {
-      // A retry that PAID must never sit under the previous try's red line —
+      // A retry that PAID must never sit under the previous try's red line:
       // the calm notice owns the floating slot the moment money moves.
       setError(null);
       setNotice(message);
@@ -125,7 +134,7 @@ export default function ShowsScreen() {
 
   const load = useCallback(async () => {
     try {
-      // The past list is secondary - a hiccup there never blanks what's ahead.
+      // The past list is secondary. A hiccup there never blanks what's ahead.
       const [ahead, gone] = await Promise.all([
         fetchUpcomingShows(),
         fetchPastShows(PAST_LIMIT).catch(() => [] as Show[]),
@@ -137,7 +146,7 @@ export default function ShowsScreen() {
       setNotice(null);
     } catch (e) {
       setLoadFailed(true);
-      setError((e as { message?: string })?.message ?? 'Could not load the shows.');
+      setError(fanCopy(e, 'Could not load the shows.'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -153,7 +162,7 @@ export default function ShowsScreen() {
   function handleTickets(show: Show) {
     tapFeedback();
     openTickets(show).catch((e) => {
-      setError((e as { message?: string })?.message ?? 'Could not open the ticket page.');
+      setError(fanCopy(e, 'Could not open the ticket page.'));
     });
   }
 
@@ -188,7 +197,7 @@ export default function ShowsScreen() {
           <ShowRowSkeleton />
         </View>
       ) : (
-        <FadeMask>
+        <FadeMask top={ROOT_FADE_TOP}>
           <ScrollView
             ref={scrollRef}
             contentContainerStyle={styles.list}
@@ -203,32 +212,19 @@ export default function ShowsScreen() {
               />
             }>
             <MyTicketsStrip tickets={ticketing.owned} />
-            <Text style={styles.sectionLabel}>UPCOMING</Text>
+            <Text style={styles.sectionHead}>UPCOMING</Text>
             {upcoming.length === 0 ? (
               loadFailed ? (
-                <EmptyState
-                  icon="cloud-offline-outline"
-                  title="Couldn't load shows"
-                  sub="Check your connection."
-                  action={{
-                    label: 'RETRY',
-                    onPress: () => {
-                      tapFeedback();
-                      setLoading(true);
-                      load();
-                    },
+                <ErrorCard
+                  title="COULDN'T LOAD SHOWS"
+                  onRetry={() => {
+                    tapFeedback();
+                    setLoading(true);
+                    load();
                   }}
                 />
               ) : (
-                <EmptyState
-                  icon="ticket-outline"
-                  title="No shows announced yet"
-                  sub={
-                    isArtist
-                      ? 'Tap + to announce the first date.'
-                      : "Mazze hasn't announced any shows — you'll get a push when he does."
-                  }
-                />
+                <NoDatesRow isArtist={isArtist} />
               )
             ) : (
               upcoming.map((show) => (
@@ -255,7 +251,7 @@ export default function ShowsScreen() {
                     setPastOpen((open) => !open);
                   }}
                   hitSlop={8}>
-                  <Text style={styles.sectionLabel}>PAST</Text>
+                  <Text style={styles.sectionHead}>PAST</Text>
                   <Animated.View style={pastChevronStyle}>
                     <Ionicons name="chevron-down" size={14} color="#6d7076" />
                   </Animated.View>
@@ -287,32 +283,68 @@ export default function ShowsScreen() {
       )}
 
       <EdgeGlass />
-      <View style={[styles.topBar, { top: insets.top }]} pointerEvents="box-none">
-        <Text style={styles.title}>SHOWS</Text>
-        {canScan ? (
-          <Pressable
-            onPress={() => handleScan()}
-            hitSlop={12}
-            style={({ pressed }) => [styles.scanButton, pressed && styles.pressedDim]}>
-            <Ionicons name="scan-outline" size={14} color="#c3cdd6" />
-            <Text style={styles.scanButtonText}>SCAN TICKETS</Text>
-          </Pressable>
-        ) : null}
-        {isArtist ? (
-          <ScalePressable
-            onPress={() => router.push('/show-new' as never)}
-            hitSlop={12}
-            style={styles.newButton}>
-            <Ionicons name="add" size={22} color="#0b0c0e" />
-          </ScalePressable>
-        ) : null}
-      </View>
+      <RootHeader
+        title="SHOWS"
+        actions={
+          isArtist ? (
+            <>
+              {canScan ? (
+                <Pressable
+                  onPress={() => handleScan()}
+                  hitSlop={12}
+                  style={({ pressed }) => [styles.scanButton, pressed && styles.pressedDim]}>
+                  <Ionicons name="scan-outline" size={14} color="#c3cdd6" />
+                  <Text style={styles.scanButtonText}>SCAN TICKETS</Text>
+                </Pressable>
+              ) : null}
+              <ScalePressable
+                onPress={() => router.push('/show-new' as never)}
+                hitSlop={12}
+                style={styles.newButton}>
+                <Ionicons name="add" size={22} color="#0b0c0e" />
+              </ScalePressable>
+            </>
+          ) : null
+        }
+      />
       {error && !(loadFailed && upcoming.length === 0) ? (
-        <Text style={[styles.error, { top: insets.top + 48 }]}>{error}</Text>
+        <TopNotice
+          tone="error"
+          text={error}
+          onDismiss={() => setError(null)}
+          absoluteTop={insets.top + ROOT_NOTICE_TOP}
+        />
       ) : notice ? (
-        <Text style={[styles.noticeLine, { top: insets.top + 48 }]}>{notice}</Text>
+        <TopNotice
+          tone="ok"
+          text={notice}
+          onDismiss={() => setNotice(null)}
+          absoluteTop={insets.top + ROOT_NOTICE_TOP}
+        />
       ) : null}
     </SafeAreaView>
+  );
+}
+
+/**
+ * The fan's empty state, built from the row's own parts: a blank date
+ * block over the venue and meta lines, no pill. The artist's version
+ * points at the + button.
+ */
+function NoDatesRow({ isArtist }: { isArtist: boolean }) {
+  return (
+    <View style={styles.row}>
+      <View style={styles.dateBlock}>
+        <Text style={[styles.month, styles.monthBlank]}>---</Text>
+        <Text style={[styles.day, styles.dayBlank]}>--</Text>
+      </View>
+      <View style={styles.meta}>
+        <Text style={styles.venue}>No dates announced</Text>
+        <Text style={styles.city}>
+          {isArtist ? 'Tap + to announce the first date.' : 'You get a push when one is added.'}
+        </Text>
+      </View>
+    </View>
   );
 }
 
@@ -436,7 +468,7 @@ function ShowRow({
                 style={styles.pillSpinner}
               />
               <Text style={styles.pillText}>
-                {ticketing.phase === 'issuing' ? 'PAID. GETTING YOUR TICKET' : 'BUYING…'}
+                {ticketing.phase === 'issuing' ? 'PAID · GETTING YOUR TICKET…' : 'BUYING…'}
               </Text>
             </View>
           ) : ticketing.left === 0 ? (
@@ -481,21 +513,7 @@ function ShowRowSkeleton() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
-  topBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    zIndex: 20,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  title: { color: '#f4f5f6', fontSize: 22, fontFamily: DISPLAY_FONT, letterSpacing: 2 },
   newButton: {
-    position: 'absolute',
-    right: 16,
     width: 34,
     height: 34,
     borderRadius: 17,
@@ -504,8 +522,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   scanButton: {
-    position: 'absolute',
-    left: 16,
     height: 34,
     paddingHorizontal: 12,
     borderRadius: 17,
@@ -527,51 +543,22 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   scanChipText: { color: '#c3cdd6', fontSize: 9, fontWeight: '800', letterSpacing: 1 },
-  error: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    zIndex: 20,
-    textAlign: 'center',
-    color: '#f87171',
-    paddingHorizontal: 16,
-    fontSize: 13,
-  },
-  // Same seat as the red line, calmer voice: money moved, nothing is wrong.
-  noticeLine: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    zIndex: 20,
-    textAlign: 'center',
-    color: '#c3cdd6',
-    paddingHorizontal: 16,
-    fontSize: 13,
-  },
   pressedDim: { opacity: 0.6 },
-  list: { padding: 14, paddingTop: 52, paddingBottom: 150, flexGrow: 1 },
-  sectionLabel: {
-    color: '#6d7076',
-    fontSize: 10.5,
-    fontWeight: '700',
-    letterSpacing: 1.6,
-    marginTop: 10,
-    marginBottom: 10,
-  },
+  list: { padding: 14, paddingTop: ROOT_LIST_TOP, paddingBottom: 150, flexGrow: 1 },
+  sectionHead: { ...sectionHead, marginTop: 10, marginBottom: 10 },
   pastToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 },
+  // The same translucent surface as the MY TICKETS rows above; the 52px
+  // date block stays the only bright object.
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#101216',
+    backgroundColor: CHAT_SURFACE_ROW,
+    borderWidth: 1,
+    borderColor: CHAT_HAIRLINE_MINE,
     borderRadius: 16,
     padding: 13,
     marginBottom: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.45,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
   },
   rowDim: { opacity: 0.45 },
   dateBlock: {
@@ -584,10 +571,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dateBlockNext: { borderColor: '#c3cdd6' },
-  month: { color: '#c3cdd6', fontSize: 9.5, fontWeight: '700', letterSpacing: 1.4 },
+  month: eyebrow,
+  monthBlank: { color: '#8f99a3' },
   day: { color: '#fff', fontFamily: DISPLAY_FONT, fontSize: 24, letterSpacing: 0.5, marginTop: 1 },
+  dayBlank: { color: '#8f99a3' },
   meta: { flex: 1 },
-  eyebrow: { color: '#c3cdd6', fontSize: 9.5, fontWeight: '700', letterSpacing: 1.4, marginBottom: 3 },
+  eyebrow: { ...eyebrow, marginBottom: 3 },
   showTitle: { color: '#8f99a3', fontSize: 11.5, marginBottom: 1 },
   venue: { color: '#fff', fontSize: 14.5, fontWeight: '700' },
   venueCancelled: { textDecorationLine: 'line-through', color: '#8f99a3' },

@@ -6,6 +6,7 @@
 // The client NEVER writes its own unlock — the vault seal stays sealed.
 import { LogBox, Platform } from 'react-native';
 
+import { FanError } from '@/lib/fan-error';
 import { fetchMyPurchasedPostIds } from '@/lib/purchases';
 import { requireUserId } from '@/lib/supabase';
 
@@ -50,15 +51,21 @@ export async function configurePayments(userId: string): Promise<void> {
   }
 }
 
-export class PaymentsNotLiveError extends Error {
-  constructor() {
-    super('Purchases open with the App Store version — hang tight.');
+/**
+ * Apple's store could not sell this right now: the wrong platform, or a
+ * product lookup that came back empty (a store blip in production, or a
+ * build whose products Apple has not approved). The sentence is the
+ * fan's, so it says which.
+ */
+export class PaymentsNotLiveError extends FanError {
+  constructor(message: string) {
+    super(message);
     this.name = 'PaymentsNotLiveError';
   }
 }
 
-/** The fan backed out of Apple's payment sheet — not a failure. */
-export class PurchaseCancelledError extends Error {
+/** The fan backed out of Apple's payment sheet. Not a failure. */
+export class PurchaseCancelledError extends FanError {
   constructor() {
     super('Purchase cancelled.');
     this.name = 'PurchaseCancelledError';
@@ -66,7 +73,7 @@ export class PurchaseCancelledError extends Error {
 }
 
 /** Apple took the money but the webhook row has not landed yet. */
-export class UnlockPendingError extends Error {
+export class UnlockPendingError extends FanError {
   constructor() {
     super('Payment went through. Your unlock is on its way.');
     this.name = 'UnlockPendingError';
@@ -86,9 +93,12 @@ export async function purchasePost(
   },
   onPaid?: () => void
 ): Promise<void> {
-  if (Platform.OS !== 'ios') throw new PaymentsNotLiveError();
+  if (Platform.OS !== 'ios') throw new PaymentsNotLiveError('Purchases are iOS only.');
   const productId = productIdForCents(post.price_cents ?? 0);
-  if (!productId) throw new Error('This post has no valid price tier.');
+  if (!productId) {
+    console.warn('[payments] no product for', post.price_cents);
+    throw new FanError("This post can't be unlocked right now.");
+  }
   const userId = await requireUserId();
 
   const Purchases = await rc();
@@ -99,14 +109,17 @@ export async function purchasePost(
 
   const products = await Purchases.getProducts([productId]);
   const product = products.find((p) => p.identifier === productId);
-  if (!product) throw new PaymentsNotLiveError();
+  if (!product) {
+    throw new PaymentsNotLiveError("Apple didn't return this item. Try again in a moment.");
+  }
 
   try {
     await Purchases.purchaseStoreProduct(product);
   } catch (e) {
     const err = e as { userCancelled?: boolean; message?: string };
     if (err.userCancelled) throw new PurchaseCancelledError();
-    throw new Error(err.message ?? 'The purchase did not go through.');
+    console.warn('[payments] RevenueCat:', err.message);
+    throw new FanError('The purchase did not go through.');
   }
 
   onPaid?.();

@@ -137,17 +137,17 @@ Deno.serve(async (req) => {
     showId = String(body?.show_id ?? '');
     appMode = String(body?.mode ?? '');
   } catch {
-    return fail('Bad request.', 400);
+    return fail('Could not start checkout. Try again in a moment.', 400);
   }
-  if (!uuidish.test(showId)) return fail('Missing show.', 400);
+  if (!uuidish.test(showId)) return fail('Could not start checkout. Try again in a moment.', 400);
 
   // Test app + live key (or the reverse) can never work: Stripe keeps the
   // two worlds apart, so the payment sheet would only ever see "No such
-  // payment_intent". Say so plainly instead of creating a stray charge.
+  // payment_intent". Log the real reason; the fan gets one plain sentence.
   const serverMode = stripeMode(Deno.env.get('STRIPE_SECRET_KEY')!);
   if ((appMode === 'test' || appMode === 'live') && serverMode !== 'unknown' && appMode !== serverMode) {
     console.error(`Stripe key mismatch: app is ${appMode}, STRIPE_SECRET_KEY is ${serverMode}`);
-    return fail(`Checkout is misconfigured: the app uses Stripe ${appMode} keys but the server holds a ${serverMode} key.`, 500);
+    return fail("Checkout isn't available on this version of the app.", 500);
   }
 
   // Act AS the caller only to learn who they are — everything after this
@@ -160,7 +160,7 @@ Deno.serve(async (req) => {
   );
   const { data: userData, error: userError } = await caller.auth.getUser();
   const user = userData?.user;
-  if (userError || !user) return fail('Please sign in again.', 401);
+  if (userError || !user) return fail('Your session expired. Sign in again.', 401);
 
   const admin = adminClient();
 
@@ -250,7 +250,8 @@ Deno.serve(async (req) => {
       currency: 'usd',
       customer: customerId,
       'payment_method_types[]': 'card',
-      description: `S333XHUB ticket — ${label}`,
+      // Printed on the fan's receipt and the Stripe dashboard line: house voice.
+      description: `S333XHUB ticket · ${label}`,
       'metadata[kind]': 'ticket',
       'metadata[show_id]': show.id,
       'metadata[user_id]': user.id,

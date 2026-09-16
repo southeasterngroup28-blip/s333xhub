@@ -57,10 +57,11 @@ begin
       nullif(new.title, ''),
       nullif(left(new.body, 120), ''),
       case new.kind
-        when 'audio' then 'New track in the app'
-        when 'video' then 'New video in the app'
-        when 'poll' then 'New poll — cast your vote'
-        else 'Open S333XHUB to see it'
+        when 'audio' then 'New track'
+        when 'video' then 'New video'
+        when 'poll' then 'New poll'
+        when 'photo' then 'New photo'
+        else 'New post'
       end
     ),
     'sound', 'default'
@@ -110,9 +111,9 @@ begin
 
   select jsonb_agg(jsonb_build_object(
     'to', pt.token,
-    'title', case when room_type = 'group' then 'S333XHUB' else coalesce(sender_name, 'New message') end,
+    'title', case when room_type = 'group' then 'S333XHUB' else coalesce(sender_name, 'Deleted user') end,
     'body', case when room_type = 'group'
-      then coalesce(sender_name, 'Someone') || ': ' || preview
+      then coalesce(sender_name, 'Deleted user') || ': ' || preview
       else preview end,
     'sound', 'default'
   ))

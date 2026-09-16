@@ -1,10 +1,11 @@
+import { FanError } from '@/lib/fan-error';
 import { base64ToArrayBuffer, type PickedImage } from '@/lib/posts';
 import { supabase, requireUserId } from '@/lib/supabase';
 
 /**
  * Flip to true when Stripe is wired (LLC + business bank done).
- * Until then, BUY explains that purchases open with the App Store
- * version — same hard-gate pattern as Fan Mail.
+ * Until then a fan sees one line on the drop page ("Orders aren't open
+ * yet.") in place of the number grid and the BUY button.
  */
 export const SHOP_PAYMENTS_LIVE = false;
 
@@ -214,7 +215,7 @@ export async function updateDrop(
     .select('id');
   if (error) throw error;
   if (!data || data.length === 0) {
-    throw new Error('Published drops are locked - only drafts can be edited.');
+    throw new FanError('Published drops are locked. Only drafts can be edited.');
   }
 }
 

@@ -197,7 +197,7 @@ begin
   select * into d from public.drops where id = new.drop_id;
   select jsonb_agg(jsonb_build_object(
     'to', pt.token,
-    'title', 'Your piece shipped 📦',
+    'title', 'Shipped',
     'body', d.title || ' #' || new.edition_number || ' is on the way.',
     'sound', 'default'
   ))

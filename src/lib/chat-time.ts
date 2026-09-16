@@ -1,25 +1,15 @@
 // Time as the chat surfaces read it: a separator chip heads the thread when
 // the day turns or a quiet hour passes, and a tapped bubble tells its time.
+// The date table and the clock live in lib/dates; this file only composes.
 
-// Mixed case throughout. Anton does the shouting, the words don't.
-const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-// AP-style month abbreviations. "Sept", not "Sep".
-const MONTHS = ['Jan', 'Feb', 'March', 'April', 'May', 'June', 'July', 'Aug', 'Sept', 'Oct', 'Nov', 'Dec'];
+import { MONTHS, WEEKDAYS, WEEKDAYS_SHORT, clockTime } from '@/lib/dates';
 
-/** Local calendar day, for grouping — "2026-9-7". */
+export { clockTime };
+
+/** Local calendar day, for grouping: "2026-9-7". */
 export function dayKey(iso: string): string {
   const d = new Date(iso);
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-}
-
-// One formatter for the whole app, created once, not per row. It follows
-// the phone's clock setting.
-const CLOCK = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
-
-/** "1:52 PM", or "13:52" when the phone is set to 24-hour time. */
-export function clockTime(iso: string): string {
-  return CLOCK.format(new Date(iso));
 }
 
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();

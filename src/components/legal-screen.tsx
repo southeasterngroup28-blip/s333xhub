@@ -1,8 +1,7 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PushedHeader } from '@/components/pushed-header';
 import { EFFECTIVE_DATE, type LegalSection } from '@/lib/legal-content';
 
 type Props = {
@@ -11,19 +10,9 @@ type Props = {
 };
 
 export function LegalScreen({ title, sections }: Props) {
-  const router = useRouter();
-
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
-          hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color="#fff" />
-        </Pressable>
-        <Text style={styles.headerTitle}>{title}</Text>
-        <View style={{ width: 24 }} />
-      </View>
+      <PushedHeader title={title.toUpperCase()} />
 
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.effective}>Effective {EFFECTIVE_DATE}</Text>
@@ -40,17 +29,10 @@ export function LegalScreen({ title, sections }: Props) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
   content: { padding: 20, paddingBottom: 64, maxWidth: 700, alignSelf: 'center' },
-  effective: { color: '#666', fontSize: 13, marginBottom: 20 },
+  effective: { color: '#6d7076', fontSize: 13, marginBottom: 20 },
   section: { marginBottom: 22 },
   heading: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 6 },
-  body: { color: '#bbb', fontSize: 14.5, lineHeight: 22 },
+  // The comments thread's body colour, so legal reads like the rest of the app.
+  body: { color: '#cbcdd1', fontSize: 14.5, lineHeight: 22 },
 });

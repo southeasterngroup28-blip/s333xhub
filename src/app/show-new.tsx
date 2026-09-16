@@ -15,7 +15,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/providers/auth-provider';
 
-import { DISPLAY_FONT } from '@/constants/type';
+import { Chip, ChipRow, Field, FieldLabel, FormNote, PrimaryButton } from '@/components/form';
+import { PushedHeader } from '@/components/pushed-header';
+import { TopNotice } from '@/components/top-notice';
+import { chip, confirmDanger, confirmQuestion, confirmWord } from '@/constants/type';
+import { shortDateYear } from '@/lib/dates';
+import { fanCopy } from '@/lib/fan-error';
 import { errorFeedback, pressFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import {
   DEFAULT_SHOW_TIMEZONE,
@@ -23,6 +28,7 @@ import {
   SHOW_STATUS_LABEL,
   SHOW_TIMEZONES,
   createShow,
+  datePartsAt,
   deleteShow,
   fetchShow,
   updateShow,
@@ -34,7 +40,7 @@ import { ticketsSold } from '@/lib/tickets';
 /** Segmented order for the edit screen; labels come from the lib so badges match. */
 const STATUS_ORDER: ShowStatus[] = ['announced', 'sold_out', 'cancelled'];
 
-/** In-app first — selling in the app is the whole point of the feature. */
+/** In-app first. Selling in the app is the whole point of the feature. */
 const SALES_MODES: SalesMode[] = ['in_app', 'link', 'none'];
 
 /** Stripe won't take a USD charge under 50¢, so neither does the form. */
@@ -63,7 +69,7 @@ function parseCapacity(raw: string): number | null {
 // ---- We store the real instant plus the zone, so every fan sees venue time.
 
 // ---- Dates: whatever's on the flyer goes in ("9/15", "Sept 15", "2026-09-15");
-// ---- on blur the field tidies itself to "Sep 15, 2026".
+// ---- on blur the field tidies itself to "Sept 15, 2026".
 
 const MONTH_NAMES = [
   'january',
@@ -173,10 +179,9 @@ function parseDate(raw: string): ParsedDate | null {
   return null;
 }
 
-/** The field's tidy form: "Sep 15, 2026" — which parseDate reads straight back. */
+/** The field's tidy form: "Sept 15, 2026", which parseDate reads straight back. */
 function dateLabel(d: DateParts): string {
-  const month = MONTH_NAMES[d.month - 1];
-  return `${month.charAt(0).toUpperCase()}${month.slice(1, 3)} ${d.day}, ${d.year}`;
+  return shortDateYear(new Date(d.year, d.month - 1, d.day));
 }
 
 /** The field's tidy form: 22:00 → "10:00 PM". */
@@ -268,18 +273,10 @@ function wallClock(iso: string, tz: string): { date: string; time: string } {
   };
 }
 
-/** "Sat, Oct 18, 2026, 8:00 PM EDT" — exactly what fans will read. */
+/** "Sat, Oct 18 · 8:00 PM EDT", composed exactly as the ticket and the strip read it. */
 function previewLabel(at: Date, tz: string): string {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZoneName: 'short',
-  }).format(at);
+  const d = datePartsAt(at, tz);
+  return `${d.weekday}, ${d.monthAP} ${d.day} · ${d.time} ${d.zone}`;
 }
 
 export default function ShowFormScreen() {
@@ -294,7 +291,7 @@ export default function ShowFormScreen() {
   const [venue, setVenue] = useState('');
   const [city, setCity] = useState('');
   const [date, setDate] = useState('');
-  /** "Read that as Sep 15, 2026 — tap to change." after a guessed date; tap focuses the field. */
+  /** "Read that as Sept 15, 2026. Tap to change." after a guessed date; tap focuses the field. */
   const [dateNote, setDateNote] = useState<string | null>(null);
   const dateRef = useRef<TextInput>(null);
   const [time, setTime] = useState('');
@@ -307,7 +304,7 @@ export default function ShowFormScreen() {
   const [capacity, setCapacity] = useState('');
   /**
    * Editing: tickets already sold. Capacity can't drop below it, and a show
-   * with sales can't be deleted (sold tickets pin it) — only cancelled.
+   * with sales can't be deleted (sold tickets pin it), only cancelled.
    */
   const [sold, setSold] = useState(0);
   const [status, setStatus] = useState<ShowStatus>('announced');
@@ -350,12 +347,12 @@ export default function ShowFormScreen() {
         setCapacity(show.capacity != null ? String(show.capacity) : '');
         setStatus(show.status);
         // Every mode, not just in-app: a show that sold in the app and then
-        // switched to a link still has fans holding tickets. Best effort — a
+        // switched to a link still has fans holding tickets. Best effort: a
         // miss only loosens the capacity check and lets Delete fall through
         // to the database's own (friendly) refusal.
         ticketsSold(show.id).then(setSold).catch(() => {});
       })
-      .catch((e) => setError((e as { message?: string })?.message ?? 'Could not load.'))
+      .catch((e) => setError(fanCopy(e, 'Could not load the show.')))
       .finally(() => setLoading(false));
   }, [editId]);
 
@@ -392,47 +389,47 @@ export default function ShowFormScreen() {
   const capacityHint =
     blurred.capacity && salesMode === 'in_app' && capacity.trim() && !capacityOk
       ? capacityValue !== null && Number.isInteger(capacityValue) && capacityValue < sold
-        ? `${sold} already sold — capacity can't go below that.`
+        ? `${sold} already sold. Capacity can't go below that.`
         : 'Capacity should be a whole number, like 200 (or blank for unlimited).'
       : null;
   const salesNote =
     salesMode === 'in_app'
-      ? `${price.trim() ? '' : 'Set a ticket price to post. '}Fans pay in the app with Apple Pay or a card${
-          capacityValue && capacityOk ? ` — sales stop at ${capacityValue}.` : ' — no cap on sales.'
+      ? `${price.trim() ? '' : 'Set a ticket price to post. '}Fans pay in the app with Apple Pay or a card.${
+          capacityValue && capacityOk ? ` Sales stop at ${capacityValue}.` : ' No cap on sales.'
         }${editing && sold > 0 ? ` ${sold} sold so far.` : ''}`
       : salesMode === 'link'
-        ? 'Fans tap TICKETS and land on that page. Blank shows “Tickets soon”.'
-        : 'No ticket button — fans just see the date and place.';
+        ? 'Fans tap TICKETS and land on that page. Blank shows "Tickets soon".'
+        : 'No ticket button. Fans just see the date and place.';
   // Switching an in-app show away from in-app doesn't touch tickets already sold.
   const switchNote =
     editing && sold > 0 && salesMode !== 'in_app'
-      ? `${sold} fan${sold === 1 ? '' : 's'} already bought in the app — they keep their tickets; new in-app sales stop.`
+      ? `${sold} fan${sold === 1 ? '' : 's'} already bought in the app. They keep their tickets; new in-app sales stop.`
       : null;
 
   const whenHint =
     blurred.date && date.trim() && !dateParts
-      ? 'Couldn’t read that date — e.g. Sep 15 or 9/15/2026.'
+      ? 'Could not read that date. Try Sept 15 or 9/15/2026.'
       : blurred.time && time.trim() && !timeParts
         ? 'Time should look like 8:00 PM, 8pm, or 20:00.'
         : null;
   const zoneHint =
     blurred.zone && zoneRaw && !timezone
-      ? "That's not a timezone we recognize — try America/Chicago."
+      ? "That's not a timezone we recognize. Try America/Chicago."
       : null;
   const inPast = !!startsAt && startsAt.getTime() < Date.now();
 
-  /** On blur: "9/15" → "Sep 15, 2026". A guessed reading gets a note the artist can tap to fix. */
+  /** On blur: "9/15" becomes "Sept 15, 2026". A guessed reading gets a note the artist can tap to fix. */
   function tidyDate() {
-    // Flag first, unconditionally — a parse fail is exactly the case that needs the hint.
+    // Flag first, unconditionally: a parse fail is exactly the case that needs the hint.
     markBlurred('date');
     const parsed = parseDate(date);
     if (!parsed) return;
     const label = dateLabel(parsed);
     setDate(label);
-    setDateNote(parsed.guessed ? `Read that as ${label} — tap to change.` : null);
+    setDateNote(parsed.guessed ? `Read that as ${label}. Tap to change.` : null);
   }
 
-  /** On blur: "10pm" → "10:00 PM". */
+  /** On blur: "10pm" becomes "10:00 PM". */
   function tidyTime() {
     markBlurred('time');
     const parsed = parseTime(time);
@@ -473,10 +470,7 @@ export default function ShowFormScreen() {
       }
     } catch (e) {
       errorFeedback();
-      setError(
-        (e as { message?: string })?.message ??
-          (editId ? 'Could not save the show.' : 'Could not post the show.')
-      );
+      setError(fanCopy(e, editId ? 'Could not save the show.' : 'Could not post the show.'));
       setSaving(false);
     }
   }
@@ -493,7 +487,7 @@ export default function ShowFormScreen() {
       goBack();
     } catch (e) {
       errorFeedback();
-      setError((e as { message?: string })?.message ?? 'Could not delete the show.');
+      setError(fanCopy(e, 'Could not delete the show.'));
       setSaving(false);
     }
   }
@@ -505,18 +499,19 @@ export default function ShowFormScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={goBack}
-          hitSlop={12}
-          style={({ pressed }) => (pressed ? styles.pressedDim : null)}>
-          <Text style={styles.cancel}>Cancel</Text>
-        </Pressable>
-        <Text style={styles.headerTitle}>{editing ? 'EDIT SHOW' : 'NEW SHOW'}</Text>
-        <View style={{ width: 48 }} />
-      </View>
+      <PushedHeader
+        title={editing ? 'EDIT SHOW' : 'NEW SHOW'}
+        left={
+          <Pressable
+            onPress={goBack}
+            hitSlop={12}
+            style={({ pressed }) => (pressed ? styles.pressedDim : null)}>
+            <Text style={styles.cancel}>Cancel</Text>
+          </Pressable>
+        }
+      />
 
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? <TopNotice tone="error" text={error} onDismiss={() => setError(null)} /> : null}
 
       {loading ? (
         <View style={styles.center}>
@@ -532,31 +527,25 @@ export default function ShowFormScreen() {
           <ScrollView
             contentContainerStyle={styles.body}
             keyboardShouldPersistTaps="handled">
-            <TextInput
-              style={styles.input}
+            <Field
               placeholder="Tour or show name (optional)"
-              placeholderTextColor="#55585f"
               value={title}
               onChangeText={setTitle}
               maxLength={80}
             />
 
-            <Text style={styles.label}>VENUE</Text>
-            <TextInput
-              style={styles.input}
+            <FieldLabel>VENUE</FieldLabel>
+            <Field
               placeholder="The Fillmore"
-              placeholderTextColor="#55585f"
               value={venue}
               onChangeText={setVenue}
               autoCapitalize="words"
               maxLength={80}
             />
 
-            <Text style={styles.label}>CITY</Text>
-            <TextInput
-              style={styles.input}
+            <FieldLabel>CITY</FieldLabel>
+            <Field
               placeholder="Miami, FL"
-              placeholderTextColor="#55585f"
               value={city}
               onChangeText={setCity}
               autoCapitalize="words"
@@ -565,12 +554,10 @@ export default function ShowFormScreen() {
 
             <View style={styles.pairRow}>
               <View style={styles.pairCell}>
-                <Text style={styles.label}>DATE</Text>
-                <TextInput
+                <FieldLabel>DATE</FieldLabel>
+                <Field
                   ref={dateRef}
-                  style={styles.input}
-                  placeholder="Sep 15, 2026"
-                  placeholderTextColor="#55585f"
+                  placeholder="Sept 15, 2026"
                   value={date}
                   onChangeText={(text) => {
                     setDate(text);
@@ -583,11 +570,9 @@ export default function ShowFormScreen() {
                 />
               </View>
               <View style={styles.pairCell}>
-                <Text style={styles.label}>TIME</Text>
-                <TextInput
-                  style={styles.input}
+                <FieldLabel>TIME</FieldLabel>
+                <Field
                   placeholder="8:00 PM"
-                  placeholderTextColor="#55585f"
                   value={time}
                   onChangeText={setTime}
                   onBlur={tidyTime}
@@ -604,46 +589,31 @@ export default function ShowFormScreen() {
             ) : null}
             {whenHint ? <Text style={styles.hint}>{whenHint}</Text> : null}
 
-            <Text style={styles.label}>TIMEZONE</Text>
-            <View style={styles.zoneRow}>
+            <FieldLabel>TIMEZONE</FieldLabel>
+            <ChipRow>
               {SHOW_TIMEZONES.map((option) => (
-                <Pressable
+                <Chip
                   key={option.value}
-                  style={({ pressed }) => [
-                    styles.zoneChip,
-                    zoneChoice === option.value && styles.zoneChipOn,
-                    pressed && styles.pressedDim,
-                  ]}
+                  label={option.label.toUpperCase()}
+                  on={zoneChoice === option.value}
                   onPress={() => {
                     tapFeedback();
                     setZoneChoice(option.value);
-                  }}>
-                  <Text
-                    style={[styles.zoneText, zoneChoice === option.value && styles.zoneTextOn]}>
-                    {option.label.toUpperCase()}
-                  </Text>
-                </Pressable>
+                  }}
+                />
               ))}
-              <Pressable
-                style={({ pressed }) => [
-                  styles.zoneChip,
-                  zoneChoice === 'other' && styles.zoneChipOn,
-                  pressed && styles.pressedDim,
-                ]}
+              <Chip
+                label="OTHER"
+                on={zoneChoice === 'other'}
                 onPress={() => {
                   tapFeedback();
                   setZoneChoice('other');
-                }}>
-                <Text style={[styles.zoneText, zoneChoice === 'other' && styles.zoneTextOn]}>
-                  OTHER
-                </Text>
-              </Pressable>
-            </View>
+                }}
+              />
+            </ChipRow>
             {zoneChoice === 'other' ? (
-              <TextInput
-                style={styles.input}
+              <Field
                 placeholder="America/Anchorage"
-                placeholderTextColor="#55585f"
                 value={customZone}
                 onChangeText={setCustomZone}
                 onBlur={() => markBlurred('zone')}
@@ -652,48 +622,36 @@ export default function ShowFormScreen() {
               />
             ) : null}
             {zoneHint ? <Text style={styles.hint}>{zoneHint}</Text> : null}
-            <Text style={styles.sub}>
+            <FormNote>
               {startsAt && timezone
                 ? `Fans will see: ${previewLabel(startsAt, timezone)}.${
-                    inPast ? ' Heads up — that date has already passed.' : ''
+                    inPast ? ' That date has already passed.' : ''
                   }`
-                : 'Use the time printed on the ticket — the venue’s local time.'}
-            </Text>
+                : "Use the time printed on the ticket, the venue's local time."}
+            </FormNote>
 
-            <Text style={styles.label}>TICKETS</Text>
-            <View style={[styles.statusRow, styles.modeRow]}>
+            <FieldLabel>TICKETS</FieldLabel>
+            <ChipRow segmented>
               {SALES_MODES.map((mode) => (
-                <Pressable
+                <Chip
                   key={mode}
-                  style={({ pressed }) => [
-                    styles.statusChip,
-                    salesMode === mode && styles.statusChipOn,
-                    pressed && styles.pressedDim,
-                  ]}
+                  segmented
+                  label={SALES_MODE_LABEL[mode].toUpperCase()}
+                  on={salesMode === mode}
                   onPress={() => {
                     tapFeedback();
                     setSalesMode(mode);
-                  }}>
-                  <Text
-                    style={[
-                      styles.statusText,
-                      styles.modeText,
-                      salesMode === mode && styles.statusTextOn,
-                    ]}>
-                    {SALES_MODE_LABEL[mode].toUpperCase()}
-                  </Text>
-                </Pressable>
+                  }}
+                />
               ))}
-            </View>
+            </ChipRow>
 
             {salesMode === 'in_app' ? (
               <View style={styles.pairRow}>
                 <View style={styles.pairCell}>
-                  <Text style={styles.label}>PRICE ($)</Text>
-                  <TextInput
-                    style={styles.input}
+                  <FieldLabel>PRICE ($)</FieldLabel>
+                  <Field
                     placeholder="45"
-                    placeholderTextColor="#55585f"
                     keyboardType="decimal-pad"
                     value={price}
                     onChangeText={setPrice}
@@ -702,11 +660,9 @@ export default function ShowFormScreen() {
                   />
                 </View>
                 <View style={styles.pairCell}>
-                  <Text style={styles.label}>CAPACITY</Text>
-                  <TextInput
-                    style={styles.input}
+                  <FieldLabel>CAPACITY</FieldLabel>
+                  <Field
                     placeholder="Unlimited"
-                    placeholderTextColor="#55585f"
                     keyboardType="number-pad"
                     value={capacity}
                     onChangeText={setCapacity}
@@ -717,11 +673,9 @@ export default function ShowFormScreen() {
               </View>
             ) : salesMode === 'link' ? (
               <>
-                <Text style={styles.label}>TICKET LINK</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="https://… (blank shows “Tickets soon”)"
-                  placeholderTextColor="#55585f"
+                <FieldLabel>TICKET LINK</FieldLabel>
+                <Field
+                  placeholder='https://… (blank shows "Tickets soon")'
                   keyboardType="url"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -736,74 +690,64 @@ export default function ShowFormScreen() {
             {blurred.ticket && !ticketOk ? (
               <Text style={styles.hint}>Ticket links need to start with http:// or https://.</Text>
             ) : null}
-            <Text style={styles.sub}>{salesNote}</Text>
-            {switchNote ? <Text style={styles.sub}>{switchNote}</Text> : null}
+            <FormNote>{salesNote}</FormNote>
+            {switchNote ? <FormNote>{switchNote}</FormNote> : null}
 
             {editing ? (
               <>
-                <Text style={styles.label}>STATUS</Text>
-                <View style={styles.statusRow}>
+                <FieldLabel>STATUS</FieldLabel>
+                <ChipRow segmented>
                   {STATUS_ORDER.map((value) => (
-                    <Pressable
+                    <Chip
                       key={value}
-                      style={({ pressed }) => [
-                        styles.statusChip,
-                        status === value && styles.statusChipOn,
-                        pressed && styles.pressedDim,
-                      ]}
+                      segmented
+                      label={SHOW_STATUS_LABEL[value].toUpperCase()}
+                      on={status === value}
                       onPress={() => {
                         tapFeedback();
                         setStatus(value);
-                      }}>
-                      <Text style={[styles.statusText, status === value && styles.statusTextOn]}>
-                        {SHOW_STATUS_LABEL[value].toUpperCase()}
-                      </Text>
-                    </Pressable>
+                      }}
+                    />
                   ))}
-                </View>
+                </ChipRow>
               </>
             ) : null}
 
-            <Pressable
-              style={[styles.create, (!valid || saving) && styles.createDisabled]}
-              disabled={!valid || saving}
-              onPress={handleSubmit}>
-              {saving ? (
-                <ActivityIndicator color="#0b0c0e" />
-              ) : (
-                <Text style={styles.createText}>
-                  {editing ? 'SAVE CHANGES' : inPast ? 'ADD PAST SHOW' : 'POST SHOW · PUSH EVERY FAN'}
-                </Text>
-              )}
-            </Pressable>
-            <Text style={styles.subCenter}>
+            <PrimaryButton
+              label={editing ? 'SAVE CHANGES' : inPast ? 'ADD PAST SHOW' : 'POST SHOW · PUSH EVERY FAN'}
+              disabled={!valid}
+              busy={saving}
+              onPress={handleSubmit}
+            />
+            <FormNote center>
               {editing
-                ? 'Edits are quiet — no push goes out. Fans see the change next time they open the app.'
+                ? 'Edits are quiet. No push goes out. Fans see the change next time they open the app.'
                 : inPast
-                  ? 'Past dates go straight to the archive — no push.'
+                  ? 'Past dates go straight to the archive. No push.'
                   : 'Fans get a push the moment you post this.'}
-            </Text>
+            </FormNote>
 
             {editing && sold > 0 ? (
               // Sold tickets pin the show (the database refuses the delete), so
               // steer the artist to the CANCELLED status above instead.
-              <Text style={[styles.subCenter, styles.deleteNote]}>
-                Fans already bought tickets for this show — mark it cancelled instead of deleting
+              <FormNote center style={styles.deleteNote}>
+                Fans already bought tickets for this show. Mark it cancelled instead of deleting
                 it.
-              </Text>
+              </FormNote>
             ) : editing ? (
               confirmDelete ? (
+                // The inline confirm: question, go word, Cancel, in chips (post-card's).
                 <View style={styles.confirmRow}>
                   <Text style={styles.confirmText}>Delete this show?</Text>
                   <Pressable
                     onPress={handleDelete}
-                    style={({ pressed }) => (pressed ? styles.pressedDim : null)}>
-                    <Text style={styles.confirmYes}>DELETE</Text>
+                    style={({ pressed }) => [styles.confirmChip, pressed && styles.pressedDim]}>
+                    <Text style={styles.confirmDanger}>Delete</Text>
                   </Pressable>
                   <Pressable
                     onPress={() => setConfirmDelete(false)}
-                    style={({ pressed }) => (pressed ? styles.pressedDim : null)}>
-                    <Text style={styles.confirmNo}>Cancel</Text>
+                    style={({ pressed }) => [styles.confirmChip, pressed && styles.pressedDim]}>
+                    <Text style={styles.confirmGo}>Cancel</Text>
                   </Pressable>
                 </View>
               ) : (
@@ -829,92 +773,25 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  headerTitle: { color: '#fff', fontSize: 17, fontFamily: DISPLAY_FONT, letterSpacing: 2 },
   cancel: { color: '#8f99a3', fontSize: 15 },
-  error: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 },
   // Deep enough that the price/capacity row and the button scroll above the keyboard.
   body: { padding: 16, paddingBottom: 160 },
-  input: {
-    backgroundColor: '#131519',
-    color: '#fff',
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 15,
-    marginBottom: 12,
-  },
   pairRow: { flexDirection: 'row', gap: 10 },
   pairCell: { flex: 1 },
-  label: {
-    color: '#6d7076',
-    fontSize: 10.5,
-    fontWeight: '700',
-    letterSpacing: 1.6,
-    marginBottom: 7,
-    marginTop: 6,
-  },
   hint: { color: '#f87171', fontSize: 11.5, lineHeight: 16, marginTop: -4, marginBottom: 10 },
   // Same seat as a hint, but calm: we read the date fine, just say how.
   readAs: { color: '#c3cdd6', fontSize: 11.5, lineHeight: 16, marginTop: -4, marginBottom: 10 },
-  zoneRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 12 },
-  zoneChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#1a1d22',
-  },
-  zoneChipOn: { backgroundColor: '#c3cdd6' },
-  zoneText: { color: '#8f99a3', fontWeight: '700', fontSize: 10.5, letterSpacing: 1 },
-  zoneTextOn: { color: '#0b0c0e' },
-  sub: { color: '#55585f', fontSize: 12, lineHeight: 17, marginBottom: 8 },
-  statusRow: { flexDirection: 'row', gap: 8, marginBottom: 6 },
-  statusChip: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: '#1a1d22',
-    alignItems: 'center',
-  },
-  statusChipOn: { backgroundColor: '#ffffff' },
-  statusText: { color: '#8f99a3', fontWeight: '800', fontSize: 11, letterSpacing: 1.5 },
-  statusTextOn: { color: '#0b0c0e' },
-  modeRow: { marginBottom: 12 },
-  // Three labels across a phone — a touch tighter than the two-word status chips.
-  modeText: { fontSize: 10, letterSpacing: 1 },
-  create: {
-    backgroundColor: '#ffffff',
-    borderRadius: 999,
-    padding: 15,
-    alignItems: 'center',
-    marginTop: 18,
-  },
-  createDisabled: { opacity: 0.4 },
-  createText: { color: '#0b0c0e', fontWeight: '800', fontSize: 14, letterSpacing: 0.5 },
-  subCenter: {
-    color: '#55585f',
-    fontSize: 11.5,
-    lineHeight: 16,
-    textAlign: 'center',
-    marginTop: 10,
-  },
   confirmRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    backgroundColor: '#131519',
-    borderRadius: 12,
-    padding: 13,
+    gap: 8,
+    flexWrap: 'wrap',
     marginTop: 22,
   },
-  confirmText: { color: '#ccc', flex: 1, fontSize: 13 },
-  confirmYes: { color: '#f87171', fontWeight: '800', fontSize: 12, letterSpacing: 1 },
-  confirmNo: { color: '#8f99a3', fontSize: 13 },
+  confirmText: { ...confirmQuestion, flexShrink: 1 },
+  confirmChip: chip,
+  confirmGo: confirmWord,
+  confirmDanger,
   deleteRow: { alignItems: 'center', marginTop: 22 },
   deleteText: { color: '#f87171', fontSize: 13, fontWeight: '600' },
   deleteNote: { marginTop: 22 },

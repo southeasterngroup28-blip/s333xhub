@@ -211,7 +211,7 @@ export async function deleteComment(commentId: string): Promise<void> {
   if (error) throw error;
 }
 
-// ---------------- Top 8 ----------------
+// ---------------- Top 3 ----------------
 
 export type TopFan = {
   position: number;
@@ -245,7 +245,7 @@ export async function removeTopFan(position: number): Promise<void> {
 }
 
 /**
- * Fan search for the Top 8 picker: an empty query lists fans A→Z,
+ * Fan search for the Top 3 picker: an empty query lists fans A to Z,
  * and every typed letter narrows the list (Instagram-style).
  */
 export async function searchProfiles(query: string): Promise<{ id: string; display_name: string }[]> {

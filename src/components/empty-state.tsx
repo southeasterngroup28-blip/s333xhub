@@ -1,79 +1,82 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
-import { DISPLAY_FONT } from '@/constants/type';
+import { OFFLINE_SUB, RETRY } from '@/constants/copy';
+import { sectionHead } from '@/constants/type';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 
-type Props = {
-  icon: keyof typeof Ionicons.glyphMap;
+type ErrorCardProps = {
+  /** Anton caps: COULDN'T LOAD THE FEED. */
   title: string;
   sub?: string;
-  /**
-   * An optional way out — a bordered pill under the copy (body font, not
-   * Anton). Put the haptic inside onPress at the call site.
-   */
-  action?: { label: string; onPress: () => void };
+  onRetry?: () => void;
 };
 
-/** The house pop: fade in over 200ms while settling up from 96%. */
-const pop = () => {
-  'worklet';
-  return {
-    initialValues: { opacity: 0, transform: [{ scale: 0.96 }] },
-    animations: {
-      opacity: withTiming(1, { duration: 200 }),
-      transform: [{ scale: withSpring(1, { damping: 18, stiffness: 220 }) }],
-    },
-  };
-};
-
-/** A designed "nothing here yet" moment instead of a bare gray line. */
-export function EmptyState({ icon, title, sub, action }: Props) {
+/**
+ * The one load-failure card: a solid charcoal card, the title left-aligned
+ * in Anton, one sub line, and the Try again pill. Modelled on the comments
+ * thread's failed card, which is the reference. Genuine empties (a fetch
+ * that came back with nothing) are built from each screen's own parts and
+ * never use this.
+ */
+export function ErrorCard({ title, sub = OFFLINE_SUB, onRetry }: ErrorCardProps) {
   const reduceMotion = useReduceMotion();
   return (
-    <Animated.View style={styles.wrap} entering={reduceMotion ? undefined : pop}>
-      <View style={styles.iconRing}>
-        <Ionicons name={icon} size={26} color="#8f99a3" />
-      </View>
+    <Animated.View
+      style={styles.card}
+      entering={reduceMotion ? undefined : FadeInDown.duration(220)}>
       <Text style={styles.title}>{title}</Text>
-      {sub ? <Text style={styles.sub}>{sub}</Text> : null}
-      {action ? (
+      <Text style={styles.sub}>{sub}</Text>
+      {onRetry ? (
         <Pressable
-          style={({ pressed }) => [styles.action, pressed && styles.actionPressed]}
+          style={({ pressed }) => [styles.pill, pressed && styles.pillPressed]}
           hitSlop={8}
-          onPress={action.onPress}
+          onPress={onRetry}
           accessibilityRole="button">
-          <Text style={styles.actionText}>{action.label}</Text>
+          <Text style={styles.pillText}>{RETRY}</Text>
         </Pressable>
       ) : null}
     </Animated.View>
   );
 }
 
+type LegacyProps = {
+  /** Ignored. Kept only so feed.tsx and fanmail.tsx compile until their merge lands. */
+  icon?: string;
+  title: string;
+  sub?: string;
+  action?: { label: string; onPress: () => void };
+};
+
+/**
+ * TODO(merge): delete once feed.tsx and fanmail.tsx move to ErrorCard and
+ * their own empty lines. With an action it renders the error card; without
+ * one, a plain left-aligned Anton line.
+ */
+export function EmptyState({ title, sub, action }: LegacyProps) {
+  if (action) return <ErrorCard title={title.toUpperCase()} sub={sub} onRetry={action.onPress} />;
+  return (
+    <View style={styles.line}>
+      <Text style={styles.title}>{title.toUpperCase()}</Text>
+      {sub ? <Text style={styles.sub}>{sub}</Text> : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  wrap: { alignItems: 'center', paddingVertical: 48, paddingHorizontal: 32 },
-  iconRing: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#14171b',
-    borderWidth: 1,
-    borderColor: '#23262b',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
+  // Solid fill on purpose: a read surface over fan photo backgrounds.
+  card: {
+    backgroundColor: '#131519',
+    borderRadius: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
   },
-  title: {
-    color: '#e8e9eb',
-    fontSize: 15,
-    fontFamily: DISPLAY_FONT,
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-  },
-  sub: { color: '#6d7076', fontSize: 13, marginTop: 6, textAlign: 'center', lineHeight: 19 },
-  action: {
-    marginTop: 16,
+  line: { paddingVertical: 16, paddingHorizontal: 2 },
+  title: { ...sectionHead, lineHeight: 19 },
+  sub: { color: '#6d7076', fontSize: 12.5, marginTop: 4 },
+  pill: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
     minHeight: 44,
     borderRadius: 999,
     borderWidth: 1,
@@ -83,6 +86,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  actionPressed: { opacity: 0.7 },
-  actionText: { color: '#e8e9eb', fontSize: 13, fontWeight: '600' },
+  pillPressed: { opacity: 0.7 },
+  pillText: { color: '#e8e9eb', fontSize: 13, fontWeight: '600' },
 });

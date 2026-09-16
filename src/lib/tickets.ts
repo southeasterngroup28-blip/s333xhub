@@ -6,6 +6,7 @@
 // webhook is the only writer, same as post unlocks (see lib/payments.ts).
 import { Platform } from 'react-native';
 
+import { FanError, NETWORK_COPY, isNetworkError } from '@/lib/fan-error';
 import { priceLabel } from '@/lib/shop';
 import { SHOW_COLUMNS, isPast, type SalesMode, type Show } from '@/lib/shows';
 import { supabase, requireUserId } from '@/lib/supabase';
@@ -14,6 +15,10 @@ export { priceLabel };
 export type { SalesMode };
 
 const STRIPE_KEY = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? '';
+
+/** Before Stripe is switched on for this build. */
+export const TICKETS_NOT_OPEN = "Ticket sales aren't open yet.";
+const CHECKOUT_FAILED = 'Could not start checkout. Try again in a moment.';
 
 export type TicketStatus = 'paid' | 'checked_in' | 'refunded';
 
@@ -46,8 +51,8 @@ export type CheckInResult = {
 // date helpers work on ticket.show exactly as they do on a list row.
 const TICKET_COLUMNS = `id, show_id, user_id, status, qr_token, stripe_payment_intent_id, amount_cents, buyer_name, purchased_at, checked_in_at, show:shows(${SHOW_COLUMNS})`;
 
-/** Thrown when the fan backs out of the payment sheet — screens stay silent on it. */
-export class PurchaseCancelledError extends Error {
+/** Thrown when the fan backs out of the payment sheet. Screens stay silent on it. */
+export class PurchaseCancelledError extends FanError {
   constructor() {
     super('Purchase cancelled.');
     this.name = 'PurchaseCancelledError';
@@ -63,9 +68,9 @@ export function isPurchaseCancelled(error: unknown): boolean {
 
 /**
  * Stripe took the money but the webhook row hasn't landed yet. Not a
- * refusal — screens show this in a neutral style, never the red slot.
+ * refusal: screens show this in a neutral style, never the red slot.
  */
-export class TicketPendingError extends Error {
+export class TicketPendingError extends FanError {
   constructor() {
     super('Payment went through. Your ticket is on its way. Pull to refresh in a moment.');
     this.name = 'TicketPendingError';
@@ -89,11 +94,11 @@ export function remaining(show: Show, sold: number): number | null {
 /** Tickets that count toward capacity (paid + checked in). */
 export async function ticketsSold(showId: string): Promise<number> {
   const { data, error } = await supabase.rpc('tickets_sold', { show: showId });
-  if (error) throw new Error('Could not check how many tickets are left.');
+  if (error) throw new FanError('Could not check how many tickets are left.');
   return typeof data === 'number' ? data : Number(data ?? 0) || 0;
 }
 
-/** My tickets, soonest show first (refunded ones included — the screen decides). */
+/** My tickets, soonest show first (refunded ones included; the screen decides). */
 export async function fetchMyTickets(): Promise<Ticket[]> {
   const me = await requireUserId();
   const { data, error } = await supabase
@@ -101,7 +106,9 @@ export async function fetchMyTickets(): Promise<Ticket[]> {
     .select(TICKET_COLUMNS)
     .eq('user_id', me)
     .order('purchased_at', { ascending: false });
-  if (error) throw new Error('Could not load your tickets - check your connection and try again.');
+  if (error) {
+    throw new FanError('Could not load your tickets. Check your connection and try again.');
+  }
   const rows = (data as unknown as Ticket[]) ?? [];
   return rows.sort(
     (a, b) =>
@@ -143,7 +150,7 @@ export async function fetchTicket(id: string): Promise<Ticket | null> {
     .select(TICKET_COLUMNS)
     .eq('id', id)
     .maybeSingle();
-  if (error) throw new Error('Could not load that ticket - try again in a moment.');
+  if (error) throw new FanError('Could not load that ticket. Try again in a moment.');
   return (data as unknown as Ticket) ?? null;
 }
 
@@ -154,7 +161,7 @@ export async function fetchTicketsForShow(showId: string): Promise<Ticket[]> {
     .select(TICKET_COLUMNS)
     .eq('show_id', showId)
     .order('purchased_at', { ascending: false });
-  if (error) throw new Error('Could not load the ticket list - try again in a moment.');
+  if (error) throw new FanError('Could not load the ticket list. Try again in a moment.');
   return (data as unknown as Ticket[]) ?? [];
 }
 
@@ -173,9 +180,12 @@ export async function checkInTicket(token: string, showId?: string): Promise<Che
   });
   if (error) {
     if (error.code === '42501' || (error.message ?? '').includes('artist')) {
-      throw new Error('Only the artist can check tickets in.');
+      throw new FanError('Only the artist can check tickets in.');
     }
-    throw new Error('Could not check that ticket - try scanning again.');
+    // supabase-js hands a dead connection back as { error }, not a throw,
+    // so the door hears about its signal here or not at all.
+    if (isNetworkError(error)) throw new FanError(NETWORK_COPY);
+    throw new FanError('Could not check that ticket. Try scanning again.');
   }
   return (data as CheckInResult) ?? { ok: false, reason: 'unknown' };
 }
@@ -204,18 +214,18 @@ async function intentError(error: unknown, fallback: string): Promise<Error> {
   try {
     const body = (await ctx?.json?.()) as { error?: unknown } | undefined;
     if (typeof body?.error === 'string' && body.error.trim() && body.error.length < 200) {
-      return new Error(body.error);
+      return new FanError(body.error);
     }
   } catch {
-    // no JSON body — fall through
+    // no JSON body; fall through
   }
   if (ctx?.status === 404) {
-    return new Error("Ticket sales aren't switched on yet — hang tight.");
+    return new FanError(TICKETS_NOT_OPEN);
   }
   if ((error as { name?: string })?.name === 'FunctionsFetchError') {
-    return new Error('Could not reach checkout - check your connection and try again.');
+    return new FanError('Could not reach checkout. Check your connection and try again.');
   }
-  return new Error(fallback);
+  return new FanError(fallback);
 }
 
 async function stripe() {
@@ -252,15 +262,15 @@ export async function buyTicket(
   buyerName?: string | null,
   onPhase?: (phase: 'issuing') => void
 ): Promise<Ticket> {
-  if (Platform.OS === 'web') throw new Error('Buy tickets from the app on your phone.');
-  if (!STRIPE_KEY) throw new Error("Ticket sales aren't switched on yet — hang tight.");
-  if (show.status === 'cancelled') throw new Error("That show's been cancelled.");
-  if (show.status === 'sold_out') throw new Error('Sold out — every ticket is gone.');
+  if (Platform.OS === 'web') throw new FanError('Buy tickets from the app on your phone.');
+  if (!STRIPE_KEY) throw new FanError(TICKETS_NOT_OPEN);
+  if (show.status === 'cancelled') throw new FanError("That show's been cancelled.");
+  if (show.status === 'sold_out') throw new FanError('Sold out.');
   if (salesMode(show) !== 'in_app') {
-    throw new Error("Tickets for this show aren't sold in the app.");
+    throw new FanError("Tickets for this show aren't sold in the app.");
   }
   const price = show.ticket_price_cents ?? 0;
-  if (price <= 0) throw new Error("This show doesn't have a ticket price yet.");
+  if (price <= 0) throw new FanError("This show doesn't have a ticket price.");
 
   // Everything that doesn't need the server's answer starts now, in
   // parallel with the intent round trip: the Stripe SDK import, my existing
@@ -292,17 +302,18 @@ export async function buyTicket(
     'stripe-payment-intent',
     { body: { show_id: show.id, mode: STRIPE_MODE } }
   );
-  if (error) throw await intentError(error, 'Could not start checkout - try again in a moment.');
-  if (data?.error) throw new Error(data.error);
+  if (error) throw await intentError(error, CHECKOUT_FAILED);
+  if (data?.error) throw new FanError(data.error);
   if (!data?.paymentIntent || !data.ephemeralKey || !data.customer) {
-    throw new Error('Could not start checkout - try again in a moment.');
+    throw new FanError(CHECKOUT_FAILED);
   }
   // Belt and braces for an older server build: a test app must never be
   // handed a live payment, and the reverse would only fail inside Stripe.
   if (typeof data.livemode === 'boolean' && data.livemode !== (STRIPE_MODE === 'live')) {
-    throw new Error(
-      `Checkout is misconfigured: the app uses Stripe ${STRIPE_MODE} keys but the server holds a ${data.livemode ? 'live' : 'test'} key.`
-    );
+    const detail = `Checkout is misconfigured: the app uses Stripe ${STRIPE_MODE} keys but the server holds a ${data.livemode ? 'live' : 'test'} key.`;
+    if (__DEV__) throw new Error(detail);
+    console.error('[tickets]', detail);
+    throw new FanError("Checkout isn't available on this version of the app.");
   }
 
   let sdk: Awaited<ReturnType<typeof stripe>>;
@@ -310,7 +321,7 @@ export async function buyTicket(
     sdk = await sdkPromise;
   } catch {
     // A build without Stripe's native module (older dev client).
-    throw new Error('Ticket checkout needs the latest version of the app.');
+    throw new FanError('Ticket checkout needs the latest version of the app.');
   }
 
   const name = await namePromise;
@@ -325,7 +336,7 @@ export async function buyTicket(
     allowsDelayedPaymentMethods: false,
   });
   if (init.error) {
-    throw new Error(withDetail('Could not open checkout - try again in a moment.', init.error));
+    throw new FanError(withDetail('Could not open checkout. Try again in a moment.', init.error));
   }
 
   // What I already hold for this show, BEFORE paying — so the wait below
@@ -342,11 +353,11 @@ export async function buyTicket(
     const fanLine =
       result.error.localizedMessage && !GENERIC_STRIPE_LINE.test(result.error.localizedMessage)
         ? result.error.localizedMessage
-        : 'The payment did not go through - try again in a moment.';
-    throw new Error(withDetail(fanLine, result.error));
+        : 'The payment did not go through. Try again in a moment.';
+    throw new FanError(withDetail(fanLine, result.error));
   }
 
-  // The charge is confirmed — the screen can drop "BUYING…" honestly now.
+  // The charge is confirmed: the screen can drop "BUYING…" honestly now.
   onPhase?.('issuing');
 
   // Stripe took the money; now wait for the webhook to record the ticket.
@@ -358,12 +369,12 @@ export async function buyTicket(
     // The gate refused (last seat went, or sales closed, while the sheet was
     // up) and recorded it as a refunded row; the webhook refunds in full.
     if (fresh.status === 'refunded') {
-      throw new Error(
-        'That last ticket went to someone else just now — your payment is being refunded in full.'
+      throw new FanError(
+        'That last ticket just went to someone else. Your payment is being refunded in full.'
       );
     }
     return fresh;
   }
-  // Paid but the record is lagging — it WILL arrive; tell the fan honestly.
+  // Paid but the record is lagging. It WILL arrive; tell the fan honestly.
   throw new TicketPendingError();
 }
