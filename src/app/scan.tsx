@@ -3,12 +3,24 @@ import type { BarcodeScanningResult } from 'expo-camera';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { ScalePressable } from '@/components/ui/scale-pressable';
 import { DISPLAY_FONT } from '@/constants/type';
 import { errorFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { fetchShow, showDateParts } from '@/lib/shows';
-import { checkInTicket } from '@/lib/tickets';
+import { checkInTicket, fetchTicketsForShow } from '@/lib/tickets';
 import { useAuth } from '@/providers/auth-provider';
 
 // expo-camera looks up its native module the moment the package is
@@ -53,7 +65,7 @@ type ScanOutcome = {
 };
 
 type Banner = {
-  tone: 'ok' | 'bad';
+  tone: 'ok' | 'bad' | 'checking';
   title: string;
   detail: string;
   /** When it went up — a stale timer never clears a newer banner. */
@@ -168,7 +180,10 @@ function ScanNotice({ icon, title, sub, cta, onClose }: NoticeProps) {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Pressable onPress={onClose} hitSlop={12} style={styles.headerButton}>
+        <Pressable
+          onPress={onClose}
+          hitSlop={12}
+          style={({ pressed }) => [styles.headerButton, pressed && styles.pressedDim]}>
           <Ionicons name="close" size={22} color="#f4f5f6" />
         </Pressable>
         <View style={styles.headerMiddle}>
@@ -182,14 +197,14 @@ function ScanNotice({ icon, title, sub, cta, onClose }: NoticeProps) {
         </View>
         <Text style={styles.permissionTitle}>{title}</Text>
         <Text style={styles.permissionSub}>{sub}</Text>
-        <Pressable
+        <ScalePressable
           style={styles.cta}
           onPress={() => {
             tapFeedback();
             onClose();
           }}>
           <Text style={styles.ctaText}>{cta}</Text>
-        </Pressable>
+        </ScalePressable>
       </View>
     </SafeAreaView>
   );
@@ -206,6 +221,7 @@ type ScannerProps = {
 function Scanner({ camera, showId, onClose }: ScannerProps) {
   const { CameraView, useCameraPermissions } = camera;
   const [permission, requestPermission] = useCameraPermissions();
+  const reduceMotion = useReduceMotion();
 
   const [showLabel, setShowLabel] = useState<string | null>(null);
   const [torch, setTorch] = useState(false);
@@ -216,6 +232,19 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
   /** The ticket most recently let through — re-scans of it are ignored while its banner shows. */
   const lastAccepted = useRef<{ token: string; at: number } | null>(null);
   const busy = useRef(false);
+
+  // The counter pops on each accept — the exact house pop from post-card.
+  const countScale = useSharedValue(1);
+  const countStyle = useAnimatedStyle(() => ({ transform: [{ scale: countScale.value }] }));
+
+  // The frame brightens to white while a check is in flight.
+  const checkingSV = useSharedValue(0);
+  useEffect(() => {
+    checkingSV.value = withTiming(banner?.tone === 'checking' ? 1 : 0, { duration: 120 });
+  }, [banner, checkingSV]);
+  const frameStyle = useAnimatedStyle(() => ({
+    borderColor: interpolateColor(checkingSV.value, [0, 1], ['#c3cdd6', '#ffffff']),
+  }));
 
   useEffect(() => {
     if (!showId) return;
@@ -232,8 +261,30 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
     };
   }, [showId]);
 
+  // Seed tonight's count from the server so closing and reopening the
+  // scanner doesn't zero the number. Math.max is load-bearing: a scan
+  // accepted mid-fetch counts in both, and a stale fetch must never lower
+  // a number the artist just watched rise.
   useEffect(() => {
-    if (!banner) return;
+    if (!showId) return;
+    let gone = false;
+    fetchTicketsForShow(showId)
+      .then((ts) => {
+        if (gone) return;
+        const server = ts.filter((t) => t.status === 'checked_in').length;
+        setCheckedIn((n) => Math.max(n, server));
+      })
+      .catch(() => {});
+    return () => {
+      gone = true;
+    };
+  }, [showId]);
+
+  useEffect(() => {
+    // 'checking' is exempt from the auto-clear — a slow RPC must not flip
+    // the banner back to READY mid-flight; the verdict or the catch always
+    // replaces it, so it can never stick.
+    if (!banner || banner.tone === 'checking') return;
     const timer = setTimeout(() => {
       setBanner((current) => (current?.at === banner.at ? null : current));
     }, BANNER_MS);
@@ -251,11 +302,25 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
     lastSeen.current = { token, at: now };
     if (busy.current) return;
     busy.current = true;
+    // The door hears the catch instantly — never dead air while the server thinks.
+    tapFeedback();
+    setBanner({ tone: 'checking', title: 'Checking', detail: 'Hold on one second.', at: now });
     try {
       const result = (await checkInTicket(token, showId)) as unknown as ScanOutcome;
       if (result?.ok) {
-        lastAccepted.current = { token, at: now };
+        // Verdict time, not scan time — and ONE clock for both writes: the
+        // accepted-ignore window must cover the green banner's whole life,
+        // so a phone left in frame can never flip a fresh "Checked in" red.
+        const at = Date.now();
+        lastAccepted.current = { token, at };
         successFeedback();
+        // Reduce Motion skips the pop — the number still changes.
+        if (!reduceMotion) {
+          countScale.value = withSequence(
+            withTiming(1.28, { duration: 90 }),
+            withTiming(1, { duration: 130 })
+          );
+        }
         setCheckedIn((n) => n + 1);
         setBanner({
           tone: 'ok',
@@ -263,11 +328,11 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
           detail:
             [result.buyer_name, result.show_title].filter(Boolean).join(' · ') ||
             'Ticket accepted — let them through.',
-          at: now,
+          at,
         });
       } else {
         errorFeedback();
-        setBanner(refusedBanner(result ?? { ok: false, reason: 'unknown' }, now));
+        setBanner(refusedBanner(result ?? { ok: false, reason: 'unknown' }, Date.now()));
       }
     } catch (e) {
       errorFeedback();
@@ -276,7 +341,7 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
         title: "Couldn't check that ticket",
         detail:
           (e as { message?: string })?.message ?? 'Check your connection and scan it again.',
-        at: now,
+        at: Date.now(),
       });
     } finally {
       busy.current = false;
@@ -286,7 +351,10 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Pressable onPress={onClose} hitSlop={12} style={styles.headerButton}>
+        <Pressable
+          onPress={onClose}
+          hitSlop={12}
+          style={({ pressed }) => [styles.headerButton, pressed && styles.pressedDim]}>
           <Ionicons name="close" size={22} color="#f4f5f6" />
         </Pressable>
         <View style={styles.headerMiddle}>
@@ -302,7 +370,11 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
           }}
           hitSlop={12}
           disabled={!permission?.granted}
-          style={[styles.headerButton, torch && styles.headerButtonOn]}>
+          style={({ pressed }) => [
+            styles.headerButton,
+            torch && styles.headerButtonOn,
+            pressed && styles.pressedDim,
+          ]}>
           <Ionicons
             name={torch ? 'flashlight' : 'flashlight-outline'}
             size={20}
@@ -322,7 +394,7 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
           <Text style={styles.permissionSub}>
             Point the camera at a fan&apos;s ticket and it checks them in — no typing at the door.
           </Text>
-          <Pressable
+          <ScalePressable
             style={styles.cta}
             onPress={() => {
               tapFeedback();
@@ -332,7 +404,7 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
             <Text style={styles.ctaText}>
               {permission.canAskAgain ? 'ALLOW CAMERA' : 'OPEN SETTINGS'}
             </Text>
-          </Pressable>
+          </ScalePressable>
           {!permission.canAskAgain ? (
             <Text style={styles.permissionHint}>
               Camera access is off for S333XHUB — switch it on in Settings and come back.
@@ -349,39 +421,53 @@ function Scanner({ camera, showId, onClose }: ScannerProps) {
             onBarcodeScanned={handleScan}
           />
           <View pointerEvents="none" style={styles.frameWrap}>
-            <View style={styles.frame} />
+            <Animated.View style={[styles.frame, frameStyle]} />
           </View>
         </View>
       )}
 
-      <View
-        style={[
-          styles.banner,
-          banner?.tone === 'ok' && styles.bannerOk,
-          banner?.tone === 'bad' && styles.bannerBad,
-        ]}>
+      {/* The outer shell holds layout (minHeight 92) while keyed inner views
+          crossfade — an exiting snapshot renders out of flow, so the card
+          never doubles in height mid-swap. */}
+      <View style={styles.banner}>
         {banner ? (
-          <>
+          <Animated.View
+            key={String(banner.at)}
+            style={[
+              styles.bannerInner,
+              banner.tone === 'ok' && styles.bannerOk,
+              banner.tone === 'bad' && styles.bannerBad,
+              banner.tone === 'checking' && styles.bannerChecking,
+            ]}
+            // Reduce Motion trades the slide for a plain fade (house pattern).
+            entering={reduceMotion ? FadeIn.duration(150) : FadeInDown.duration(150)}
+            exiting={FadeOut.duration(200)}>
             <Text style={styles.bannerTitle} numberOfLines={2}>
               {banner.title.toUpperCase()}
             </Text>
             <Text style={styles.bannerDetail} numberOfLines={2}>
               {banner.detail}
             </Text>
-          </>
+          </Animated.View>
         ) : (
-          <>
+          <Animated.View
+            key="ready"
+            style={styles.bannerInner}
+            entering={FadeIn.duration(200)}
+            exiting={FadeOut.duration(200)}>
             <Text style={styles.bannerIdleTitle}>READY</Text>
             <Text style={styles.bannerIdle}>
               Line up the QR code on a fan&apos;s ticket — it checks in on its own.
             </Text>
-          </>
+          </Animated.View>
         )}
       </View>
 
       <View style={styles.counter}>
-        <Text style={styles.counterLabel}>CHECKED IN TONIGHT</Text>
-        <Text style={styles.counterValue}>{checkedIn}</Text>
+        <Text style={styles.counterLabel}>
+          {showId ? 'CHECKED IN TONIGHT' : 'CHECKED IN THIS SESSION'}
+        </Text>
+        <Animated.Text style={[styles.counterValue, countStyle]}>{checkedIn}</Animated.Text>
       </View>
     </SafeAreaView>
   );
@@ -497,6 +583,11 @@ const styles = StyleSheet.create({
     marginTop: 14,
     borderRadius: 16,
     backgroundColor: '#131519',
+    minHeight: 92,
+    overflow: 'hidden',
+    justifyContent: 'center',
+  },
+  bannerInner: {
     paddingHorizontal: 18,
     paddingVertical: 16,
     minHeight: 92,
@@ -504,6 +595,8 @@ const styles = StyleSheet.create({
   },
   bannerOk: { backgroundColor: '#15803d' },
   bannerBad: { backgroundColor: '#b91c1c' },
+  bannerChecking: { backgroundColor: '#1a1d22' },
+  pressedDim: { opacity: 0.6 },
   bannerTitle: { color: '#fff', fontSize: 24, lineHeight: 30, fontFamily: DISPLAY_FONT, letterSpacing: 1 },
   bannerDetail: { color: '#fff', fontSize: 14, lineHeight: 20, marginTop: 4, fontWeight: '600' },
   bannerIdleTitle: { color: '#c3cdd6', fontSize: 10.5, fontWeight: '700', letterSpacing: 1.6 },

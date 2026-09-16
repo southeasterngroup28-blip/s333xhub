@@ -3,21 +3,25 @@ import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import Animated, { FadeIn, FadeInDown, FadeOut } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 
 import { AppBackground } from '@/components/app-background';
 import { Avatar } from '@/components/avatar';
+import { EmptyState } from '@/components/empty-state';
+import { Skeleton } from '@/components/skeleton';
 import { DISPLAY_FONT } from '@/constants/type';
-import { pressFeedback, successFeedback } from '@/lib/haptics';
+import { pressFeedback, selectFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
 import {
   SHOP_PAYMENTS_LIVE,
   activeClaims,
@@ -45,10 +49,12 @@ export default function DropScreen() {
   const router = useRouter();
   const isArtist = profile?.role === 'artist';
   const now = useNow();
+  const reduceMotion = useReduceMotion();
 
   const [drop, setDrop] = useState<Drop | null>(null);
   const [fulfillment, setFulfillment] = useState<Record<string, Fulfillment>>({});
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pickedNumber, setPickedNumber] = useState<number | null>(null);
@@ -66,26 +72,42 @@ export default function DropScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drop]);
 
+  // Three callers overlap here (focus, the 12s live poll, pull-to-refresh);
+  // only the NEWEST request may paint, or a stale response could flip a
+  // just-taken number back to free for a whole poll tick (feed's fetchSeq
+  // pattern).
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
     if (!id) return;
+    const seq = ++loadSeq.current;
     try {
       const fresh = await fetchDrop(id);
+      const shipping = fresh
+        ? await fetchFulfillment(fresh.claims.map((c) => c.id)).catch(() => ({}))
+        : null;
+      if (seq !== loadSeq.current) return;
       setDrop(fresh);
-      if (fresh) {
-        setFulfillment(await fetchFulfillment(fresh.claims.map((c) => c.id)).catch(() => ({})));
-      }
+      if (shipping) setFulfillment(shipping);
       setError(null);
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       setError((e as { message?: string })?.message ?? 'Could not load the drop.');
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [id]);
 
+  // While the drop is live the numbers grid is a race — keep it honest with
+  // a slow poll while the screen has focus. Plain server reads, no webhook
+  // conflict; the claim flow itself stays untouched.
+  const live = drop ? dropStatus(drop) === 'live' : false;
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load])
+      if (!live) return;
+      const timer = setInterval(load, 12_000);
+      return () => clearInterval(timer);
+    }, [load, live])
   );
 
   function goBack() {
@@ -147,15 +169,45 @@ export default function DropScreen() {
   }
 
   if (loading || !drop) {
+    // Same shell as the loaded screen: the background never flashes black
+    // and the back chevron is tappable from the first frame.
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-        <View style={styles.center}>
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.muted}>Drop not found.</Text>
-          )}
+        <AppBackground />
+        <View style={styles.header}>
+          <Pressable onPress={goBack} hitSlop={12}>
+            <Ionicons name="chevron-back" size={24} color="#fff" />
+          </Pressable>
+          <Text style={styles.headerTitle}>DROP</Text>
+          <View style={{ width: 24 }} />
         </View>
+        {loading ? (
+          <DropSkeleton />
+        ) : error ? (
+          // A failed lookup is not "gone" — the drop may be live right now.
+          <EmptyState
+            icon="cloud-offline-outline"
+            title="Can't reach this drop"
+            sub="Check your connection."
+            action={{
+              label: 'RETRY',
+              onPress: () => {
+                tapFeedback();
+                // Before load(): load() alone never re-sets loading, and the
+                // skeleton coming back instantly is the acknowledgment.
+                setLoading(true);
+                load();
+              },
+            }}
+          />
+        ) : (
+          // A fetch that genuinely came back empty — this one CAN say gone.
+          <EmptyState
+            icon="bag-outline"
+            title="This drop is gone"
+            sub="It may have been taken down."
+          />
+        )}
       </SafeAreaView>
     );
   }
@@ -181,10 +233,34 @@ export default function DropScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+      {notice ? (
+        <Animated.Text
+          style={styles.notice}
+          entering={reduceMotion ? undefined : FadeIn.duration(180)}
+          exiting={reduceMotion ? undefined : FadeOut.duration(150)}>
+          {notice}
+        </Animated.Text>
+      ) : null}
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <ScrollView contentContainerStyle={styles.body}>
+      <ScrollView
+        contentContainerStyle={styles.body}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            tintColor="#fff"
+            onRefresh={async () => {
+              // load() never manages a refreshing flag itself — this does.
+              setRefreshing(true);
+              try {
+                await load();
+              } finally {
+                setRefreshing(false);
+              }
+            }}
+          />
+        }>
         <View style={styles.art}>
           {image ? (
             <Image source={{ uri: image }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} />
@@ -257,7 +333,11 @@ export default function DropScreen() {
                     key={n}
                     disabled={gone}
                     style={[styles.num, on && styles.numOn, gone && styles.numGone]}
-                    onPress={() => setPickedNumber(n)}>
+                    onPress={() => {
+                      // Picking from a set — the selection tick, not an impact.
+                      selectFeedback();
+                      setPickedNumber(n);
+                    }}>
                     <Text style={[styles.numText, on && styles.numTextOn, gone && styles.numTextGone]}>
                       {n}
                     </Text>
@@ -382,7 +462,9 @@ export default function DropScreen() {
             ) : null}
             {!drop.is_published ? (
               confirmPublish ? (
-                <View style={styles.confirmRow}>
+                <Animated.View
+                  style={styles.confirmRow}
+                  entering={reduceMotion ? undefined : FadeInDown.duration(160)}>
                   <Text style={styles.confirmText}>Go live and push every fan?</Text>
                   <Pressable onPress={handlePublish}>
                     <Text style={styles.confirmYes}>PUBLISH</Text>
@@ -390,7 +472,7 @@ export default function DropScreen() {
                   <Pressable onPress={() => setConfirmPublish(false)}>
                     <Text style={styles.confirmNo}>Cancel</Text>
                   </Pressable>
-                </View>
+                </Animated.View>
               ) : (
                 <Pressable style={styles.buy} onPress={() => setConfirmPublish(true)}>
                   <Text style={styles.buyText}>PUBLISH DROP · PUSH EVERY FAN</Text>
@@ -400,7 +482,9 @@ export default function DropScreen() {
 
             {drop.claims.length === 0 ? (
               confirmDelete ? (
-                <View style={styles.confirmRow}>
+                <Animated.View
+                  style={styles.confirmRow}
+                  entering={reduceMotion ? undefined : FadeInDown.duration(160)}>
                   <Text style={styles.confirmText}>Delete this drop?</Text>
                   <Pressable onPress={handleDelete}>
                     <Text style={styles.confirmYes}>DELETE</Text>
@@ -408,7 +492,7 @@ export default function DropScreen() {
                   <Pressable onPress={() => setConfirmDelete(false)}>
                     <Text style={styles.confirmNo}>Cancel</Text>
                   </Pressable>
-                </View>
+                </Animated.View>
               ) : (
                 <Pressable style={styles.deleteRow} onPress={() => setConfirmDelete(true)}>
                   <Text style={styles.deleteText}>Delete drop</Text>
@@ -422,10 +506,31 @@ export default function DropScreen() {
   );
 }
 
+/** Ghost of the drop page — art, kicker, price, and a numbers grid. */
+function DropSkeleton() {
+  return (
+    <View style={styles.body}>
+      <Skeleton height={0} radius={16} style={styles.skeletonArt} />
+      <Skeleton width="30%" height={10} style={styles.skeletonKicker} />
+      <Skeleton width="40%" height={28} style={styles.skeletonPrice} />
+      <View style={styles.skeletonNumbers}>
+        {Array.from({ length: 8 }, (_, i) => (
+          <Skeleton key={i} width={46} height={38} radius={10} />
+        ))}
+      </View>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   muted: { color: '#55585f' },
+  // Style applies after the height prop, so the aspect box wins.
+  skeletonArt: { height: undefined, aspectRatio: 1 / 1.02, overflow: 'hidden' },
+  skeletonKicker: { marginTop: 12 },
+  skeletonPrice: { marginTop: 8 },
+  skeletonNumbers: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 22 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

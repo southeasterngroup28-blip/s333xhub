@@ -1,9 +1,18 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { errorFeedback, successFeedback } from '@/lib/haptics';
 import {
   fetchTopFans,
   removeTopFan,
@@ -22,6 +31,8 @@ export default function Top8ManagerScreen() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<{ id: string; display_name: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** The control mid-flight: a fan's id (assign) or `slot-N` (clear). */
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -60,23 +71,35 @@ export default function Top8ManagerScreen() {
   }
 
   async function assign(userId: string) {
-    if (pickingSlot === null) return;
+    if (pickingSlot === null || busyId) return;
+    setBusyId(userId);
     try {
+      // Picker stays open with the spinner on the tapped row; it closes only
+      // once the server said yes and the slots reloaded.
       await setTopFan(pickingSlot, userId);
+      await load();
+      successFeedback();
       setPickingSlot(null);
       setQuery('');
-      await load();
     } catch (e) {
+      errorFeedback();
       setError((e as { message?: string })?.message ?? 'Could not set that fan.');
+    } finally {
+      setBusyId(null);
     }
   }
 
   async function clear(position: number) {
+    if (busyId) return;
+    setBusyId(`slot-${position}`);
     try {
       await removeTopFan(position);
       await load();
     } catch (e) {
+      errorFeedback();
       setError((e as { message?: string })?.message ?? 'Could not remove.');
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -99,7 +122,7 @@ export default function Top8ManagerScreen() {
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      <ScrollView contentContainerStyle={styles.list}>
+      <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
         {Array.from({ length: 3 }, (_, i) => i + 1).map((position) => {
           const fan = fans.find((f) => f.position === position);
           return (
@@ -108,8 +131,15 @@ export default function Top8ManagerScreen() {
               {fan ? (
                 <>
                   <Text style={styles.slotName}>{fan.profile?.display_name ?? '?'}</Text>
-                  <Pressable onPress={() => clear(position)} hitSlop={8}>
-                    <Ionicons name="close-circle" size={19} color="#6d7076" />
+                  <Pressable
+                    onPress={() => clear(position)}
+                    hitSlop={8}
+                    disabled={busyId !== null}>
+                    {busyId === `slot-${position}` ? (
+                      <ActivityIndicator size="small" color="#8f99a3" />
+                    ) : (
+                      <Ionicons name="close-circle" size={19} color="#6d7076" />
+                    )}
                   </Pressable>
                 </>
               ) : (
@@ -139,8 +169,18 @@ export default function Top8ManagerScreen() {
               autoFocus
             />
             {results.map((result) => (
-              <Pressable key={result.id} style={styles.result} onPress={() => assign(result.id)}>
-                <Text style={styles.resultText}>{result.display_name}</Text>
+              <Pressable
+                key={result.id}
+                style={({ pressed }) => [styles.result, pressed && !busyId && styles.pressedDim]}
+                disabled={busyId !== null}
+                onPress={() => assign(result.id)}>
+                {busyId === result.id ? (
+                  <ActivityIndicator size="small" color="#8f99a3" />
+                ) : (
+                  <Text style={[styles.resultText, busyId ? styles.resultDim : null]}>
+                    {result.display_name}
+                  </Text>
+                )}
               </Pressable>
             ))}
             <Pressable onPress={() => setPickingSlot(null)} style={styles.cancelPick}>
@@ -192,5 +232,7 @@ const styles = StyleSheet.create({
   },
   result: { paddingVertical: 11, paddingHorizontal: 6, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#23262b' },
   resultText: { color: '#fff', fontSize: 14 },
+  resultDim: { opacity: 0.5 },
+  pressedDim: { opacity: 0.6 },
   cancelPick: { alignItems: 'center', paddingVertical: 12 },
 });

@@ -61,6 +61,17 @@ export function isPurchaseCancelled(error: unknown): boolean {
   );
 }
 
+/**
+ * Stripe took the money but the webhook row hasn't landed yet. Not a
+ * refusal — screens show this in a neutral style, never the red slot.
+ */
+export class TicketPendingError extends Error {
+  constructor() {
+    super('Payment went through. Your ticket is on its way. Pull to refresh in a moment.');
+    this.name = 'TicketPendingError';
+  }
+}
+
 // ---- reading -------------------------------------------------------------
 
 /** How a show sells, with a sane answer for a row that somehow predates the column. */
@@ -106,6 +117,23 @@ export function liveTickets(tickets: Ticket[]): Ticket[] {
 /** My usable ticket for one show (refunds don't count), if any. */
 export function ticketForShow(tickets: Ticket[], showId: string): Ticket | null {
   return tickets.find((t) => t.show_id === showId && t.status !== 'refunded') ?? null;
+}
+
+// ---- seeding the ticket screen ---------------------------------------------
+// The buy flow and the ticket strips already hold the full row, so they pass
+// it through here and /ticket/[id] paints instantly instead of opening on a
+// skeleton. A seed is only a first paint — the screen still fetches and the
+// server row stays the truth.
+let seed: Ticket | null = null;
+
+/** Remember a row the next ticket screen open can paint immediately. */
+export function seedTicket(ticket: Ticket) {
+  seed = ticket;
+}
+
+/** The seeded row, only when it matches the id being opened. */
+export function peekTicketSeed(id: string): Ticket | null {
+  return seed && seed.id === id ? seed : null;
 }
 
 /** One ticket by id. Resolves null when it's gone or isn't mine (RLS). */
@@ -216,8 +244,14 @@ function withDetail(fanLine: string, error: StripeError): string {
 /**
  * Buy one ticket. Resolves once the ticket is RECORDED server-side
  * (Stripe webhook round-trip) so the screen can open it with certainty.
+ * `onPhase('issuing')` fires the moment Stripe confirms the charge, before
+ * the webhook wait, so the UI can move from "buying" to "issuing" honestly.
  */
-export async function buyTicket(show: Show, buyerName?: string | null): Promise<Ticket> {
+export async function buyTicket(
+  show: Show,
+  buyerName?: string | null,
+  onPhase?: (phase: 'issuing') => void
+): Promise<Ticket> {
   if (Platform.OS === 'web') throw new Error('Buy tickets from the app on your phone.');
   if (!STRIPE_KEY) throw new Error("Ticket sales aren't switched on yet — hang tight.");
   if (show.status === 'cancelled') throw new Error("That show's been cancelled.");
@@ -228,17 +262,30 @@ export async function buyTicket(show: Show, buyerName?: string | null): Promise<
   const price = show.ticket_price_cents ?? 0;
   if (price <= 0) throw new Error("This show doesn't have a ticket price yet.");
 
-  const me = await requireUserId();
-
-  let name = (buyerName ?? '').trim();
-  if (!name) {
-    const { data } = await supabase
-      .from('profiles')
-      .select('display_name')
-      .eq('id', me)
-      .maybeSingle();
-    name = ((data as { display_name?: string } | null)?.display_name ?? '').trim();
-  }
+  // Everything that doesn't need the server's answer starts now, in
+  // parallel with the intent round trip: the Stripe SDK import, my existing
+  // tickets (the "before" set), and my display name for billing details.
+  const sdkPromise = stripe();
+  sdkPromise.catch(() => {}); // awaited below — this only silences an early rejection
+  const beforePromise = fetchMyTickets().catch(() => [] as Ticket[]);
+  const namePromise = (async () => {
+    const typed = (buyerName ?? '').trim();
+    if (typed) return typed;
+    // A dead session must surface as the auth line when awaited below, not
+    // be swallowed into '' — only the cosmetic profiles read may degrade.
+    const me = await requireUserId();
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('display_name')
+        .eq('id', me)
+        .maybeSingle();
+      return ((data as { display_name?: string } | null)?.display_name ?? '').trim();
+    } catch {
+      return '';
+    }
+  })();
+  namePromise.catch(() => {}); // awaited below — this only silences an early rejection
 
   // The server prices and gates the sale — the app only asks.
   const { data, error } = await supabase.functions.invoke<IntentResponse>(
@@ -260,12 +307,13 @@ export async function buyTicket(show: Show, buyerName?: string | null): Promise<
 
   let sdk: Awaited<ReturnType<typeof stripe>>;
   try {
-    sdk = await stripe();
+    sdk = await sdkPromise;
   } catch {
     // A build without Stripe's native module (older dev client).
     throw new Error('Ticket checkout needs the latest version of the app.');
   }
 
+  const name = await namePromise;
   const init = await sdk.initPaymentSheet({
     merchantDisplayName: 'S333XHUB',
     customerId: data.customer,
@@ -283,9 +331,7 @@ export async function buyTicket(show: Show, buyerName?: string | null): Promise<
   // What I already hold for this show, BEFORE paying — so the wait below
   // looks for the row this payment adds, never an older ticket of mine.
   const before = new Set(
-    (await fetchMyTickets().catch(() => [] as Ticket[]))
-      .filter((t) => t.show_id === show.id)
-      .map((t) => t.id)
+    (await beforePromise).filter((t) => t.show_id === show.id).map((t) => t.id)
   );
 
   const result = await sdk.presentPaymentSheet();
@@ -299,6 +345,9 @@ export async function buyTicket(show: Show, buyerName?: string | null): Promise<
         : 'The payment did not go through - try again in a moment.';
     throw new Error(withDetail(fanLine, result.error));
   }
+
+  // The charge is confirmed — the screen can drop "BUYING…" honestly now.
+  onPhase?.('issuing');
 
   // Stripe took the money; now wait for the webhook to record the ticket.
   for (let attempt = 0; attempt < 15; attempt++) {
@@ -316,7 +365,5 @@ export async function buyTicket(show: Show, buyerName?: string | null): Promise<
     return fresh;
   }
   // Paid but the record is lagging — it WILL arrive; tell the fan honestly.
-  throw new Error(
-    'Payment went through — your ticket is on its way. Pull to refresh in a moment.'
-  );
+  throw new TicketPendingError();
 }

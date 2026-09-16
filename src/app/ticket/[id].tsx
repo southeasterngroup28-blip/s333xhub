@@ -2,13 +2,17 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Component, useCallback, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeIn, FadeInDown, ZoomIn } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EmptyState } from '@/components/empty-state';
 import { Skeleton } from '@/components/skeleton';
+import { ScalePressable } from '@/components/ui/scale-pressable';
 import { DISPLAY_FONT } from '@/constants/type';
+import { tapFeedback } from '@/lib/haptics';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { showDateParts, showRelative } from '@/lib/shows';
-import { fetchTicket, priceLabel, type Ticket } from '@/lib/tickets';
+import { fetchTicket, peekTicketSeed, priceLabel, type Ticket } from '@/lib/tickets';
 
 // The QR is drawn by react-native-qrcode-svg on top of react-native-svg,
 // which looks up its native module the moment it's imported. A build made
@@ -42,8 +46,10 @@ export default function TicketScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const [ticket, setTicket] = useState<Ticket | null>(null);
-  const [loading, setLoading] = useState(true);
+  // The buy flow and the ticket strips seed the row they already hold, so
+  // the payoff screen paints instantly — the fetch below still reconciles.
+  const [ticket, setTicket] = useState<Ticket | null>(() => (id ? peekTicketSeed(id) : null));
+  const [loading, setLoading] = useState(ticket === null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -81,7 +87,29 @@ export default function TicketScreen() {
           <TicketSkeleton />
         ) : ticket ? (
           <TicketCard ticket={ticket} />
+        ) : error ? (
+          // Offline is not "gone" — the ticket row is safe on the server.
+          <View>
+            <EmptyState
+              icon="cloud-offline-outline"
+              title="Can't reach your ticket"
+              sub="Your ticket is safe. Check your connection."
+            />
+            <ScalePressable
+              style={styles.retry}
+              hitSlop={8}
+              onPress={() => {
+                tapFeedback();
+                // Before load(): load() alone never re-sets loading, and the
+                // skeleton coming back instantly is the acknowledgment.
+                setLoading(true);
+                load();
+              }}>
+              <Text style={styles.retryText}>RETRY</Text>
+            </ScalePressable>
+          </View>
         ) : (
+          // A fetch that genuinely came back empty — this one CAN say gone.
           <EmptyState
             icon="ticket-outline"
             title="No ticket here"
@@ -96,7 +124,9 @@ export default function TicketScreen() {
         </Pressable>
         <Text style={styles.title}>TICKET</Text>
       </View>
-      {error ? <Text style={[styles.error, { top: insets.top + 48 }]}>{error}</Text> : null}
+      {error && ticket ? (
+        <Text style={[styles.error, { top: insets.top + 48 }]}>{error}</Text>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -154,6 +184,7 @@ function QrUnavailable() {
 
 function TicketCard({ ticket }: { ticket: Ticket }) {
   const QRCode = loadQrCode();
+  const reduceMotion = useReduceMotion();
   const show = ticket.show;
   const date = show ? showDateParts(show) : null;
   const relative = show ? showRelative(show) : null;
@@ -168,7 +199,11 @@ function TicketCard({ ticket }: { ticket: Ticket }) {
         : `PAID · ${priceLabel(ticket.amount_cents)}`;
 
   return (
-    <View style={styles.card}>
+    // The card lands first; the QR pops a beat later (below). Reduce Motion
+    // trades the slide/zoom for plain fades (house pattern).
+    <Animated.View
+      style={styles.card}
+      entering={reduceMotion ? FadeIn.duration(280) : FadeInDown.duration(280)}>
       {relative ? (
         <Text style={styles.eyebrow}>
           {cancelled ? 'CANCELLED' : relative.toUpperCase()}
@@ -200,7 +235,13 @@ function TicketCard({ ticket }: { ticket: Ticket }) {
         {QRCode ? (
           <QrBoundary fallback={<QrUnavailable />}>
             {/* White on a white pad — scanners want the quiet zone, so the pad is the code's own margin. */}
-            <View style={styles.qrPad}>
+            <Animated.View
+              style={styles.qrPad}
+              entering={
+                reduceMotion
+                  ? FadeIn.delay(120).duration(200)
+                  : ZoomIn.delay(120).springify().damping(18)
+              }>
               <QRCode
                 value={ticket.qr_token}
                 size={QR_SIZE}
@@ -213,7 +254,7 @@ function TicketCard({ ticket }: { ticket: Ticket }) {
                   <Text style={styles.qrStamp}>REFUNDED</Text>
                 </View>
               ) : null}
-            </View>
+            </Animated.View>
           </QrBoundary>
         ) : (
           <QrUnavailable />
@@ -239,7 +280,7 @@ function TicketCard({ ticket }: { ticket: Ticket }) {
               ? 'Show this at the door.'
               : 'Your ticket is saved — update the app and its code will show here.'}
       </Text>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -417,6 +458,16 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   note: { color: '#8f99a3', fontSize: 12.5, textAlign: 'center', marginTop: 16, lineHeight: 18 },
+  // The scanner CTA look — a way out that reads as the main action.
+  retry: {
+    backgroundColor: '#fff',
+    borderRadius: 999,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    alignItems: 'center',
+    alignSelf: 'center',
+  },
+  retryText: { color: '#0b0c0e', fontWeight: '800', fontSize: 13, letterSpacing: 1 },
   skeletonGap: { marginTop: 12 },
   skeletonGapSmall: { marginTop: 7 },
 });

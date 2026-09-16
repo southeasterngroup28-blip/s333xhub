@@ -1,9 +1,13 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, { FadeOut, LinearTransition } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { Skeleton } from '@/components/skeleton';
+import { errorFeedback, successFeedback } from '@/lib/haptics';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
 import {
   banUser,
   deleteMessage,
@@ -28,11 +32,14 @@ type ReportRow = Report & {
 export default function ReportsScreen() {
   const { profile } = useAuth();
   const router = useRouter();
+  const reduceMotion = useReduceMotion();
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   /** Report id whose Ban/Unban action is waiting on an inline confirm. */
   const [confirmBanId, setConfirmBanId] = useState<string | null>(null);
+  /** The control mid-flight: report id (dismiss), `delete-<id>`, or `ban-<id>`. */
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -61,16 +68,29 @@ export default function ReportsScreen() {
     load();
   }, [load]);
 
+  // Dismiss is reversible bookkeeping — optimistic, restore on failure.
   async function handleResolve(report: ReportRow) {
+    if (busyId) return;
+    setBusyId(report.id);
+    const before = rows;
+    setRows((prev) => prev.filter((r) => r.id !== report.id));
+    successFeedback();
     try {
       await resolveReport(report.id);
-      setRows((prev) => prev.filter((r) => r.id !== report.id));
     } catch (e) {
+      setRows(before);
+      errorFeedback();
       setError((e as { message?: string })?.message ?? 'Could not resolve.');
+    } finally {
+      setBusyId(null);
     }
   }
 
+  // Destructive moderation stays honest-pending: spinner in the tapped
+  // chip, nothing disappears until the server has really done it.
   async function handleDeleteContent(report: ReportRow) {
+    if (busyId) return;
+    setBusyId(`delete-${report.id}`);
     try {
       if (report.target_type === 'post') {
         await deletePost(report.target_id);
@@ -80,22 +100,41 @@ export default function ReportsScreen() {
         await deleteComment(report.target_id);
       }
       await resolveReport(report.id);
+      successFeedback();
       setRows((prev) => prev.filter((r) => r.id !== report.id));
     } catch (e) {
+      errorFeedback();
       setError((e as { message?: string })?.message ?? 'Could not delete the content.');
+    } finally {
+      setBusyId(null);
     }
   }
 
   async function handleBan(report: ReportRow) {
+    if (busyId) return;
     const banning = !report.targetBannedAt;
     setConfirmBanId(null);
+    setBusyId(`ban-${report.id}`);
     try {
       await banUser(report.target_id, banning);
-      await load();
+      successFeedback();
+      // Patch the affected rows locally — no need to re-run the serial
+      // three-phase load() for one flag.
+      const targetBannedAt = banning ? new Date().toISOString() : null;
+      setRows((prev) =>
+        prev.map((r) =>
+          r.target_type === 'user' && r.target_id === report.target_id
+            ? { ...r, targetBannedAt }
+            : r
+        )
+      );
     } catch {
+      errorFeedback();
       setError(
         banning ? 'Could not ban that user. Try again.' : 'Could not unban that user. Try again.'
       );
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -130,16 +169,21 @@ export default function ReportsScreen() {
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator color="#fff" />
+        <View style={styles.list}>
+          <ReportSkeleton />
+          <ReportSkeleton />
+          <ReportSkeleton />
         </View>
       ) : (
-        <FlatList
+        <Animated.FlatList
           data={rows}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(item: ReportRow) => item.id}
           contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <View style={styles.card}>
+          itemLayoutAnimation={reduceMotion ? undefined : LinearTransition.duration(250)}
+          renderItem={({ item }: { item: ReportRow }) => (
+            <Animated.View
+              style={styles.card}
+              exiting={reduceMotion ? undefined : FadeOut.duration(160)}>
               <View style={styles.cardTop}>
                 <Text style={styles.type}>{item.target_type.toUpperCase()}</Text>
                 <Text style={styles.when}>{timeAgo(item.created_at)}</Text>
@@ -156,32 +200,55 @@ export default function ReportsScreen() {
                   <Text style={styles.confirmText}>
                     {item.targetBannedAt ? 'Unban this user?' : 'Ban this user from the app?'}
                   </Text>
-                  <Pressable style={styles.chip} onPress={() => handleBan(item)}>
+                  <Pressable
+                    style={styles.chip}
+                    disabled={busyId !== null}
+                    onPress={() => handleBan(item)}>
                     <Text style={styles.chipDanger}>{item.targetBannedAt ? 'Unban' : 'Ban'}</Text>
                   </Pressable>
-                  <Pressable style={styles.chip} onPress={() => setConfirmBanId(null)}>
+                  <Pressable
+                    style={styles.chip}
+                    disabled={busyId !== null}
+                    onPress={() => setConfirmBanId(null)}>
                     <Text style={styles.chipText}>Cancel</Text>
                   </Pressable>
                 </View>
               ) : (
                 <View style={styles.actions}>
                   {item.target_type !== 'user' ? (
-                    <Pressable style={styles.chip} onPress={() => handleDeleteContent(item)}>
-                      <Text style={styles.chipDanger}>Delete content</Text>
+                    <Pressable
+                      style={styles.chip}
+                      disabled={busyId !== null}
+                      onPress={() => handleDeleteContent(item)}>
+                      {busyId === `delete-${item.id}` ? (
+                        <ActivityIndicator size="small" color="#8f99a3" />
+                      ) : (
+                        <Text style={styles.chipDanger}>Delete content</Text>
+                      )}
                     </Pressable>
                   ) : item.targetExists ? (
-                    <Pressable style={styles.chip} onPress={() => setConfirmBanId(item.id)}>
-                      <Text style={styles.chipDanger}>
-                        {item.targetBannedAt ? 'Unban user' : 'Ban user'}
-                      </Text>
+                    <Pressable
+                      style={styles.chip}
+                      disabled={busyId !== null}
+                      onPress={() => setConfirmBanId(item.id)}>
+                      {busyId === `ban-${item.id}` ? (
+                        <ActivityIndicator size="small" color="#8f99a3" />
+                      ) : (
+                        <Text style={styles.chipDanger}>
+                          {item.targetBannedAt ? 'Unban user' : 'Ban user'}
+                        </Text>
+                      )}
                     </Pressable>
                   ) : null}
-                  <Pressable style={styles.chip} onPress={() => handleResolve(item)}>
+                  <Pressable
+                    style={styles.chip}
+                    disabled={busyId !== null}
+                    onPress={() => handleResolve(item)}>
                     <Text style={styles.chipText}>Dismiss report</Text>
                   </Pressable>
                 </View>
               )}
-            </View>
+            </Animated.View>
           )}
           ListEmptyComponent={
             <View style={styles.center}>
@@ -191,6 +258,24 @@ export default function ReportsScreen() {
         />
       )}
     </SafeAreaView>
+  );
+}
+
+/** Ghost of a report card while the three-phase load runs. */
+function ReportSkeleton() {
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardTop}>
+        <Skeleton width={64} height={10} />
+        <Skeleton width={40} height={10} />
+      </View>
+      <Skeleton width="85%" height={13} style={styles.skeletonGap} />
+      <Skeleton width="70%" height={11} style={styles.skeletonGap} />
+      <View style={styles.skeletonChips}>
+        <Skeleton width={100} height={28} radius={14} />
+        <Skeleton width={112} height={28} radius={14} />
+      </View>
+    </View>
   );
 }
 
@@ -220,4 +305,6 @@ const styles = StyleSheet.create({
   chip: { backgroundColor: '#222226', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7 },
   chipText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   chipDanger: { color: '#f87171', fontSize: 13, fontWeight: '600' },
+  skeletonGap: { marginTop: 8 },
+  skeletonChips: { flexDirection: 'row', gap: 8, marginTop: 12 },
 });

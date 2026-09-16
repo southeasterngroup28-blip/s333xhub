@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/providers/auth-provider';
 
 import { DISPLAY_FONT } from '@/constants/type';
+import { errorFeedback, pressFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import {
   DEFAULT_SHOW_TIMEZONE,
   SALES_MODE_LABEL,
@@ -313,6 +314,17 @@ export default function ShowFormScreen() {
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /**
+   * Red hints wait for a field's first blur — nobody gets scolded mid-word
+   * ("htt" is not a broken link yet). Once a field has blurred once, its
+   * hint re-validates live. Never pre-set, not even in edit mode.
+   */
+  const [blurred, setBlurred] = useState<
+    Partial<Record<'date' | 'time' | 'price' | 'capacity' | 'zone' | 'ticket', boolean>>
+  >({});
+  function markBlurred(field: 'date' | 'time' | 'price' | 'capacity' | 'zone' | 'ticket') {
+    setBlurred((prev) => (prev[field] ? prev : { ...prev, [field]: true }));
+  }
 
   useEffect(() => {
     if (!editId) return;
@@ -372,13 +384,13 @@ export default function ShowFormScreen() {
     capacityOk;
 
   const priceHint =
-    salesMode === 'in_app' && price.trim() && !priceOk
+    blurred.price && salesMode === 'in_app' && price.trim() && !priceOk
       ? priceCents === null
         ? 'Price should look like 45 or 45.50.'
         : 'Tickets need a price of at least $0.50.'
       : null;
   const capacityHint =
-    salesMode === 'in_app' && capacity.trim() && !capacityOk
+    blurred.capacity && salesMode === 'in_app' && capacity.trim() && !capacityOk
       ? capacityValue !== null && Number.isInteger(capacityValue) && capacityValue < sold
         ? `${sold} already sold — capacity can't go below that.`
         : 'Capacity should be a whole number, like 200 (or blank for unlimited).'
@@ -398,17 +410,21 @@ export default function ShowFormScreen() {
       : null;
 
   const whenHint =
-    date.trim() && !dateParts
+    blurred.date && date.trim() && !dateParts
       ? 'Couldn’t read that date — e.g. Sep 15 or 9/15/2026.'
-      : time.trim() && !timeParts
+      : blurred.time && time.trim() && !timeParts
         ? 'Time should look like 8:00 PM, 8pm, or 20:00.'
         : null;
   const zoneHint =
-    zoneRaw && !timezone ? "That's not a timezone we recognize — try America/Chicago." : null;
+    blurred.zone && zoneRaw && !timezone
+      ? "That's not a timezone we recognize — try America/Chicago."
+      : null;
   const inPast = !!startsAt && startsAt.getTime() < Date.now();
 
   /** On blur: "9/15" → "Sep 15, 2026". A guessed reading gets a note the artist can tap to fix. */
   function tidyDate() {
+    // Flag first, unconditionally — a parse fail is exactly the case that needs the hint.
+    markBlurred('date');
     const parsed = parseDate(date);
     if (!parsed) return;
     const label = dateLabel(parsed);
@@ -418,6 +434,7 @@ export default function ShowFormScreen() {
 
   /** On blur: "10pm" → "10:00 PM". */
   function tidyTime() {
+    markBlurred('time');
     const parsed = parseTime(time);
     if (parsed) setTime(timeLabel(parsed));
   }
@@ -430,6 +447,7 @@ export default function ShowFormScreen() {
 
   async function handleSubmit() {
     if (!valid || saving || !startsAt || !timezone) return;
+    pressFeedback();
     setSaving(true);
     setError(null);
     const fields = {
@@ -446,12 +464,15 @@ export default function ShowFormScreen() {
     try {
       if (editId) {
         await updateShow(editId, { ...fields, status });
+        successFeedback();
         goBack();
       } else {
         await createShow(fields);
+        successFeedback();
         goBack(); // /shows refetches on focus, so the new row is already there
       }
     } catch (e) {
+      errorFeedback();
       setError(
         (e as { message?: string })?.message ??
           (editId ? 'Could not save the show.' : 'Could not post the show.')
@@ -462,13 +483,16 @@ export default function ShowFormScreen() {
 
   async function handleDelete() {
     if (!editId || saving) return;
+    pressFeedback();
     setConfirmDelete(false);
     setSaving(true);
     setError(null);
     try {
       await deleteShow(editId);
+      successFeedback();
       goBack();
     } catch (e) {
+      errorFeedback();
       setError((e as { message?: string })?.message ?? 'Could not delete the show.');
       setSaving(false);
     }
@@ -482,7 +506,10 @@ export default function ShowFormScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.header}>
-        <Pressable onPress={goBack} hitSlop={12}>
+        <Pressable
+          onPress={goBack}
+          hitSlop={12}
+          style={({ pressed }) => (pressed ? styles.pressedDim : null)}>
           <Text style={styles.cancel}>Cancel</Text>
         </Pressable>
         <Text style={styles.headerTitle}>{editing ? 'EDIT SHOW' : 'NEW SHOW'}</Text>
@@ -582,8 +609,15 @@ export default function ShowFormScreen() {
               {SHOW_TIMEZONES.map((option) => (
                 <Pressable
                   key={option.value}
-                  style={[styles.zoneChip, zoneChoice === option.value && styles.zoneChipOn]}
-                  onPress={() => setZoneChoice(option.value)}>
+                  style={({ pressed }) => [
+                    styles.zoneChip,
+                    zoneChoice === option.value && styles.zoneChipOn,
+                    pressed && styles.pressedDim,
+                  ]}
+                  onPress={() => {
+                    tapFeedback();
+                    setZoneChoice(option.value);
+                  }}>
                   <Text
                     style={[styles.zoneText, zoneChoice === option.value && styles.zoneTextOn]}>
                     {option.label.toUpperCase()}
@@ -591,8 +625,15 @@ export default function ShowFormScreen() {
                 </Pressable>
               ))}
               <Pressable
-                style={[styles.zoneChip, zoneChoice === 'other' && styles.zoneChipOn]}
-                onPress={() => setZoneChoice('other')}>
+                style={({ pressed }) => [
+                  styles.zoneChip,
+                  zoneChoice === 'other' && styles.zoneChipOn,
+                  pressed && styles.pressedDim,
+                ]}
+                onPress={() => {
+                  tapFeedback();
+                  setZoneChoice('other');
+                }}>
                 <Text style={[styles.zoneText, zoneChoice === 'other' && styles.zoneTextOn]}>
                   OTHER
                 </Text>
@@ -605,6 +646,7 @@ export default function ShowFormScreen() {
                 placeholderTextColor="#55585f"
                 value={customZone}
                 onChangeText={setCustomZone}
+                onBlur={() => markBlurred('zone')}
                 autoCapitalize="none"
                 autoCorrect={false}
               />
@@ -623,8 +665,15 @@ export default function ShowFormScreen() {
               {SALES_MODES.map((mode) => (
                 <Pressable
                   key={mode}
-                  style={[styles.statusChip, salesMode === mode && styles.statusChipOn]}
-                  onPress={() => setSalesMode(mode)}>
+                  style={({ pressed }) => [
+                    styles.statusChip,
+                    salesMode === mode && styles.statusChipOn,
+                    pressed && styles.pressedDim,
+                  ]}
+                  onPress={() => {
+                    tapFeedback();
+                    setSalesMode(mode);
+                  }}>
                   <Text
                     style={[
                       styles.statusText,
@@ -648,6 +697,7 @@ export default function ShowFormScreen() {
                     keyboardType="decimal-pad"
                     value={price}
                     onChangeText={setPrice}
+                    onBlur={() => markBlurred('price')}
                     maxLength={9}
                   />
                 </View>
@@ -660,6 +710,7 @@ export default function ShowFormScreen() {
                     keyboardType="number-pad"
                     value={capacity}
                     onChangeText={setCapacity}
+                    onBlur={() => markBlurred('capacity')}
                     maxLength={7}
                   />
                 </View>
@@ -676,12 +727,13 @@ export default function ShowFormScreen() {
                   autoCorrect={false}
                   value={ticketUrl}
                   onChangeText={setTicketUrl}
+                  onBlur={() => markBlurred('ticket')}
                 />
               </>
             ) : null}
             {priceHint ? <Text style={styles.hint}>{priceHint}</Text> : null}
             {capacityHint ? <Text style={styles.hint}>{capacityHint}</Text> : null}
-            {!ticketOk ? (
+            {blurred.ticket && !ticketOk ? (
               <Text style={styles.hint}>Ticket links need to start with http:// or https://.</Text>
             ) : null}
             <Text style={styles.sub}>{salesNote}</Text>
@@ -694,8 +746,15 @@ export default function ShowFormScreen() {
                   {STATUS_ORDER.map((value) => (
                     <Pressable
                       key={value}
-                      style={[styles.statusChip, status === value && styles.statusChipOn]}
-                      onPress={() => setStatus(value)}>
+                      style={({ pressed }) => [
+                        styles.statusChip,
+                        status === value && styles.statusChipOn,
+                        pressed && styles.pressedDim,
+                      ]}
+                      onPress={() => {
+                        tapFeedback();
+                        setStatus(value);
+                      }}>
                       <Text style={[styles.statusText, status === value && styles.statusTextOn]}>
                         {SHOW_STATUS_LABEL[value].toUpperCase()}
                       </Text>
@@ -736,18 +795,25 @@ export default function ShowFormScreen() {
               confirmDelete ? (
                 <View style={styles.confirmRow}>
                   <Text style={styles.confirmText}>Delete this show?</Text>
-                  <Pressable onPress={handleDelete}>
+                  <Pressable
+                    onPress={handleDelete}
+                    style={({ pressed }) => (pressed ? styles.pressedDim : null)}>
                     <Text style={styles.confirmYes}>DELETE</Text>
                   </Pressable>
-                  <Pressable onPress={() => setConfirmDelete(false)}>
+                  <Pressable
+                    onPress={() => setConfirmDelete(false)}
+                    style={({ pressed }) => (pressed ? styles.pressedDim : null)}>
                     <Text style={styles.confirmNo}>Cancel</Text>
                   </Pressable>
                 </View>
               ) : (
                 <Pressable
-                  style={styles.deleteRow}
+                  style={({ pressed }) => [styles.deleteRow, pressed && styles.pressedDim]}
                   disabled={saving}
-                  onPress={() => setConfirmDelete(true)}>
+                  onPress={() => {
+                    tapFeedback();
+                    setConfirmDelete(true);
+                  }}>
                   <Text style={styles.deleteText}>Delete show</Text>
                 </Pressable>
               )
@@ -852,4 +918,5 @@ const styles = StyleSheet.create({
   deleteRow: { alignItems: 'center', marginTop: 22 },
   deleteText: { color: '#f87171', fontSize: 13, fontWeight: '600' },
   deleteNote: { marginTop: 22 },
+  pressedDim: { opacity: 0.6 },
 });

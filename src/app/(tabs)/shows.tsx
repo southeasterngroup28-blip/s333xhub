@@ -1,7 +1,21 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import Animated, {
+  FadeInDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBackground } from '@/components/app-background';
@@ -9,8 +23,10 @@ import { EdgeGlass, FadeMask } from '@/components/edge-fade';
 import { EmptyState } from '@/components/empty-state';
 import { MyTicketsStrip, useFanTickets, type RowTicketing } from '@/components/fan-tickets';
 import { Skeleton } from '@/components/skeleton';
+import { ScalePressable } from '@/components/ui/scale-pressable';
 import { DISPLAY_FONT } from '@/constants/type';
 import { tapFeedback } from '@/lib/haptics';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
 import {
   fetchPastShows,
   fetchUpcomingShows,
@@ -32,6 +48,7 @@ export default function ShowsScreen() {
   const insets = useSafeAreaInsets();
   const isArtist = profile?.role === 'artist';
   const scrollRef = useRef<ScrollView>(null);
+  const reduceMotion = useReduceMotion();
 
   // Re-tapping the Shows tab scrolls back to the top (switch-to is ignored).
   useEffect(
@@ -49,8 +66,24 @@ export default function ShowsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** A paid-but-lagging buy — calm copy in a neutral color, never the red slot. */
+  const [notice, setNotice] = useState<string | null>(null);
+  /** The last load() itself failed — the empty branch owns the story then. */
+  const [loadFailed, setLoadFailed] = useState(false);
   /** Artist only: tickets sold per in-app show, for the "12 / 200 sold" line. */
   const [soldByShow, setSoldByShow] = useState<Record<string, number>>({});
+
+  // The PAST chevron rotates instead of swapping glyphs. Reduce Motion
+  // snaps it to its resting angle instead (house shared-value pattern).
+  const pastChevron = useSharedValue(0);
+  useEffect(() => {
+    pastChevron.value = reduceMotion
+      ? (pastOpen ? 180 : 0)
+      : withTiming(pastOpen ? 180 : 0, { duration: 180 });
+  }, [pastOpen, pastChevron, reduceMotion]);
+  const pastChevronStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${pastChevron.value}deg` }],
+  }));
 
   // Fan side of ticketing: what I hold, seats left, and the buy flow.
   const ticketing = useFanTickets({
@@ -58,6 +91,12 @@ export default function ShowsScreen() {
     enabled: !isArtist,
     buyerName: profile?.display_name,
     onError: setError,
+    onNotice: (message) => {
+      // A retry that PAID must never sit under the previous try's red line —
+      // the calm notice owns the floating slot the moment money moves.
+      setError(null);
+      setNotice(message);
+    },
   });
 
   // Artist: refresh the sold counts whenever the upcoming list does. Fans
@@ -93,8 +132,11 @@ export default function ShowsScreen() {
       ]);
       setUpcoming(ahead);
       setPast(gone);
+      setLoadFailed(false);
       setError(null);
+      setNotice(null);
     } catch (e) {
+      setLoadFailed(true);
       setError((e as { message?: string })?.message ?? 'Could not load the shows.');
     } finally {
       setLoading(false);
@@ -117,6 +159,7 @@ export default function ShowsScreen() {
 
   // Typed routes only regenerate while the dev server runs; the casts go when they do.
   function handleEdit(show: Show) {
+    tapFeedback();
     router.push(`/show-new?id=${show.id}` as never);
   }
 
@@ -162,15 +205,31 @@ export default function ShowsScreen() {
             <MyTicketsStrip tickets={ticketing.owned} />
             <Text style={styles.sectionLabel}>UPCOMING</Text>
             {upcoming.length === 0 ? (
-              <EmptyState
-                icon="ticket-outline"
-                title="No shows announced yet"
-                sub={
-                  isArtist
-                    ? 'Tap + to announce the first date.'
-                    : "Mazze hasn't announced any shows — you'll get a push when he does."
-                }
-              />
+              loadFailed ? (
+                <EmptyState
+                  icon="cloud-offline-outline"
+                  title="Couldn't load shows"
+                  sub="Check your connection."
+                  action={{
+                    label: 'RETRY',
+                    onPress: () => {
+                      tapFeedback();
+                      setLoading(true);
+                      load();
+                    },
+                  }}
+                />
+              ) : (
+                <EmptyState
+                  icon="ticket-outline"
+                  title="No shows announced yet"
+                  sub={
+                    isArtist
+                      ? 'Tap + to announce the first date.'
+                      : "Mazze hasn't announced any shows — you'll get a push when he does."
+                  }
+                />
+              )
             ) : (
               upcoming.map((show) => (
                 <ShowRow
@@ -190,30 +249,35 @@ export default function ShowsScreen() {
             {past.length > 0 ? (
               <>
                 <Pressable
-                  style={styles.pastToggle}
+                  style={({ pressed }) => [styles.pastToggle, pressed && styles.pressedDim]}
                   onPress={() => {
                     tapFeedback();
                     setPastOpen((open) => !open);
                   }}
                   hitSlop={8}>
                   <Text style={styles.sectionLabel}>PAST</Text>
-                  <Ionicons
-                    name={pastOpen ? 'chevron-up' : 'chevron-down'}
-                    size={14}
-                    color="#6d7076"
-                  />
+                  <Animated.View style={pastChevronStyle}>
+                    <Ionicons name="chevron-down" size={14} color="#6d7076" />
+                  </Animated.View>
                 </Pressable>
                 {pastOpen
-                  ? past.map((show) => (
-                      <ShowRow
+                  ? past.map((show, i) => (
+                      <Animated.View
                         key={show.id}
-                        show={show}
-                        past
-                        editable={isArtist}
-                        onEdit={() => handleEdit(show)}
-                        onTickets={() => handleTickets(show)}
-                        ticketing={isArtist ? undefined : ticketing.forRow(show)}
-                      />
+                        entering={
+                          reduceMotion
+                            ? undefined
+                            : FadeInDown.duration(160).delay(Math.min(i * 25, 150))
+                        }>
+                        <ShowRow
+                          show={show}
+                          past
+                          editable={isArtist}
+                          onEdit={() => handleEdit(show)}
+                          onTickets={() => handleTickets(show)}
+                          ticketing={isArtist ? undefined : ticketing.forRow(show)}
+                        />
+                      </Animated.View>
                     ))
                   : null}
               </>
@@ -226,22 +290,27 @@ export default function ShowsScreen() {
       <View style={[styles.topBar, { top: insets.top }]} pointerEvents="box-none">
         <Text style={styles.title}>SHOWS</Text>
         {canScan ? (
-          <Pressable onPress={() => handleScan()} hitSlop={12} style={styles.scanButton}>
+          <Pressable
+            onPress={() => handleScan()}
+            hitSlop={12}
+            style={({ pressed }) => [styles.scanButton, pressed && styles.pressedDim]}>
             <Ionicons name="scan-outline" size={14} color="#c3cdd6" />
             <Text style={styles.scanButtonText}>SCAN TICKETS</Text>
           </Pressable>
         ) : null}
         {isArtist ? (
-          <Pressable
+          <ScalePressable
             onPress={() => router.push('/show-new' as never)}
             hitSlop={12}
             style={styles.newButton}>
             <Ionicons name="add" size={22} color="#0b0c0e" />
-          </Pressable>
+          </ScalePressable>
         ) : null}
       </View>
-      {error ? (
+      {error && !(loadFailed && upcoming.length === 0) ? (
         <Text style={[styles.error, { top: insets.top + 48 }]}>{error}</Text>
+      ) : notice ? (
+        <Text style={[styles.noticeLine, { top: insets.top + 48 }]}>{notice}</Text>
       ) : null}
     </SafeAreaView>
   );
@@ -294,7 +363,12 @@ function ShowRow({
 
   return (
     <Pressable
-      style={[styles.row, (cancelled || past) && styles.rowDim]}
+      // Disabled for fans, so a fan's row never dims under a stray touch.
+      style={({ pressed }) => [
+        styles.row,
+        (cancelled || past) && styles.rowDim,
+        pressed && styles.pressedDim,
+      ]}
       disabled={!editable}
       onPress={onEdit}>
       <View style={[styles.dateBlock, isNext && styles.dateBlockNext]}>
@@ -319,7 +393,10 @@ function ShowRow({
           <View style={styles.salesLine}>
             <Text style={styles.salesText}>{soldLabel(show, sold)}</Text>
             {onScan && !cancelled ? (
-              <Pressable style={styles.scanChip} onPress={onScan} hitSlop={6}>
+              <Pressable
+                style={({ pressed }) => [styles.scanChip, pressed && styles.pressedDim]}
+                onPress={onScan}
+                hitSlop={12}>
                 <Ionicons name="scan-outline" size={11} color="#c3cdd6" />
                 <Text style={styles.scanChipText}>SCAN</Text>
               </Pressable>
@@ -332,9 +409,9 @@ function ShowRow({
         {cancelled ? (
           <Text style={styles.chipMuted}>CANCELLED</Text>
         ) : ticketing?.ticket ? (
-          <Pressable style={styles.pill} onPress={ticketing.onTicket} hitSlop={6}>
+          <ScalePressable style={styles.pill} onPress={ticketing.onTicket} hitSlop={6}>
             <Text style={styles.pillText}>YOUR TICKET</Text>
-          </Pressable>
+          </ScalePressable>
         ) : soldOut ? (
           <View style={[styles.pill, styles.pillSold]}>
             <Text style={styles.pillSoldText}>SOLD OUT</Text>
@@ -344,26 +421,38 @@ function ShowRow({
             <Text style={styles.soon}>Tickets soon</Text>
           ) : !ticketing ? (
             <Text style={styles.soon}>{priceLabel(price)} · in app</Text>
+          ) : ticketing.buying ? (
+            // 'sheet' dims a touch; a CONFIRMED payment renders full strength —
+            // paid must never look more disabled than idle.
+            <View
+              style={[
+                styles.pill,
+                styles.pillRow,
+                ticketing.phase !== 'issuing' && styles.pillBusy,
+              ]}>
+              <ActivityIndicator
+                size="small"
+                color="#0b0c0e"
+                style={styles.pillSpinner}
+              />
+              <Text style={styles.pillText}>
+                {ticketing.phase === 'issuing' ? 'PAID. GETTING YOUR TICKET' : 'BUYING…'}
+              </Text>
+            </View>
           ) : ticketing.left === 0 ? (
             <View style={[styles.pill, styles.pillSold]}>
               <Text style={styles.pillSoldText}>SOLD OUT</Text>
             </View>
           ) : (
-            <Pressable
-              style={[styles.pill, ticketing.buying && styles.pillBusy]}
-              disabled={ticketing.buying}
-              onPress={ticketing.onBuy}
-              hitSlop={6}>
-              <Text style={styles.pillText}>
-                {ticketing.buying ? 'BUYING…' : `BUY TICKET · ${priceLabel(price)}`}
-              </Text>
-            </Pressable>
+            <ScalePressable style={styles.pill} onPress={ticketing.onBuy} hitSlop={6}>
+              <Text style={styles.pillText}>{`BUY TICKET · ${priceLabel(price)}`}</Text>
+            </ScalePressable>
           )
         ) : mode === 'link' ? (
           show.ticket_url ? (
-            <Pressable style={styles.pill} onPress={onTickets} hitSlop={6}>
+            <ScalePressable style={styles.pill} onPress={onTickets} hitSlop={6}>
               <Text style={styles.pillText}>TICKETS</Text>
-            </Pressable>
+            </ScalePressable>
           ) : (
             <Text style={styles.soon}>Tickets soon</Text>
           )
@@ -435,7 +524,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a1d22',
     borderRadius: 999,
     paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingVertical: 6,
   },
   scanChipText: { color: '#c3cdd6', fontSize: 9, fontWeight: '800', letterSpacing: 1 },
   error: {
@@ -448,6 +537,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     fontSize: 13,
   },
+  // Same seat as the red line, calmer voice: money moved, nothing is wrong.
+  noticeLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    textAlign: 'center',
+    color: '#c3cdd6',
+    paddingHorizontal: 16,
+    fontSize: 13,
+  },
+  pressedDim: { opacity: 0.6 },
   list: { padding: 14, paddingTop: 52, paddingBottom: 150, flexGrow: 1 },
   sectionLabel: {
     color: '#6d7076',
@@ -499,9 +600,11 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   pillText: { color: '#0b0c0e', fontSize: 9.5, fontWeight: '800', letterSpacing: 0.5 },
+  pillRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  pillSpinner: { transform: [{ scale: 0.7 }], marginVertical: -3 },
   pillSold: { backgroundColor: 'rgba(195,205,214,0.1)' },
   pillSoldText: { color: '#c3cdd6', fontSize: 9.5, fontWeight: '800', letterSpacing: 0.5 },
-  pillBusy: { opacity: 0.55 },
+  pillBusy: { opacity: 0.85 },
   chipMuted: { color: '#6d7076', fontSize: 9.5, fontWeight: '700', letterSpacing: 1 },
   soon: { color: '#55585f', fontSize: 11 },
   editHint: { marginTop: 2 },

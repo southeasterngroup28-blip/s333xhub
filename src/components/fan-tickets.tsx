@@ -1,18 +1,21 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 
+import { ScalePressable } from '@/components/ui/scale-pressable';
 import { DISPLAY_FONT } from '@/constants/type';
-import { pressFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
+import { errorFeedback, pressFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import { showDateParts, showRelative, type Show } from '@/lib/shows';
 import {
+  TicketPendingError,
   buyTicket,
   fetchMyTickets,
   isPurchaseCancelled,
   liveTickets,
   remaining,
   salesMode,
+  seedTicket,
   ticketForShow,
   ticketsSold,
   type Ticket,
@@ -24,6 +27,9 @@ import {
 // and the buy flow. The screen asks `forRow(show)` per row and drops the
 // strip above the list.
 
+/** Where a buy currently sits: Stripe's sheet, or the webhook recording it. */
+export type BuyPhase = 'sheet' | 'issuing';
+
 /** Everything one show row needs to draw its ticket action. */
 export type RowTicketing = {
   /** My usable ticket for this show (refunds don't count), if I hold one. */
@@ -31,6 +37,8 @@ export type RowTicketing = {
   /** Seats left. null = unlimited, or unknown right now — never blocks a buy. */
   left: number | null;
   buying: boolean;
+  /** Which stage the in-flight buy is at; null when this row isn't buying. */
+  phase: BuyPhase | null;
   onBuy: () => void;
   onTicket: () => void;
 };
@@ -40,6 +48,7 @@ export function useFanTickets({
   enabled = true,
   buyerName,
   onError,
+  onNotice,
 }: {
   /** The list on screen — a fresh array every reload, which is what re-reads counts. */
   shows: Show[];
@@ -47,11 +56,16 @@ export function useFanTickets({
   enabled?: boolean;
   buyerName?: string | null;
   onError: (message: string) => void;
+  /** Money moved but the record lags — neutral copy, never the red slot. */
+  onNotice?: (message: string) => void;
 }) {
   const router = useRouter();
   const [owned, setOwned] = useState<Ticket[]>([]);
   const [sold, setSold] = useState<Record<string, number>>({});
   const [buyingId, setBuyingId] = useState<string | null>(null);
+  const [buyPhase, setBuyPhase] = useState<BuyPhase>('sheet');
+  /** When Stripe confirmed the charge — gates the navigation yank below. */
+  const issuedAt = useRef(0);
 
   useEffect(() => {
     if (!enabled) return;
@@ -83,22 +97,39 @@ export function useFanTickets({
       if (buyingId) return;
       pressFeedback();
       setBuyingId(show.id);
+      setBuyPhase('sheet');
+      issuedAt.current = 0;
       try {
-        const ticket = await buyTicket(show, buyerName);
-        successFeedback();
+        const ticket = await buyTicket(show, buyerName, (phase) => {
+          if (phase !== 'issuing') return;
+          // Charge confirmed — THIS is the moment worth a success buzz.
+          issuedAt.current = Date.now();
+          setBuyPhase('issuing');
+          successFeedback();
+        });
         setOwned((prev) => [ticket, ...prev.filter((t) => t.id !== ticket.id)]);
-        // Typed routes only regenerate while the dev server runs; the cast goes when they do.
-        router.push(`/ticket/${ticket.id}` as never);
+        // Only yank navigation while the fan is still watching the buy; a
+        // slow webhook (>5s) leaves the MY TICKETS strip to carry the ticket.
+        if (Date.now() - issuedAt.current <= 5000) {
+          seedTicket(ticket);
+          // Typed routes only regenerate while the dev server runs; the cast goes when they do.
+          router.push(`/ticket/${ticket.id}` as never);
+        }
       } catch (e) {
-        // Backing out of the payment sheet isn't an error worth a red line.
-        if (!isPurchaseCancelled(e)) {
+        if (isPurchaseCancelled(e)) {
+          // Backing out of the payment sheet isn't an error worth a red line.
+        } else if (e instanceof TicketPendingError) {
+          // Paid, record lagging — honest and calm, never the red refusal slot.
+          onNotice?.(e.message);
+        } else {
+          errorFeedback();
           onError((e as { message?: string })?.message ?? 'The purchase did not go through.');
         }
       } finally {
         setBuyingId(null);
       }
     },
-    [buyingId, buyerName, onError, router]
+    [buyingId, buyerName, onError, onNotice, router]
   );
 
   const forRow = useCallback(
@@ -109,14 +140,18 @@ export function useFanTickets({
         ticket,
         left: count == null ? null : remaining(show, count),
         buying: buyingId === show.id,
+        phase: buyingId === show.id ? buyPhase : null,
         onBuy: () => buy(show),
         onTicket: () => {
           tapFeedback();
-          if (ticket) router.push(`/ticket/${ticket.id}` as never);
+          if (ticket) {
+            seedTicket(ticket);
+            router.push(`/ticket/${ticket.id}` as never);
+          }
         },
       };
     },
-    [owned, sold, buyingId, buy, router]
+    [owned, sold, buyingId, buyPhase, buy, router]
   );
 
   return {
@@ -152,11 +187,12 @@ export function MyTicketsStrip({ tickets }: { tickets: Ticket[] }) {
         const relative = show ? showRelative(show) : null;
         const soon = relative === 'Tonight' || relative === 'Tomorrow';
         return (
-          <Pressable
+          <ScalePressable
             key={ticket.id}
             style={[styles.card, ticket.status === 'refunded' && styles.cardDim]}
             onPress={() => {
               tapFeedback();
+              seedTicket(ticket);
               router.push(`/ticket/${ticket.id}` as never);
             }}>
             <View style={styles.iconBox}>
@@ -179,7 +215,7 @@ export function MyTicketsStrip({ tickets }: { tickets: Ticket[] }) {
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={14} color="#55585f" />
-          </Pressable>
+          </ScalePressable>
         );
       })}
     </View>

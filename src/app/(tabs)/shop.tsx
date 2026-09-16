@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBackground } from '@/components/app-background';
@@ -10,7 +10,9 @@ import { EdgeGlass, FadeMask } from '@/components/edge-fade';
 import { countdownTo, useNow } from '@/lib/countdown';
 import { EmptyState } from '@/components/empty-state';
 import { ChatRowSkeleton } from '@/components/skeleton';
+import { ScalePressable } from '@/components/ui/scale-pressable';
 import { DISPLAY_FONT } from '@/constants/type';
+import { tapFeedback } from '@/lib/haptics';
 import {
   activeClaims,
   dropImageUrl,
@@ -44,6 +46,7 @@ export default function ShopScreen() {
 
   const [drops, setDrops] = useState<Drop[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -74,24 +77,58 @@ export default function ShopScreen() {
         </View>
       ) : (
         <FadeMask>
-        <ScrollView ref={scrollRef} contentContainerStyle={styles.list}>
-          {drops.length === 0 ? (
-            <EmptyState
-              icon="bag-outline"
-              title="Nothing on the shelf yet"
-              sub={
-                isArtist
-                  ? 'Tap + to set up Drop 001.'
-                  : 'Limited numbered drops land here. You’ll get a push the second one goes live.'
-              }
+        <ScrollView
+          ref={scrollRef}
+          contentContainerStyle={styles.list}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              tintColor="#fff"
+              onRefresh={async () => {
+                // load() never manages a refreshing flag itself — this does.
+                setRefreshing(true);
+                try {
+                  await load();
+                } finally {
+                  setRefreshing(false);
+                }
+              }}
             />
+          }>
+          {drops.length === 0 ? (
+            error ? (
+              // A failed load must never masquerade as an empty shelf.
+              <EmptyState
+                icon="cloud-offline-outline"
+                title="Couldn't load"
+                sub="Check your connection."
+                action={{
+                  label: 'RETRY',
+                  onPress: () => {
+                    tapFeedback();
+                    setLoading(true);
+                    load();
+                  },
+                }}
+              />
+            ) : (
+              <EmptyState
+                icon="bag-outline"
+                title="Nothing on the shelf yet"
+                sub={
+                  isArtist
+                    ? 'Tap + to set up Drop 001.'
+                    : 'Limited numbered drops land here. You’ll get a push the second one goes live.'
+                }
+              />
+            )
           ) : (
             drops.map((drop) => {
               const status = dropStatus(drop);
               const image = dropImageUrl(drop.image_path);
               const left = remaining(drop);
               return (
-                <Pressable
+                <ScalePressable
                   key={drop.id}
                   style={[styles.card, drop.project === 's333xgod' ? styles.cardGod : styles.cardMazze]}
                   onPress={() => router.push(`/drop/${drop.id}` as never)}>
@@ -168,7 +205,7 @@ export default function ShopScreen() {
                       />
                     </View>
                   ) : null}
-                </Pressable>
+                </ScalePressable>
               );
             })
           )}
@@ -188,7 +225,7 @@ export default function ShopScreen() {
           </Pressable>
         ) : null}
       </View>
-      {error ? (
+      {error && drops.length > 0 ? (
         <Text style={[styles.error, { top: insets.top + 48 }]}>{error}</Text>
       ) : null}
     </SafeAreaView>
