@@ -4,8 +4,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
 
+import { tapFeedback } from '@/lib/haptics';
 import {
   MAX_FILE_BYTES,
   VIDEO_MAX_SECONDS,
@@ -16,6 +18,27 @@ import {
 
 export type PickedImageDraft = PickedImage & { previewUri: string };
 
+// The system sheet takes a beat to present (and the document picker copies
+// the file to cache first). Every button acknowledges the tap at once,
+// swaps its glyph for a spinner while the sheet is on its way, and refuses
+// a second tap so two pickers can never launch at once. `size="small"` is
+// exactly the 20px icon footprint on iOS - numeric sizes are Android-only.
+function PickerGlyph({
+  name,
+  color,
+  picking,
+}: {
+  name: keyof typeof Ionicons.glyphMap;
+  color: string;
+  picking: boolean;
+}) {
+  return picking ? (
+    <ActivityIndicator size="small" color={color} />
+  ) : (
+    <Ionicons name={name} size={20} color={color} />
+  );
+}
+
 type PhotoProps = {
   disabled?: boolean;
   label: string;
@@ -24,29 +47,49 @@ type PhotoProps = {
   onError: (message: string) => void;
   /** Bare 30px icon in the chat composer's dim gray — no box, no label. */
   compact?: boolean;
+  /**
+   * Whether the picker should also hand back the image as base64 (default
+   * true: avatars, backgrounds, shop and chat upload from it). Callers that
+   * stream from `previewUri` (compose, fan mail) pass false, which skips a
+   * multi-MB encode per photo and the bridge trip that carried it.
+   */
+  withBase64?: boolean;
 };
 
-export function PickPhotosButton({ disabled, label, maxCount, onPicked, onError, compact }: PhotoProps) {
+export function PickPhotosButton({
+  disabled,
+  label,
+  maxCount,
+  onPicked,
+  onError,
+  compact,
+  withBase64 = true,
+}: PhotoProps) {
+  const [picking, setPicking] = useState(false);
+
   async function pick() {
+    tapFeedback();
+    if (picking) return;
+    setPicking(true);
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
         allowsMultipleSelection: true,
         selectionLimit: maxCount,
         quality: 0.7,
-        base64: true,
+        base64: withBase64,
       });
       if (result.canceled) return;
       const oversized = result.assets.find((a) => a.fileSize && a.fileSize > MAX_FILE_BYTES);
       if (oversized) {
-        onError('One of those photos is over the 50 MB limit - pick a smaller one.');
+        onError('One of those photos is over the 50 MB limit. Pick a smaller one.');
         return;
       }
       onPicked(
         result.assets
-          .filter((a) => a.base64)
+          .filter((a) => (withBase64 ? !!a.base64 : !!a.uri))
           .map((a) => ({
-            base64: a.base64!,
+            base64: withBase64 ? a.base64! : undefined,
             mimeType: a.mimeType ?? 'image/jpeg',
             width: a.width,
             height: a.height,
@@ -55,24 +98,37 @@ export function PickPhotosButton({ disabled, label, maxCount, onPicked, onError,
       );
     } catch (e) {
       onError(`Photo picker failed: ${(e as { message?: string })?.message ?? String(e)}`);
+    } finally {
+      setPicking(false);
     }
   }
 
   if (compact) {
     return (
       <Pressable
-        style={[styles.compact, disabled && styles.disabled]}
+        style={({ pressed }) => [
+          styles.compact,
+          disabled && styles.disabled,
+          pressed && styles.attachPressed,
+        ]}
         onPress={pick}
-        disabled={disabled}
+        disabled={disabled || picking}
         hitSlop={8}
         accessibilityLabel="Send a photo">
-        <Ionicons name="image-outline" size={20} color="#6c7078" />
+        <PickerGlyph name="image-outline" color="#6c7078" picking={picking} />
       </Pressable>
     );
   }
   return (
-    <Pressable style={[styles.attach, disabled && styles.disabled]} onPress={pick} disabled={disabled}>
-      <Ionicons name="image-outline" size={20} color="#fff" />
+    <Pressable
+      style={({ pressed }) => [
+        styles.attach,
+        disabled && styles.disabled,
+        pressed && styles.attachPressed,
+      ]}
+      onPress={pick}
+      disabled={disabled || picking}>
+      <PickerGlyph name="image-outline" color="#fff" picking={picking} />
       <Text style={styles.text}>{label}</Text>
     </Pressable>
   );
@@ -86,7 +142,12 @@ type VideoProps = {
 };
 
 export function PickVideoButton({ disabled, label, onPicked, onError }: VideoProps) {
+  const [picking, setPicking] = useState(false);
+
   async function pick() {
+    tapFeedback();
+    if (picking) return;
+    setPicking(true);
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['videos'],
@@ -100,19 +161,19 @@ export function PickVideoButton({ disabled, label, onPicked, onError }: VideoPro
       // expo-image-picker reports video duration in milliseconds. A null
       // duration would read as 0s and silently bypass the 45s hard cap.
       if (asset.duration == null) {
-        onError("Couldn't read that video's length - re-export it and try again.");
+        onError("Couldn't read that video's length. Re-export it and try again.");
         return;
       }
       const durationSeconds = asset.duration / 1000;
       if (durationSeconds > VIDEO_MAX_SECONDS) {
         onError(
-          `That video is ${Math.round(durationSeconds)} seconds — the cap is ${VIDEO_MAX_SECONDS}. Trim it and try again.`
+          `That video is ${Math.round(durationSeconds)} seconds. The cap is ${VIDEO_MAX_SECONDS}. Trim it and try again.`
         );
         return;
       }
       if (asset.fileSize && asset.fileSize > MAX_FILE_BYTES) {
         onError(
-          `That video is ${(asset.fileSize / (1024 * 1024)).toFixed(0)} MB — the limit is 50 MB. Export it smaller.`
+          `That video is ${(asset.fileSize / (1024 * 1024)).toFixed(0)} MB. The limit is 50 MB. Export it smaller.`
         );
         return;
       }
@@ -127,12 +188,21 @@ export function PickVideoButton({ disabled, label, onPicked, onError }: VideoPro
       });
     } catch (e) {
       onError(`Video picker failed: ${(e as { message?: string })?.message ?? String(e)}`);
+    } finally {
+      setPicking(false);
     }
   }
 
   return (
-    <Pressable style={[styles.attach, disabled && styles.disabled]} onPress={pick} disabled={disabled}>
-      <Ionicons name="videocam-outline" size={20} color="#fff" />
+    <Pressable
+      style={({ pressed }) => [
+        styles.attach,
+        disabled && styles.disabled,
+        pressed && styles.attachPressed,
+      ]}
+      onPress={pick}
+      disabled={disabled || picking}>
+      <PickerGlyph name="videocam-outline" color="#fff" picking={picking} />
       <Text style={styles.text}>{label}</Text>
     </Pressable>
   );
@@ -146,7 +216,12 @@ type AudioProps = {
 };
 
 export function PickAudioButton({ disabled, label, onPicked, onError }: AudioProps) {
+  const [picking, setPicking] = useState(false);
+
   async function pick() {
+    tapFeedback();
+    if (picking) return;
+    setPicking(true);
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: 'audio/*',
@@ -158,7 +233,7 @@ export function PickAudioButton({ disabled, label, onPicked, onError }: AudioPro
       if (asset.size && asset.size > MAX_FILE_BYTES) {
         const mb = Math.round(asset.size / (1024 * 1024));
         onError(
-          `That file is ${mb} MB — the cap is 50 MB. WAV files are huge; export it as MP3 or M4A and it'll fit easily.`
+          `That file is ${mb} MB. The cap is 50 MB. WAV files are huge; export it as MP3 or M4A and it will fit easily.`
         );
         return;
       }
@@ -170,12 +245,21 @@ export function PickAudioButton({ disabled, label, onPicked, onError }: AudioPro
       });
     } catch (e) {
       onError(`Audio picker failed: ${(e as { message?: string })?.message ?? String(e)}`);
+    } finally {
+      setPicking(false);
     }
   }
 
   return (
-    <Pressable style={[styles.attach, disabled && styles.disabled]} onPress={pick} disabled={disabled}>
-      <Ionicons name="musical-notes-outline" size={20} color="#fff" />
+    <Pressable
+      style={({ pressed }) => [
+        styles.attach,
+        disabled && styles.disabled,
+        pressed && styles.attachPressed,
+      ]}
+      onPress={pick}
+      disabled={disabled || picking}>
+      <PickerGlyph name="musical-notes-outline" color="#fff" picking={picking} />
       <Text style={styles.text}>{label}</Text>
     </Pressable>
   );
@@ -191,6 +275,7 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   compact: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
+  attachPressed: { opacity: 0.6, transform: [{ scale: 0.97 }] },
   disabled: { opacity: 0.4 },
   text: { color: '#fff', fontSize: 15 },
 });

@@ -1,4 +1,4 @@
-import { filePayload } from '@/lib/posts';
+import { uploadWithProgress, type UploadHandle } from '@/lib/posts';
 import { supabase, requireUserId } from '@/lib/supabase';
 
 /** Kept for the option of charging later; unused while fan mail is free. */
@@ -41,19 +41,40 @@ export type FanMailItem = {
   sender: { display_name: string } | null;
 };
 
+export type SubmitFanMailOptions = {
+  /** 0..1 as the file streams up; 1 means the upload is done and the record is being written. */
+  onProgress?: (fraction: number) => void;
+  /** Receives the in-flight upload's cancel handle (phone uploads only). */
+  onUpload?: (handle: UploadHandle) => void;
+};
+
+/**
+ * Uploads the file, then writes the fan_mail row. Resolves to that row as
+ * the list renders it, so the screen can show this week's cooldown at once
+ * instead of waiting on a refetch.
+ */
 export async function submitFanMail(
   kind: FanMailKind,
   item: { file?: Blob; uri?: string; mimeType: string; name: string },
-  note: string
-): Promise<void> {
+  note: string,
+  options?: SubmitFanMailOptions
+): Promise<FanMailItem> {
   const me = await requireUserId();
   const extension = item.name.includes('.') ? item.name.split('.').pop()! : 'bin';
   const path = `${me}/${Date.now()}.${extension}`;
 
-  const { error: uploadError } = await supabase.storage
-    .from('fan-mail')
-    .upload(path, await filePayload(item), { contentType: item.mimeType });
-  if (uploadError) throw uploadError;
+  // A phone upload streams straight from disk with byte progress in a
+  // background session (survives an app switch); a web File goes up as
+  // one step. Either way a non-2xx throws before any row is written.
+  await uploadWithProgress(
+    'fan-mail',
+    path,
+    item.file ? { file: item.file } : { uri: item.uri },
+    item.mimeType,
+    (sent, total) => options?.onProgress?.(total > 0 ? Math.min(sent / total, 1) : 0),
+    { onHandle: options?.onUpload }
+  );
+  options?.onProgress?.(1);
 
   const { data: row, error } = await supabase
     .from('fan_mail')
@@ -63,7 +84,7 @@ export async function submitFanMail(
       storage_path: path,
       note: note.trim() || null,
     })
-    .select('id')
+    .select('id, user_id, kind, storage_path, note, paid, created_at, reviewed_at')
     .single();
   if (error) {
     // Rejected insert (e.g. the once-a-week rule) must not strand the upload.
@@ -81,6 +102,8 @@ export async function submitFanMail(
   await supabase.functions
     .invoke('swift-function', { body: { fan_mail_id: row.id } })
     .catch(() => {});
+
+  return { ...(row as Omit<FanMailItem, 'sender'>), sender: null };
 }
 
 /** My own submissions (fans) — newest first. */

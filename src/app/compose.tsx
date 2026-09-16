@@ -1,7 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+// expo-router does not export usePreventRemove publicly and
+// @react-navigation/native is not installed; this is the vendored copy
+// expo-router itself runs on. Revisit on an SDK bump.
+import { usePreventRemove } from 'expo-router/build/react-navigation/core';
+import type { NavigationAction } from 'expo-router/build/react-navigation/routers';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -11,10 +16,19 @@ import {
   SafeAreaView as RNSafeAreaView,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import Animated, {
+  FadeInDown,
+  FadeOut,
+  LinearTransition,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -23,14 +37,19 @@ import {
   PickVideoButton,
   type PickedImageDraft,
 } from '@/components/media-pickers';
+import { CHAT_COMPOSER } from '@/constants/chat-surfaces';
+import { errorFeedback, pressFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import {
   createPost,
   markFeedStale,
   titleFromFileName,
+  UploadCancelledError,
   type PickedAudio,
   type PickedVideo,
   type Project,
+  type UploadHandle,
 } from '@/lib/posts';
+import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { useAuth } from '@/providers/auth-provider';
 
 const MAX_IMAGES = 4;
@@ -139,7 +158,7 @@ function CoverFramer({
       </View>
       <Text style={framerStyles.hint}>
         {maxY > 0
-          ? 'Drag the window — what’s inside it is what shows'
+          ? 'Drag the window. What is inside it is what shows.'
           : 'This image fills the panel exactly'}
       </Text>
     </View>
@@ -174,10 +193,23 @@ const framerStyles = StyleSheet.create({
   hint: { color: '#6d7076', fontSize: 12, marginTop: 7, textAlign: 'center' },
 });
 
+/** Where the media batch stands, for the bar under the top bar and its caption. */
+type UploadState = { fileIndex: number; fileCount: number; fraction: number };
+
+/**
+ * No byte event for this long means the connection is gone, not slow. The
+ * upload runs in a background session that waits for connectivity for
+ * days rather than failing, so without this the bar would sit frozen with
+ * no way out but a force-quit (which strands a media-less post row).
+ */
+const STALL_MS = 30_000;
+
 export default function ComposeScreen() {
   const params = useLocalSearchParams<{ project: Project }>();
   const { profile } = useAuth();
   const router = useRouter();
+  const navigation = useNavigation();
+  const reduceMotion = useReduceMotion();
   const [project, setProject] = useState<Project>(params.project === 's333xgod' ? 's333xgod' : 'mazze');
   const [body, setBody] = useState('');
   const [images, setImages] = useState<PickedImageDraft[]>([]);
@@ -198,6 +230,79 @@ export default function ComposeScreen() {
   /** Hard re-entrancy guard - two taps in one frame both see posting=false. */
   const postingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  /** Live media upload progress; null for text and poll posts. */
+  const [upload, setUpload] = useState<UploadState | null>(null);
+  /** The last caption shown, so byte events only re-render when the percent moves. */
+  const captionKey = useRef('');
+  const progress = useSharedValue(0);
+  const progressStyle = useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }));
+  /** The in-flight file's cancel handle, once its upload task exists. */
+  const uploadRef = useRef<UploadHandle | null>(null);
+  /** True once a handle exists, so the stall bar can offer a real cancel. */
+  const [cancellable, setCancellable] = useState(false);
+  /** The bytes stopped moving: the bar says so and offers a way out. */
+  const [stalled, setStalled] = useState(false);
+  const lastByteAt = useRef(0);
+  const stallTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function startStallWatch() {
+    lastByteAt.current = Date.now();
+    if (stallTimer.current) clearInterval(stallTimer.current);
+    stallTimer.current = setInterval(() => {
+      setStalled(Date.now() - lastByteAt.current > STALL_MS);
+    }, 2000);
+  }
+
+  function stopStallWatch() {
+    if (stallTimer.current) clearInterval(stallTimer.current);
+    stallTimer.current = null;
+    setStalled(false);
+  }
+
+  useEffect(
+    () => () => {
+      if (stallTimer.current) clearInterval(stallTimer.current);
+    },
+    []
+  );
+
+  // ---- leaving with a draft ----
+  // The screen is a modal: Cancel, the iOS swipe-down, and Android back all
+  // route through beforeRemove, and the vendored hook flips the native
+  // stack's preventNativeDismiss so the sheet physically cannot be flicked
+  // away mid-upload. `leaving` is React state (not a ref): the hook reads
+  // the LAST RENDER's flag, so a same-tick ref flip still gets prevented.
+  const dirty = body.trim().length > 0 || images.length > 0 || !!audio || !!video || pollMode;
+  const [leaving, setLeaving] = useState(false);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const pendingAction = useRef<NavigationAction | null>(null);
+
+  usePreventRemove((dirty || posting) && !leaving, ({ data }) => {
+    pendingAction.current = data.action;
+    setConfirmDiscard(true);
+  });
+
+  // Once prevention has dropped (the render with leaving=true is committed),
+  // replay the action the fan asked for - or, after a successful post, head
+  // back to the feed.
+  useEffect(() => {
+    if (!leaving) return;
+    const action = pendingAction.current;
+    pendingAction.current = null;
+    if (action) {
+      navigation.dispatch(action);
+    } else if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leaving]);
+
+  // A refused dismissal is worth a buzz: the fan tried to leave and could not.
+  useEffect(() => {
+    if (confirmDiscard) errorFeedback();
+  }, [confirmDiscard]);
 
   // The database blocks non-artists anyway; this is just a friendly guard.
   if (profile?.role !== 'artist') {
@@ -227,6 +332,7 @@ export default function ComposeScreen() {
     setVideo(picked);
   }
 
+  /** Cancel: with a clean draft this simply leaves; otherwise beforeRemove asks first. */
   function goToFeed() {
     if (router.canGoBack()) {
       router.back();
@@ -235,35 +341,105 @@ export default function ComposeScreen() {
     }
   }
 
+  function discardDraft() {
+    tapFeedback();
+    setConfirmDiscard(false);
+    setLeaving(true);
+  }
+
+  function keepDraft() {
+    pendingAction.current = null;
+    setConfirmDiscard(false);
+  }
+
+  /**
+   * The way out of a stalled upload: cancels the native task, which makes
+   * createPost throw UploadCancelledError and roll the half-made post back.
+   * The draft stays on screen for another try.
+   */
+  function cancelUpload() {
+    tapFeedback();
+    pendingAction.current = null;
+    setConfirmDiscard(false);
+    uploadRef.current?.cancel().catch(() => {});
+  }
+
   async function handlePost() {
     setError(null);
     if (postingRef.current) return;
+    pressFeedback();
     postingRef.current = true;
     setPosting(true);
+    progress.value = 0;
+    captionKey.current = '';
+    // The bar and its caption show from the first frame, with the real
+    // file count - createPost refines the byte totals as each one streams.
+    const fileCount = pollMode
+      ? 0
+      : (audio ? 1 + (cover ? 1 : 0) : 0) + (video ? 1 : 0) + images.length;
+    if (fileCount > 0) {
+      setUpload({ fileIndex: 0, fileCount, fraction: 0 });
+      startStallWatch();
+    }
     try {
       const filledOptions = pollOptions.map((o) => o.trim()).filter(Boolean);
-      await createPost({
-        project,
-        body,
-        images: pollMode ? [] : images,
-        audio: pollMode ? null : audio,
-        video: pollMode ? null : video,
-        cover: pollMode ? null : cover,
-        coverFocus,
-        title: trackTitle,
-        priceCents: locked ? priceCents : null,
-        pollOptions: pollMode ? filledOptions : null,
-        pollEndsAt: pollMode && pollHours ? new Date(Date.now() + pollHours * 3600000) : null,
-      });
-      markFeedStale();
-      goToFeed();
+      const post = await createPost(
+        {
+          project,
+          body,
+          images: pollMode ? [] : images,
+          audio: pollMode ? null : audio,
+          video: pollMode ? null : video,
+          cover: pollMode ? null : cover,
+          coverFocus,
+          title: trackTitle,
+          priceCents: locked ? priceCents : null,
+          pollOptions: pollMode ? filledOptions : null,
+          pollEndsAt: pollMode && pollHours ? new Date(Date.now() + pollHours * 3600000) : null,
+        },
+        (bytesSent, totalBytes, fileIndex, fileCount) => {
+          lastByteAt.current = Date.now();
+          const fraction = totalBytes > 0 ? Math.min(bytesSent / totalBytes, 1) : 0;
+          // The bar rides every byte event on the UI thread; the caption
+          // (a React render) only moves when its number does.
+          progress.value = withTiming(fraction, { duration: 200 });
+          const key = `${fileIndex}/${fileCount}/${Math.round(fraction * 100)}`;
+          if (key === captionKey.current) return;
+          captionKey.current = key;
+          setUpload({ fileIndex, fileCount, fraction });
+        },
+        {
+          onUpload: (handle) => {
+            uploadRef.current = handle;
+            setCancellable(true);
+          },
+        }
+      );
+      stopStallWatch();
+      successFeedback();
+      markFeedStale({ scrollToTop: true, post: post ?? undefined });
+      // Drop the guard first; the effect above does the actual leaving once
+      // that render has landed (a same-tick back() would still be prevented).
+      pendingAction.current = null;
+      setLeaving(true);
     } catch (e) {
+      stopStallWatch();
+      uploadRef.current = null;
+      setCancellable(false);
+      setUpload(null);
+      progress.value = 0;
+      setPosting(false);
+      postingRef.current = false;
+      if (e instanceof UploadCancelledError) {
+        // The artist called it off; the post row is already rolled back
+        // and the draft is intact. Nothing to apologise for.
+        return;
+      }
+      errorFeedback();
       // Supabase errors carry a message but aren't Error instances.
       const message =
         (e as { message?: string })?.message ?? 'Something went wrong. Try again.';
       setError(message);
-      setPosting(false);
-      postingRef.current = false;
     }
   }
 
@@ -276,26 +452,54 @@ export default function ComposeScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.topBar}>
-        <Pressable onPress={goToFeed} hitSlop={12} disabled={posting}>
+        <Pressable
+          onPress={goToFeed}
+          hitSlop={12}
+          style={({ pressed }) => (pressed ? styles.textPressed : undefined)}>
           <Text style={styles.cancel}>Cancel</Text>
         </Pressable>
         <Text style={styles.heading}>New post</Text>
-        <Pressable onPress={handlePost} disabled={!canPost} hitSlop={12}>
+        <Pressable
+          onPress={handlePost}
+          disabled={!canPost}
+          hitSlop={12}
+          style={({ pressed }) => (pressed ? styles.textPressed : undefined)}>
           {posting ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <Text style={[styles.post, !canPost && styles.postDisabled]}>Post</Text>
           )}
         </Pressable>
+        {/* Real byte progress for every media post, photos included. */}
+        {upload ? (
+          <View style={styles.progressTrack} pointerEvents="none">
+            <Animated.View style={[styles.progressFill, progressStyle]} />
+          </View>
+        ) : null}
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      {/* The floating confirm bar is positioned inside this wrapper, so it
+          hangs 14pt under the top bar whatever the sheet's inset is. (The
+          screen is an iOS page sheet: the window's top inset does not apply
+          inside it, so the chat's insets.top formula lands too low here.) */}
+      <View style={styles.body}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets>
         <View style={styles.projectRow}>
           {(['mazze', 's333xgod'] as const).map((p) => (
             <Pressable
               key={p}
-              style={[styles.projectChip, project === p && styles.projectChipActive]}
-              onPress={() => setProject(p)}
+              style={({ pressed }) => [
+                styles.projectChip,
+                project === p && styles.projectChipActive,
+                pressed && styles.chipPressed,
+              ]}
+              onPress={() => {
+                tapFeedback();
+                setProject(p);
+              }}
               disabled={posting}>
               <Text style={[styles.projectChipText, project === p && styles.projectChipTextActive]}>
                 {p === 's333xgod' ? 'S333XGOD' : 'MAZZE'}
@@ -332,7 +536,7 @@ export default function ComposeScreen() {
             {pollOptions.length < 4 ? (
               <Pressable
                 onPress={() => setPollOptions((prev) => [...prev, ''])}
-                style={styles.pollAdd}>
+                style={({ pressed }) => [styles.pollAdd, pressed && styles.textPressed]}>
                 <Text style={styles.pollAddText}>+ Add option</Text>
               </Pressable>
             ) : null}
@@ -345,8 +549,15 @@ export default function ComposeScreen() {
               ].map((choice) => (
                 <Pressable
                   key={choice.label}
-                  style={[styles.durChip, pollHours === choice.hours && styles.durChipActive]}
-                  onPress={() => setPollHours(choice.hours)}>
+                  style={({ pressed }) => [
+                    styles.durChip,
+                    pollHours === choice.hours && styles.durChipActive,
+                    pressed && styles.chipPressed,
+                  ]}
+                  onPress={() => {
+                    tapFeedback();
+                    setPollHours(choice.hours);
+                  }}>
                   <Text
                     style={[styles.durText, pollHours === choice.hours && styles.durTextActive]}>
                     {choice.label}
@@ -435,6 +646,7 @@ export default function ComposeScreen() {
                   label="Add cover"
                   maxCount={1}
                   disabled={posting}
+                  withBase64={false}
                   onPicked={(picked) => {
                     if (!picked[0]) return;
                     setCover(picked[0]);
@@ -467,12 +679,19 @@ export default function ComposeScreen() {
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <Pressable
-          style={[styles.pollToggle, pollMode && styles.pollToggleOn]}
-          onPress={() => setPollMode(!pollMode)}
+          style={({ pressed }) => [
+            styles.pollToggle,
+            pollMode && styles.pollToggleOn,
+            pressed && styles.chipPressed,
+          ]}
+          onPress={() => {
+            tapFeedback();
+            setPollMode(!pollMode);
+          }}
           disabled={posting || !!audio || !!video || images.length > 0}>
           <Ionicons name="stats-chart" size={16} color={pollMode ? '#0b0c0e' : '#9a9ba3'} />
           <Text style={[styles.pollToggleText, pollMode && styles.pollToggleTextOn]}>
-            {pollMode ? 'Poll post — tap to cancel' : 'Make this a poll'}
+            {pollMode ? 'Poll post. Tap to cancel' : 'Make this a poll'}
           </Text>
         </Pressable>
 
@@ -482,6 +701,8 @@ export default function ComposeScreen() {
             label={images.length === 0 ? 'Photos' : `Photos (${images.length}/${MAX_IMAGES})`}
             maxCount={MAX_IMAGES - images.length}
             disabled={images.length >= MAX_IMAGES || !!audio || !!video || posting}
+            // Streams from the file path: no base64 copy is ever read.
+            withBase64={false}
             onPicked={handlePickedImages}
             onError={setError}
           />
@@ -502,9 +723,14 @@ export default function ComposeScreen() {
 
         <View style={styles.lockBox}>
           <Pressable
-            style={styles.lockRow}
-            onPress={() => setLocked(!locked)}
-            disabled={posting}>
+            style={({ pressed }) => [styles.lockRow, pressed && styles.rowPressed]}
+            onPress={() => {
+              tapFeedback();
+              setLocked(!locked);
+            }}
+            disabled={posting}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: locked, disabled: posting }}>
             <Ionicons
               name={locked ? 'lock-closed' : 'lock-open-outline'}
               size={20}
@@ -518,18 +744,37 @@ export default function ComposeScreen() {
                   : 'Tap to make this a paid unlock.'}
               </Text>
             </View>
-            <View style={[styles.lockToggle, locked && styles.lockToggleOn]}>
-              <View style={[styles.lockKnob, locked && styles.lockKnobOn]} />
-            </View>
+            {/* The real thing, same look as the switches in Settings. It
+                only shows the state: on iOS a UISwitch inside a Pressable
+                gets the touch too, so letting it toggle as well would
+                fire two haptics. The row is the one control. */}
+            <Switch
+              value={locked}
+              pointerEvents="none"
+              disabled={posting}
+              trackColor={{ false: '#333', true: '#c3cdd6' }}
+              thumbColor={locked ? '#0b0c0e' : '#888'}
+            />
           </Pressable>
 
           {locked ? (
-            <View style={styles.priceRow}>
+            <Animated.View
+              style={styles.priceRow}
+              entering={reduceMotion ? undefined : FadeInDown.duration(180)}
+              exiting={reduceMotion ? undefined : FadeOut.duration(120)}>
               {PRICE_OPTIONS.map((cents) => (
                 <Pressable
                   key={cents}
-                  style={[styles.priceChip, priceCents === cents && styles.priceChipActive]}
-                  onPress={() => setPriceCents(cents)}
+                  style={({ pressed }) => [
+                    styles.priceChip,
+                    priceCents === cents && styles.priceChipActive,
+                    pressed && styles.chipPressed,
+                  ]}
+                  hitSlop={6}
+                  onPress={() => {
+                    tapFeedback();
+                    setPriceCents(cents);
+                  }}
                   disabled={posting}>
                   <Text
                     style={[styles.priceText, priceCents === cents && styles.priceTextActive]}>
@@ -537,14 +782,68 @@ export default function ComposeScreen() {
                   </Text>
                 </Pressable>
               ))}
-            </View>
+            </Animated.View>
           ) : null}
         </View>
 
-        {posting && (audio || video) ? (
-          <Text style={styles.uploadingNote}>Uploading — keep this screen open…</Text>
+        {upload ? (
+          <Animated.View
+            style={styles.uploadingRow}
+            layout={reduceMotion ? undefined : LinearTransition.duration(180)}>
+            <Text style={styles.uploadingNote}>
+              {stalled
+                ? 'Connection lost. Waiting to resume.'
+                : `Uploading ${Math.min(upload.fileIndex + 1, upload.fileCount)} of ${upload.fileCount} · ${Math.round(upload.fraction * 100)}%`}
+            </Text>
+            {stalled && cancellable ? (
+              <Pressable
+                onPress={cancelUpload}
+                hitSlop={8}
+                style={({ pressed }) => (pressed ? styles.textPressed : undefined)}>
+                <Text style={styles.uploadingCancel}>Cancel upload</Text>
+              </Pressable>
+            ) : null}
+          </Animated.View>
         ) : null}
       </ScrollView>
+
+      {/* The draft guard's floating bar: styled like the chat's confirm pill. */}
+      {confirmDiscard ? (
+        <Animated.View
+          style={styles.floating}
+          entering={reduceMotion ? undefined : FadeInDown.duration(180)}
+          exiting={reduceMotion ? undefined : FadeOut.duration(120)}>
+          {posting && stalled && cancellable ? (
+            <>
+              <Text style={styles.confirmText}>Connection lost. Waiting to resume.</Text>
+              <Pressable onPress={cancelUpload} hitSlop={8}>
+                <Text style={styles.confirmYes}>Cancel upload</Text>
+              </Pressable>
+              <Pressable onPress={keepDraft} hitSlop={8}>
+                <Text style={styles.confirmNo}>Wait</Text>
+              </Pressable>
+            </>
+          ) : posting ? (
+            <>
+              <Text style={styles.confirmText}>Still uploading. Keep this screen open.</Text>
+              <Pressable onPress={keepDraft} hitSlop={8}>
+                <Text style={styles.confirmNo}>OK</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <Text style={styles.confirmText}>Discard this post?</Text>
+              <Pressable onPress={discardDraft} hitSlop={8}>
+                <Text style={styles.confirmYes}>Discard</Text>
+              </Pressable>
+              <Pressable onPress={keepDraft} hitSlop={8}>
+                <Text style={styles.confirmNo}>Keep</Text>
+              </Pressable>
+            </>
+          )}
+        </Animated.View>
+      ) : null}
+      </View>
 
       {/* Full-screen cover framing editor (Twitter-banner style). */}
       <Modal visible={coverEditorOpen} animationType="slide" onRequestClose={() => setCoverEditorOpen(false)}>
@@ -599,6 +898,43 @@ const styles = StyleSheet.create({
   heading: { color: '#fff', fontSize: 15, fontWeight: '700' },
   post: { color: '#fff', fontSize: 16, fontWeight: '700' },
   postDisabled: { opacity: 0.4 },
+  textPressed: { opacity: 0.55 },
+  chipPressed: { opacity: 0.7 },
+  rowPressed: { opacity: 0.85 },
+  // The 3px upload bar rides the top bar's bottom edge - no layout shift.
+  progressTrack: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 3,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    overflow: 'hidden',
+  },
+  progressFill: { height: 3, backgroundColor: '#ffffff' },
+  body: { flex: 1 },
+  // The draft guard's bar: the chat's floating confirm, one for one. It
+  // hangs 14pt under the top bar (the chat's insets.top + 58 with a 44pt
+  // bar), measured from the body wrapper rather than the window.
+  floating: {
+    position: 'absolute',
+    top: 14,
+    left: 16,
+    right: 16,
+    zIndex: 26,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: CHAT_COMPOSER,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+  },
+  confirmText: { color: '#e6e8ea', flex: 1, fontSize: 13 },
+  confirmYes: { color: '#f87171', fontWeight: '700', fontSize: 13 },
+  confirmNo: { color: '#8a8a92', fontSize: 13 },
   content: { padding: 16 },
   projectRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   projectChip: {
@@ -678,7 +1014,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     marginTop: 12,
   },
-  uploadingNote: { color: '#888', marginTop: 16, fontSize: 13 },
+  uploadingRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16 },
+  uploadingNote: { color: '#888', fontSize: 13, flexShrink: 1 },
+  uploadingCancel: { color: '#f87171', fontSize: 13, fontWeight: '700' },
   lockBox: {
     backgroundColor: '#131519',
     borderRadius: 12,
@@ -689,22 +1027,6 @@ const styles = StyleSheet.create({
   lockMeta: { flex: 1 },
   lockTitle: { color: '#fff', fontSize: 15, fontWeight: '700' },
   lockHint: { color: '#777', fontSize: 12, marginTop: 2 },
-  lockToggle: {
-    width: 46,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#333',
-    padding: 3,
-    justifyContent: 'center',
-  },
-  lockToggleOn: { backgroundColor: '#c3cdd6' },
-  lockKnob: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#888',
-  },
-  lockKnobOn: { backgroundColor: '#0b0c0e', alignSelf: 'flex-end' },
   priceRow: { flexDirection: 'row', gap: 8, marginTop: 14, flexWrap: 'wrap' },
   priceChip: {
     paddingHorizontal: 14,

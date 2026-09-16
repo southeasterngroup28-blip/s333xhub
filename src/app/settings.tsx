@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useRouter } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -8,7 +8,6 @@ import {
   StyleSheet,
   Switch,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,7 +17,9 @@ import { AvatarFramer } from '@/components/avatar-framer';
 import { PickPhotosButton, type PickedImageDraft } from '@/components/media-pickers';
 import { invalidateBackgroundCache } from '@/components/app-background';
 import { removeMyAvatar, setMyAvatar } from '@/lib/avatars';
+import { errorFeedback, pressFeedback, selectFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import { restorePurchases } from '@/lib/payments';
+import { markFeedStale } from '@/lib/posts';
 import { fetchMyPieces, type MyPiece } from '@/lib/shop';
 import { clearMyBackground, setDefaultBackground, setMyBackground } from '@/lib/backgrounds';
 import { SUPPORT_EMAIL } from '@/lib/legal-content';
@@ -30,6 +31,25 @@ import {
   type NotificationPrefs,
 } from '@/lib/notifications';
 import { useAuth } from '@/providers/auth-provider';
+
+/** Which of the mount fetches failed, so each section can say so and retry. */
+type FailedSections = { blocked: boolean; prefs: boolean; pieces: boolean };
+
+/** The one line a section shows instead of pretending it loaded empty. */
+function RetryLine({ onRetry }: { onRetry: () => void }) {
+  return (
+    <Pressable
+      hitSlop={8}
+      onPress={() => {
+        tapFeedback();
+        onRetry();
+      }}
+      style={({ pressed }) => [styles.retryLine, pressed && styles.retryLinePressed]}
+      accessibilityRole="button">
+      <Text style={styles.retryLineText}>Couldn&apos;t load. Tap to retry.</Text>
+    </Pressable>
+  );
+}
 
 const PREF_LABELS: { key: keyof NotificationPrefs; label: string; hint: string }[] = [
   { key: 'new_posts', label: 'New posts', hint: 'When the artist drops something new' },
@@ -58,6 +78,9 @@ export default function SettingsScreen() {
   const [pieces, setPieces] = useState<MyPiece[]>([]);
   const [restoring, setRestoring] = useState(false);
   const [restoreNotice, setRestoreNotice] = useState<string | null>(null);
+  const restoreTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [failed, setFailed] = useState<FailedSections>({ blocked: false, prefs: false, pieces: false });
+  const [signingOut, setSigningOut] = useState(false);
 
   // Local override so the preview updates instantly after a change.
   const shownAvatar = avatarPath === undefined ? profile?.avatar_path : avatarPath;
@@ -68,21 +91,67 @@ export default function SettingsScreen() {
     setTimeout(() => setBgNotice(null), 3000);
   }
 
+  /** The restore notice: 3s on screen, a re-press restarts the clock. */
+  function flashRestore(text: string) {
+    if (restoreTimer.current) clearTimeout(restoreTimer.current);
+    setRestoreNotice(text);
+    restoreTimer.current = setTimeout(() => setRestoreNotice(null), 3000);
+  }
+
+  useEffect(
+    () => () => {
+      if (restoreTimer.current) clearTimeout(restoreTimer.current);
+    },
+    []
+  );
+
   const isArtist = profile?.role === 'artist';
 
-  useEffect(() => {
-    fetchBlockedUsers()
-      .then(setBlocked)
-      .catch(() => {});
-    fetchNotificationPrefs()
-      .then((fetched) => {
-        if (!prefsDirty.current) setPrefs(fetched);
-      })
-      .catch(() => {});
-    fetchMyPieces()
-      .then(setPieces)
-      .catch(() => {});
+  // Each section fetches on its own and remembers its own failure, so a
+  // dead connection reads as "couldn't load" - never as "nothing here".
+  const loadBlocked = useCallback(async () => {
+    setFailed((f) => ({ ...f, blocked: false }));
+    try {
+      setBlocked(await fetchBlockedUsers());
+    } catch {
+      setFailed((f) => ({ ...f, blocked: true }));
+    }
   }, []);
+
+  const loadPrefs = useCallback(async () => {
+    setFailed((f) => ({ ...f, prefs: false }));
+    try {
+      const fetched = await fetchNotificationPrefs();
+      // A switch the fan already flipped must not be undone by a late fetch.
+      if (!prefsDirty.current) setPrefs(fetched);
+    } catch {
+      // Once the fan has touched a switch, the row is theirs to keep.
+      if (!prefsDirty.current) setFailed((f) => ({ ...f, prefs: true }));
+    }
+  }, []);
+
+  const loadPieces = useCallback(async () => {
+    setFailed((f) => ({ ...f, pieces: false }));
+    try {
+      setPieces(await fetchMyPieces());
+    } catch {
+      setFailed((f) => ({ ...f, pieces: true }));
+    }
+  }, []);
+
+  const load = useCallback(() => {
+    loadBlocked();
+    loadPrefs();
+    loadPieces();
+  }, [loadBlocked, loadPrefs, loadPieces]);
+
+  // On focus, not just on mount: coming back from a legal page (or a drop)
+  // re-runs the fetches, so a failure self-heals on return.
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
 
   async function togglePref(key: keyof NotificationPrefs, value: boolean) {
     prefsDirty.current = true;
@@ -98,10 +167,25 @@ export default function SettingsScreen() {
   }
 
   async function handleUnblock(id: string) {
+    // Optimistic: the row goes at once; a failure puts THAT row back where
+    // it was. Only the one row, never a whole snapshot: two overlapping
+    // unblocks where the first fails after the second succeeded must not
+    // resurrect the second.
+    const index = blocked.findIndex((b) => b.id === id);
+    const row = blocked[index];
+    if (!row) return;
+    selectFeedback();
+    setBlocked((prev) => prev.filter((b) => b.id !== id));
     try {
       await unblockUser(id);
-      setBlocked((prev) => prev.filter((b) => b.id !== id));
     } catch (e) {
+      setBlocked((prev) => {
+        if (prev.some((b) => b.id === id)) return prev;
+        const next = [...prev];
+        next.splice(Math.min(index, next.length), 0, row);
+        return next;
+      });
+      errorFeedback();
       setError((e as { message?: string })?.message ?? 'Could not unblock.');
     }
   }
@@ -114,9 +198,49 @@ export default function SettingsScreen() {
       // The account is gone; clear the local session too.
       await signOut();
     } catch (e) {
+      errorFeedback();
       setError((e as { message?: string })?.message ?? 'Could not delete the account.');
       setBusy(false);
       setConfirmDelete(0);
+    }
+  }
+
+  async function handleSignOut() {
+    if (signingOut) return;
+    pressFeedback();
+    setSigningOut(true);
+    try {
+      await signOut();
+    } catch {
+      // Offline, signOut can reject - hand the button back instead of
+      // trading a dead wait for an endless spinner.
+      errorFeedback();
+      setSigningOut(false);
+    }
+  }
+
+  async function handleRestore() {
+    if (restoring) return;
+    // No press haptic: the buzz here is the result (found something, or
+    // failed), and a zero-count restore stays silent.
+    setRestoring(true);
+    setError(null);
+    try {
+      const count = await restorePurchases();
+      // Whatever the count, the feed re-reads its unlocks on the next
+      // focus - "All set" must never sit over a still-locked feed.
+      markFeedStale();
+      if (count > 0) successFeedback();
+      flashRestore(
+        count > 0
+          ? `All set. ${count} unlock${count === 1 ? '' : 's'} on this account.`
+          : 'No purchases found for this account yet.'
+      );
+    } catch (e) {
+      errorFeedback();
+      setError((e as { message?: string })?.message ?? 'Could not restore.');
+    } finally {
+      setRestoring(false);
     }
   }
 
@@ -182,7 +306,7 @@ export default function SettingsScreen() {
           <Text style={styles.muted}>
             {isArtist
               ? 'Set the background every fan sees, or one just for you.'
-              : 'Make the feed yours — your background only shows on your account.'}
+              : 'Make the feed yours. Your background only shows on your account.'}
           </Text>
           {bgNotice ? <Text style={styles.bgNotice}>{bgNotice}</Text> : null}
           <View style={styles.bgActions}>
@@ -248,20 +372,26 @@ export default function SettingsScreen() {
 
         <Text style={styles.sectionLabel}>NOTIFICATIONS</Text>
         <View style={styles.card}>
-          {PREF_LABELS.map((row) => (
-            <View key={row.key} style={styles.prefRow}>
-              <View style={styles.prefText}>
-                <Text style={styles.prefLabel}>{row.label}</Text>
-                <Text style={styles.prefHint}>{row.hint}</Text>
+          {failed.prefs ? (
+            // The defaults must not be tappable here: saving one switch
+            // upserts the whole row and would overwrite real opt-outs.
+            <RetryLine onRetry={loadPrefs} />
+          ) : (
+            PREF_LABELS.map((row) => (
+              <View key={row.key} style={styles.prefRow}>
+                <View style={styles.prefText}>
+                  <Text style={styles.prefLabel}>{row.label}</Text>
+                  <Text style={styles.prefHint}>{row.hint}</Text>
+                </View>
+                <Switch
+                  value={prefs[row.key]}
+                  onValueChange={(value) => togglePref(row.key, value)}
+                  trackColor={{ false: '#333', true: '#c3cdd6' }}
+                  thumbColor="#fff"
+                />
               </View>
-              <Switch
-                value={prefs[row.key]}
-                onValueChange={(value) => togglePref(row.key, value)}
-                trackColor={{ false: '#333', true: '#c3cdd6' }}
-                thumbColor="#fff"
-              />
-            </View>
-          ))}
+            ))
+          )}
           <Text style={styles.prefNote}>
             Notifications start arriving with the App Store version of the app.
           </Text>
@@ -269,13 +399,18 @@ export default function SettingsScreen() {
 
         <Text style={styles.sectionLabel}>BLOCKED USERS</Text>
         <View style={styles.card}>
-          {blocked.length === 0 ? (
-            <Text style={styles.muted}>You haven't blocked anyone.</Text>
+          {failed.blocked ? (
+            <RetryLine onRetry={loadBlocked} />
+          ) : blocked.length === 0 ? (
+            <Text style={styles.muted}>You haven&apos;t blocked anyone.</Text>
           ) : (
             blocked.map((user) => (
               <View key={user.id} style={styles.blockedRow}>
                 <Text style={styles.blockedName}>{user.name}</Text>
-                <Pressable onPress={() => handleUnblock(user.id)} hitSlop={8}>
+                <Pressable
+                  onPress={() => handleUnblock(user.id)}
+                  hitSlop={8}
+                  style={({ pressed }) => (pressed ? styles.textPressed : undefined)}>
                   <Text style={styles.unblock}>Unblock</Text>
                 </Pressable>
               </View>
@@ -283,14 +418,21 @@ export default function SettingsScreen() {
           )}
         </View>
 
-        {pieces.length > 0 ? (
+        {failed.pieces ? (
+          <>
+            <Text style={styles.sectionLabel}>MY PIECES</Text>
+            <View style={styles.card}>
+              <RetryLine onRetry={loadPieces} />
+            </View>
+          </>
+        ) : pieces.length > 0 ? (
           <>
             <Text style={styles.sectionLabel}>MY PIECES</Text>
             <View style={styles.card}>
               {pieces.map((piece) => (
                 <Pressable
                   key={piece.id}
-                  style={styles.pieceRow}
+                  style={({ pressed }) => [styles.pieceRow, pressed && styles.textPressed]}
                   onPress={() => piece.drop && router.push(`/drop/${piece.drop.id}` as never)}>
                   <Text style={styles.pieceNum}>#{String(piece.edition_number).padStart(2, '0')}</Text>
                   <View style={styles.pieceMeta}>
@@ -321,41 +463,35 @@ export default function SettingsScreen() {
         <Text style={styles.sectionLabel}>PURCHASES</Text>
         <View style={styles.card}>
           <Pressable
-            style={styles.aboutRow}
+            style={({ pressed }) => [styles.aboutRow, pressed && styles.textPressed]}
             disabled={restoring}
-            onPress={async () => {
-              setRestoring(true);
-              try {
-                const count = await restorePurchases();
-                setRestoreNotice(
-                  count > 0
-                    ? `All set — ${count} unlock${count === 1 ? '' : 's'} on this account.`
-                    : 'No purchases found for this account yet.'
-                );
-              } catch (e) {
-                setError((e as { message?: string })?.message ?? 'Could not restore.');
-              } finally {
-                setRestoring(false);
-              }
-            }}>
+            onPress={handleRestore}>
             <Text style={styles.aboutLink}>{restoring ? 'Restoring…' : 'Restore purchases'}</Text>
-            <Ionicons name="refresh" size={16} color="#444" />
+            {restoring ? (
+              <ActivityIndicator size="small" color="#8f99a3" />
+            ) : (
+              <Ionicons name="refresh" size={16} color="#444" />
+            )}
           </Pressable>
           {restoreNotice ? <Text style={styles.bgNotice}>{restoreNotice}</Text> : null}
         </View>
 
         <Text style={styles.sectionLabel}>ABOUT</Text>
         <View style={styles.card}>
-          <Pressable style={styles.aboutRow} onPress={() => router.push('/legal/terms')}>
+          <Pressable
+            style={({ pressed }) => [styles.aboutRow, pressed && styles.textPressed]}
+            onPress={() => router.push('/legal/terms')}>
             <Text style={styles.aboutLink}>Terms of Service</Text>
             <Ionicons name="chevron-forward" size={16} color="#444" />
           </Pressable>
-          <Pressable style={styles.aboutRow} onPress={() => router.push('/legal/privacy')}>
+          <Pressable
+            style={({ pressed }) => [styles.aboutRow, pressed && styles.textPressed]}
+            onPress={() => router.push('/legal/privacy')}>
             <Text style={styles.aboutLink}>Privacy Policy</Text>
             <Ionicons name="chevron-forward" size={16} color="#444" />
           </Pressable>
           <Pressable
-            style={styles.aboutRow}
+            style={({ pressed }) => [styles.aboutRow, pressed && styles.textPressed]}
             onPress={() => router.push('/legal/shop-terms' as never)}>
             <Text style={styles.aboutLink}>Shop Terms & Shipping</Text>
             <Ionicons name="chevron-forward" size={16} color="#444" />
@@ -365,8 +501,18 @@ export default function SettingsScreen() {
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <Pressable style={styles.signOut} onPress={signOut}>
-          <Text style={styles.signOutText}>Sign out</Text>
+        <Pressable
+          style={({ pressed }) => [
+            styles.signOut,
+            (pressed || signingOut) && styles.textPressed,
+          ]}
+          onPress={handleSignOut}
+          disabled={signingOut}>
+          {signingOut ? (
+            <ActivityIndicator size="small" color="#888" />
+          ) : (
+            <Text style={styles.signOutText}>Sign out</Text>
+          )}
         </Pressable>
 
         {!isArtist ? (
@@ -504,6 +650,10 @@ const styles = StyleSheet.create({
   },
   blockedName: { color: '#fff', fontSize: 15 },
   unblock: { color: '#c3cdd6', fontWeight: '600' },
+  textPressed: { opacity: 0.6 },
+  retryLine: { paddingVertical: 4, alignSelf: 'flex-start' },
+  retryLinePressed: { opacity: 0.6 },
+  retryLineText: { color: '#8f99a3', fontSize: 14, fontWeight: '600' },
   error: { color: '#f87171', marginTop: 16 },
   signOut: { marginTop: 28, alignItems: 'center', padding: 12 },
   signOutText: { color: '#888', fontSize: 15 },

@@ -152,11 +152,25 @@ export function Feed() {
   // locked posts sit with no media links and render as bare text.
   const refreshIfNeeded = useCallback(
     (scrollToTop: boolean) => {
-      if (consumeFeedStale()) {
-        // A new-post push tapped while looking at the feed: bring the top
-        // into view so the new post is what you see. Every other stale
-        // refresh keeps the scroll position, as before.
-        if (scrollToTop) listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      const { stale, payload } = consumeFeedStale();
+      if (stale) {
+        // A new-post push tapped while looking at the feed (or a post the
+        // artist just made): bring the top into view so the new post is
+        // what you see. Every other stale refresh keeps the scroll position.
+        if (scrollToTop || payload?.scrollToTop) {
+          listRef.current?.scrollToOffset({ offset: 0, animated: true });
+        }
+        const post = payload?.post;
+        if (post) {
+          // The finished row rides along from compose: seat it at the top
+          // right now so the feed opens with it in place, and let loadFresh
+          // settle up (setPosts(fresh) dedupes by id, so no remount). Its
+          // row commits inside the arrival window, so it animates in.
+          animateUntil.current = Date.now() + 600;
+          setPosts((prev) => [post, ...prev.filter((p) => p.id !== post.id)]);
+          // purchasedRef mirrors purchasedIds (declared below; read at call time).
+          resolveMedia([post], purchasedRef.current).catch(() => {});
+        }
         loadFresh();
       } else if (
         loadedAsArtist.current !== isArtist ||
@@ -165,7 +179,7 @@ export function Feed() {
         loadFresh();
       }
     },
-    [loadFresh, isArtist]
+    [loadFresh, isArtist, resolveMedia]
   );
 
   useFocusEffect(
