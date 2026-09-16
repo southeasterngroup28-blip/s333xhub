@@ -1,0 +1,517 @@
+{
+ "summary": "De-AI spec for S333XHUB, the RONSO LLC site and the s333xgod app site. The approved directions (Editorial player, Letter chat, Stage comments, MySpace background, Anton, ghost-silver, translucent chat surfaces) are untouched; this spec removes the tells layered on top of them. Every item is verifiable by opening the file and searching the quoted string. House voice, applied to every rewrite below: short declarative sentences with full stops; no em-dash, en-dash, spaced hyphen or arrow in any fan-facing string (ranges are \"5 to 7\"); straight quotes and apostrophes everywhere; \"the artist\" is the app's umbrella noun (\"the Artist\" as the defined term in legal), \"him\" allowed only inside Fan Mail, \"Mazze\" never spoken by the app; no \"yet\", \"hang tight\", \"All set\", \"Heads up\", \"please\", \"Something went wrong\", \"welcome\", \"Oops\"; no emoji or text glyphs (checkmark, bullet, star) as state, the dagger stays as the brand glyph; load-failure cards are titled \"COULDN'T LOAD [THING]\" with sub \"Check your connection.\" and pill \"Try again\", inline fallback sentences are \"Could not [verb] the [thing].\", role guards are \"Only the artist can [verb].\" Recommended order: (1) group 5 legal-content.ts rewrite and regenerate, because the App Store review and Stripe read those pages; (2) group 3 support email and site domain, since the legal text embeds them; (3) group 1 copy sweep, one pass with the dash and curly-quote lint scripts added at the end so it stays fixed; (4) group 2 tokens and shared components; (5) group 4 company site. Two owner decisions are flagged inline and must be made before the legal text is regenerated: the standing ticket refund rule, and whether a piece ships in 5 to 7 business days per order or after the run closes.",
+ "root_causes": [
+  "The copy was written one screen at a time with no house style sheet, so the same idea ended up phrased five ways (RETRY next to Try again, three different 'Reported' lines, eleven different words for a user with no name, 'Could not' next to 'Couldn't' next to 'Can't') and the em-dash habit spread into pushes, chat previews, labels and page titles. Real studios write the rules once and every screen inherits them; that is the difference a sharp reader feels.",
+  "Placeholder-era text shipped as final: 'App Store version', 'hang tight', 'on the real app', 'Top 8' on a Top 3 screen, 'Exclusive drop' as a default headline, the database default name 'fan', a personal Gmail as the support address, Resend's test sender and a Supabase function still named 'swift-function'. Nobody did the last pass where you read every string as a stranger would.",
+  "Styles were copy-pasted instead of defined once: 24 copies of the same small caps label at nine sizes, five copies of the same floating shadow card on five unrelated things, four different header systems, five different confirm dialogs. Each copy drifted a little, and that drift is exactly what reads as generated. One token file and three shared components remove the whole category.",
+  "The legal pages and the app's public site were assembled from a checklist (Stripe's website requirements, Apple's EULA points) rather than written from the product. That is why they name Google for an iPhone-only app, never mention tickets that the app sells, never say who RONSO LLC is, use 'What we sell' and 'Who runs this' as headings, and use Tailwind's default amber for links on a black-and-silver brand.",
+  "Error handling prints the database's words instead of yours. Roughly fifty catch blocks show whatever the backend says, so a fan can read 'row-level security policy for table messages' in red on a chat screen, while the good fallback sentences already written for those spots never appear. One helper at the library boundary fixes every site at once."
+ ],
+ "groups": [
+  {
+   "name": "1. App copy",
+   "items": [
+    {
+     "change": "Stop rendering raw backend error text; keep the house sentences already written",
+     "exact": "Add src/lib/fan-error.ts:\n  export class FanError extends Error {}\n  export function fanCopy(e: unknown, fallback: string): string  // returns e.message only when e is a FanError, UnlockPendingError, PurchaseCancelledError, TicketPendingError or PaymentsNotLiveError; otherwise console.warn(e) and return fallback. Map three raw cases before falling back: fetch TypeError / 'Network request failed' / 'Failed to fetch' -> 'Could not reach the server. Check your connection and try again.'; 'JWT expired' / PGRST301 -> 'Your session expired. Sign in again.'; 42501 / 'row-level security' -> the caller's fallback (never the raw text).\nIn lib, every `throw new Error('<house sentence>')` becomes `throw new FanError(...)` (tickets.ts incl. intentError, shows.ts friendly(), moderation.ts paidPostBlockedMessage, fanmail.ts, shop.ts, supabase.ts). Leave every `if (error) throw error` alone.\nIn every screen and component, replace `(e as { message?: string })?.message ?? 'X'` with `fanCopy(e, 'X')`; the existing fallbacks stay as written except where this spec rewrites them. Sites: feed.tsx, chat.tsx, channel/[id].tsx, post/[id].tsx, post-card.tsx, shop.tsx, drop/[id].tsx, ticket/[id].tsx, fan-tickets.tsx, fanmail.tsx, settings.tsx, top8.tsx, reports.tsx, compose.tsx, drop-new.tsx, drop-edit/[id].tsx, show-new.tsx, scan.tsx, gif-picker.tsx.\nmedia-pickers.tsx and media-pickers.web.tsx: log e, then onError('Could not open your photos. Try again.') / 'Could not open your videos. Try again.' / 'Could not open your files. Try again.' (never `Photo picker failed: ` + message).\nposts.ts upload failure: console.warn the status code, throw new FanError(\"Upload didn't finish. Try again.\"). payments.ts RevenueCat catch: console.warn('[payments] RevenueCat:', err.message); throw new FanError('The purchase did not go through.'). payments.ts 'This post has no valid price tier.' -> console.warn('[payments] no product for', post.price_cents); throw new FanError(\"This post can't be unlocked right now.\").\ntickets.ts mode-mismatch: `if (__DEV__) throw new Error('Checkout is misconfigured: ...')` else console.error the same sentence and throw new FanError(\"Checkout isn't available on this version of the app.\"). Server side stripe-payment-intent/index.ts: the 'Bad request.' / 'Missing show.' fails become fail('Could not start checkout. Try again in a moment.', 400); the key-mismatch fail becomes fail(\"Checkout isn't available on this version of the app.\", 500) with the existing console.error kept.\nauth-provider.tsx fallback 'profile fetch failed' -> 'Could not load your profile.'\nLeave sign-in.tsx, sign-up.tsx, forgot-password.tsx and auth-errors.ts as they are (already routed through authErrorCopy).",
+     "files": [
+      "C:/dev/s333xhub/src/lib/fan-error.ts (new)",
+      "C:/dev/s333xhub/src/lib/tickets.ts",
+      "C:/dev/s333xhub/src/lib/shows.ts",
+      "C:/dev/s333xhub/src/lib/moderation.ts",
+      "C:/dev/s333xhub/src/lib/fanmail.ts",
+      "C:/dev/s333xhub/src/lib/shop.ts",
+      "C:/dev/s333xhub/src/lib/supabase.ts",
+      "C:/dev/s333xhub/src/lib/posts.ts",
+      "C:/dev/s333xhub/src/lib/payments.ts",
+      "C:/dev/s333xhub/src/components/feed.tsx",
+      "C:/dev/s333xhub/src/components/post-card.tsx",
+      "C:/dev/s333xhub/src/components/media-pickers.tsx",
+      "C:/dev/s333xhub/src/components/media-pickers.web.tsx",
+      "C:/dev/s333xhub/src/components/fan-tickets.tsx",
+      "C:/dev/s333xhub/src/components/gif-picker.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/chat.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shop.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/fanmail.tsx",
+      "C:/dev/s333xhub/src/app/channel/[id].tsx",
+      "C:/dev/s333xhub/src/app/post/[id].tsx",
+      "C:/dev/s333xhub/src/app/drop/[id].tsx",
+      "C:/dev/s333xhub/src/app/ticket/[id].tsx",
+      "C:/dev/s333xhub/src/app/settings.tsx",
+      "C:/dev/s333xhub/src/app/top8.tsx",
+      "C:/dev/s333xhub/src/app/reports.tsx",
+      "C:/dev/s333xhub/src/app/compose.tsx",
+      "C:/dev/s333xhub/src/app/drop-new.tsx",
+      "C:/dev/s333xhub/src/app/drop-edit/[id].tsx",
+      "C:/dev/s333xhub/src/app/show-new.tsx",
+      "C:/dev/s333xhub/src/app/scan.tsx",
+      "C:/dev/s333xhub/src/providers/auth-provider.tsx",
+      "C:/dev/s333xhub/supabase/functions/stripe-payment-intent/index.ts"
+     ]
+    },
+    {
+     "change": "Remove TestFlight-stage wording that ships to fans",
+     "exact": "payments.ts PaymentsNotLiveError: the non-iOS throw reads 'Purchases are iOS only.'; the product-lookup miss reads \"Apple didn't return this item. Try again in a moment.\" (this fires on a store blip in production, so it must not claim the fan is on a preview build). post-card.tsx: delete the PaymentsNotLiveError special case and its string 'Purchases arrive with the App Store version.' so the catch falls through to fanCopy(e, ...) and shows the one sentence.\ndrop/[id].tsx: when !SHOP_PAYMENTS_LIVE and the viewer is a fan, do not render the number grid, the BUY button or the buy hint; render one line in the sub style: \"Orders aren't open yet.\" Delete the string 'Purchases open with the App Store version — this drop is a preview.'\nsettings.tsx: delete the prefNote Text 'Notifications start arriving with the App Store version of the app.' and the prefNote style (push is live via notifications.ts).\ntickets.ts (both copies): \"Ticket sales aren't switched on yet — hang tight.\" -> one constant TICKETS_NOT_OPEN = \"Ticket sales aren't open yet.\"\nshop.ts lines 5-8 comment: remove the 'purchases open with the App Store version' wording so it is not reintroduced.\nlegal-content.ts 'on the real app': handled by the full What we collect rewrite in group 5.",
+     "files": [
+      "C:/dev/s333xhub/src/lib/payments.ts",
+      "C:/dev/s333xhub/src/components/post-card.tsx",
+      "C:/dev/s333xhub/src/app/drop/[id].tsx",
+      "C:/dev/s333xhub/src/app/settings.tsx",
+      "C:/dev/s333xhub/src/lib/tickets.ts",
+      "C:/dev/s333xhub/src/lib/shop.ts"
+     ]
+    },
+    {
+     "change": "Dash sweep: every fan-facing string with an em-dash, en-dash or spaced hyphen becomes two sentences",
+     "exact": "Exact rewrites (search the left side):\n- chat.tsx 'You left — tap to rejoin' -> 'You left. Tap to rejoin'\n- shows.tsx \"Mazze hasn't announced any shows — you'll get a push when he does.\" -> replaced by the Shows empty state in group 2 (no sentence survives)\n- post-card.tsx 'Reported — reviewed within 24 hours.' -> REPORT_SENT constant (next item)\n- ticket/[id].tsx 'This ticket was refunded — it won’t scan at the door.' -> \"Refunded. This ticket won't scan at the door.\"; the 'saved' line -> 'Ticket saved. Update the app to see the code.'\n- drop/[id].tsx 'PICK YOUR NUMBER — IT'S PRINTED INTO THE PIECE' -> head 'PICK YOUR NUMBER' plus sub \"It's printed into the piece.\" (styles in group 2); the shipped line '— it's on the way.' -> \". It's on the way.\"; 'ships in 5–7 days' -> replaced by the buy-hint rewrite below\n- tickets.ts 'Sold out — every ticket is gone.' -> 'Sold out.'; the oversold line -> 'That last ticket just went to someone else. Your payment is being refunded in full.'; every ' - ' error: 'Could not load your tickets. Check your connection and try again.', 'Could not reach checkout. Check your connection and try again.', 'Could not start checkout. Try again in a moment.' (same two-sentence form for the remaining spaced-hyphen strings in tickets.ts, shows.ts, shop.ts, fanmail.ts, media-pickers.web.tsx)\n- shows.ts \"Couldn't open the ticket link - try again in a moment.\" -> 'Could not open the ticket link. Try again in a moment.'\n- supabase.ts 'Your session expired - please sign in again.' -> 'Your session expired. Sign in again.'\n- fanmail.ts \"You've already sent this week's submission - one per week.\" -> 'You already sent one this week.'\n- gifs.ts -> 'GIF search is not responding. Try again.'\n- scan.tsx accepted banner -> 'Ticket accepted.'; refunded banner -> 'Refunded ticket. No entry.'; the other scan/show-new/drop-new/drop-edit/reports/top8/avatar-framer artist-only strings: split at the dash into two sentences, wording otherwise unchanged\n- show-new.tsx ' Heads up — that date has already passed.' -> ' That date has already passed.'; date hint -> 'Could not read that date. Try Sept 15 or 9/15/2026.'\n- top8.tsx 'Change it weekly — three spots keeps them fighting for it.' -> 'Change it weekly. Three spots keep them fighting for it.'\n- settings.tsx background note -> 'Your background only shows on your account.'; restore result -> `${count} unlock${count === 1 ? '' : 's'} on this account.`\n- media-pickers.web.tsx: make each string identical to the native file's two-sentence version ('One of those photos is over the 50 MB limit. Pick a smaller one.')\n- supabase/step-push.sql and step-launch.sql 'New poll — cast your vote' -> 'New poll' (full push rewrite in group 3)\nEn-dash ranges: '5–7' becomes '5 to 7' everywhere (drop page, legal, shop-terms). The '–' count placeholder in shows.tsx (artist-only, not-yet-loaded) stays.\nCurly characters: replace ’ “ ” with straight ' and \" on every line in src/ that has one (legal-content.ts heading 'The Artist’s content', shop.tsx 'You’ll', ticket/[id].tsx 'won’t' 'You’re', show-new.tsx 'Couldn’t' and '“Tickets soon”', reports.tsx '“{reason}”', channel/[id].tsx '“${body}”').",
+     "files": [
+      "C:/dev/s333xhub/src/app/(tabs)/chat.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shows.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shop.tsx",
+      "C:/dev/s333xhub/src/components/post-card.tsx",
+      "C:/dev/s333xhub/src/app/ticket/[id].tsx",
+      "C:/dev/s333xhub/src/app/drop/[id].tsx",
+      "C:/dev/s333xhub/src/lib/tickets.ts",
+      "C:/dev/s333xhub/src/lib/shows.ts",
+      "C:/dev/s333xhub/src/lib/shop.ts",
+      "C:/dev/s333xhub/src/lib/supabase.ts",
+      "C:/dev/s333xhub/src/lib/fanmail.ts",
+      "C:/dev/s333xhub/src/lib/gifs.ts",
+      "C:/dev/s333xhub/src/app/scan.tsx",
+      "C:/dev/s333xhub/src/app/show-new.tsx",
+      "C:/dev/s333xhub/src/app/drop-new.tsx",
+      "C:/dev/s333xhub/src/app/drop-edit/[id].tsx",
+      "C:/dev/s333xhub/src/app/reports.tsx",
+      "C:/dev/s333xhub/src/app/top8.tsx",
+      "C:/dev/s333xhub/src/app/settings.tsx",
+      "C:/dev/s333xhub/src/app/channel/[id].tsx",
+      "C:/dev/s333xhub/src/components/avatar-framer.tsx",
+      "C:/dev/s333xhub/src/components/media-pickers.web.tsx",
+      "C:/dev/s333xhub/src/lib/legal-content.ts"
+     ]
+    },
+    {
+     "change": "One sentence per idea: shared copy constants for reported, load failure, retry, community, shop terms",
+     "exact": "Add src/constants/copy.ts and import from it:\n  REPORT_SENT = 'Reported. The artist reviews reports within 24 hours.'  (post-card.tsx, post/[id].tsx, channel/[id].tsx)\n  REPORT_FAILED = 'Could not send the report.'  (same three files; never the raw error)\n  RETRY = 'Try again'  (owned by the error card; delete the four 'RETRY' labels in shows.tsx, shop.tsx, drop/[id].tsx, ticket/[id].tsx and the copied pills in feed.tsx, fanmail.tsx, post/[id].tsx)\n  OFFLINE_SUB = 'Check your connection.'  (drop ' and try again' from feed.tsx, post/[id].tsx, fanmail.tsx; the pill already says it)\nLoad-failure card titles (Anton, uppercase): COULDN'T LOAD THE FEED / COULDN'T LOAD SHOWS / COULDN'T LOAD THE SHOP / COULDN'T LOAD YOUR TICKET / COULDN'T LOAD THIS DROP / COULDN'T LOAD THIS POST / COULDN'T LOAD COMMENTS. Feed pagination inline: \"Couldn't load older posts. Try again.\"\nInline fallback sentences keep the 'Could not ...' form; fix the outliers in channel/[id].tsx, media-pickers.tsx, media-pickers.web.tsx and shows.ts to 'Could not ...'.\nGroup chat noun is 'community' everywhere: channel leave-confirm 'Leave the community?'; channel eyebrow 'COMMUNITY · 128'; delete 'the group chat' and 'The room' from fan-facing strings; chat.tsx preview fallback \"Everyone's here\" -> the member count (`${n} members`) so the row never collapses.\nShop legal title is 'Shop Terms' in all five places: settings.tsx row, legal/shop-terms.tsx title, drop/[id].tsx link text ('Shop terms, shipping and refunds' -> 'Shop Terms'), s333xgod/shop-terms.html <title> ('Shop Terms · S333XHUB') and h1 ('Shop Terms').\nThe artist tag is one string and one style everywhere: 'THE ARTIST' (chat.tsx, channel/[id].tsx, profile-card.tsx, settings.tsx) in the sans eyebrow spec from group 2.\nPlaceholders: channel/[id].tsx 'Write something' -> 'Write something…' (U+2026, matching compose, comments, GIF and Top 3 search). fanmail 'Say something about it... (optional)' -> 'Say something about it…'.\nPhoto noun is 'photo' app-wide: fanmail.tsx 'Picture' -> 'Photo', 'pictures' -> 'photos'; compose.tsx 'Photos (n/4)' stays.",
+     "files": [
+      "C:/dev/s333xhub/src/constants/copy.ts (new)",
+      "C:/dev/s333xhub/src/components/post-card.tsx",
+      "C:/dev/s333xhub/src/app/post/[id].tsx",
+      "C:/dev/s333xhub/src/app/channel/[id].tsx",
+      "C:/dev/s333xhub/src/components/feed.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shows.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shop.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/chat.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/fanmail.tsx",
+      "C:/dev/s333xhub/src/app/drop/[id].tsx",
+      "C:/dev/s333xhub/src/app/ticket/[id].tsx",
+      "C:/dev/s333xhub/src/app/settings.tsx",
+      "C:/dev/s333xhub/src/app/legal/shop-terms.tsx",
+      "C:/dev/s333xhub/src/components/profile-card.tsx",
+      "C:/dev/s333xhub/src/components/media-pickers.tsx",
+      "C:/dev/s333xhub/src/components/media-pickers.web.tsx",
+      "C:/dev/s333xhub/src/lib/shows.ts",
+      "C:/dev/s333xgod/shop-terms.html"
+     ]
+    },
+    {
+     "change": "Empty-state copy: no 'yet', no consolation line, one fact where a fact exists",
+     "exact": "Feed: 'NOTHING DROPPED' (no sub). Chat list: 'NOTHING HERE' (no sub; delete 'The community chat appears here.'). Channel, group: 'QUIET IN HERE'; DM: 'NO MESSAGES' (no subs; delete 'Say hi to the community.' and 'Start the conversation.'). Comments: 'NO COMMENTS' (delete 'Be the first to say something.'). Shows, fan: 'No dates announced' + 'You get a push when one is added.'; artist: 'Tap + to announce the first date.' (unchanged). Shop, fan: 'NOTHING ON THE SHELF' + 'You get a push when it goes live.'; artist: 'Tap + to set up Drop 001.' (unchanged). Gone states: 'THIS DROP IS GONE', 'THIS POST IS GONE', 'THIS TICKET IS GONE', no sub (delete 'It may have been taken down.' and 'The feed has the latest.'). Reports (artist): 'No open reports.' Settings blocked list: render nothing when empty (delete \"You haven't blocked anyone.\"). Settings restore: 'No unlocks on this account.' Top 3 empty slot: keep 'you?' for fans; render 'open' when viewerIsArtist. Layout for each of these is in group 2.",
+     "files": [
+      "C:/dev/s333xhub/src/components/feed.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/chat.tsx",
+      "C:/dev/s333xhub/src/app/channel/[id].tsx",
+      "C:/dev/s333xhub/src/app/post/[id].tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shows.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shop.tsx",
+      "C:/dev/s333xhub/src/app/drop/[id].tsx",
+      "C:/dev/s333xhub/src/app/ticket/[id].tsx",
+      "C:/dev/s333xhub/src/app/reports.tsx",
+      "C:/dev/s333xhub/src/app/settings.tsx",
+      "C:/dev/s333xhub/src/components/top8-card.tsx"
+     ]
+    },
+    {
+     "change": "Cut the chirpy filler and the glyph confirmations",
+     "exact": "settings.tsx `All set. ${count} unlock...` -> `${count} unlock${count === 1 ? '' : 's'} on this account.`\ncompose.tsx 'Something went wrong. Try again.' -> \"Couldn't post. Try again.\"\nauth-errors.ts fallback 'Something went wrong. Try again in a moment.' -> \"That didn't go through. Try again in a moment.\"\nfanmail.tsx 'Sent to the artist. 🖤' -> 'Sent to the artist.' (the green pill is the confirmation)\nfanmail.tsx `{timeAgo} · sent ✓` -> `{timeAgo(item.created_at)}` under a section head 'SENT'\nresend-confirmation.tsx and forgot-password.tsx 'Sent again ✓' -> 'Sent again.'\nreports.tsx 'No open reports. All clear. ✓' -> 'No open reports.'\ndrop/[id].tsx 'SHIPPED ✓' -> 'SHIPPED' (the #7ed354 chip carries the state; fan and artist views now match)\nprofile-card.tsx '★ TOP {n} FAN' -> 'TOP {n} FAN' (gold tag already says it)\npost-card.tsx own-vote prefix '● ' -> removed (pollLabelMine weight plus fill is the mark)\nshop.tsx ' · ● LIVE NOW' -> ' · LIVE NOW' with a 6px View dot in #7ed354 before the kicker when status === 'live' (same construction as chat.tsx countDot)\nsign-up.tsx checkbox <Text>✓</Text> -> <Ionicons name=\"checkmark\" size={14} color=\"#c3cdd6\" />, delete the checkmark style\nKeep: '†' after the artist's name, '+ Add option', '+ Pick a fan'.",
+     "files": [
+      "C:/dev/s333xhub/src/app/settings.tsx",
+      "C:/dev/s333xhub/src/app/compose.tsx",
+      "C:/dev/s333xhub/src/lib/auth-errors.ts",
+      "C:/dev/s333xhub/src/app/(tabs)/fanmail.tsx",
+      "C:/dev/s333xhub/src/components/resend-confirmation.tsx",
+      "C:/dev/s333xhub/src/app/(auth)/forgot-password.tsx",
+      "C:/dev/s333xhub/src/app/reports.tsx",
+      "C:/dev/s333xhub/src/app/drop/[id].tsx",
+      "C:/dev/s333xhub/src/components/profile-card.tsx",
+      "C:/dev/s333xhub/src/components/post-card.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shop.tsx",
+      "C:/dev/s333xhub/src/app/(auth)/sign-up.tsx"
+     ]
+    },
+    {
+     "change": "Fan Mail: one vocabulary, no duplicate pitch, no raw enum, no 'unlocks'",
+     "exact": "Pitch line: 'Send him a photo, a video or a beat. It goes to him, nobody else.'  Meta line under it: 'Free. One a week.'  (delete 'Free · one per week · straight to his inbox')\nIn src/lib/fanmail.ts next to FanMailKind: export const FAN_MAIL_KIND_LABEL: Record<FanMailKind, string> = { picture: 'Photo', video: 'Video', audio: 'Beat' }; use it for the three pick buttons and for the row title (`{FAN_MAIL_KIND_LABEL[item.kind]}` replaces `{item.kind}`).\nCooldown sentence: `Sent this week. You can send again ${WEEKDAYS[d.getDay()]}, ${shortDate(d)} at ${clockTime(iso)}.`  (reads 'Sent this week. You can send again Monday, Sept 21 at 8:00 PM.')\nPlaceholder: 'Say something about it…'\nSection label 'YOUR SUBMISSIONS' -> 'SENT'\nArtist notice: title 'Fan mail goes to your email'; body \"Nothing shows up in the app. Each one lands in your inbox with the fan's name, their note and a download link.\"\nSubmit pill: 'SEND TO THE ARTIST' (pill rule in group 2)\nlib/fanmail.ts weekly error: 'You already sent one this week.'\nEdge function subject: `Fan mail: ${label} from ${senderName}` and body row `<p><b>Type:</b> ${label}</p>` using the same three-entry map inlined at the top of supabase/functions/fanmail-email/index.ts.",
+     "files": [
+      "C:/dev/s333xhub/src/app/(tabs)/fanmail.tsx",
+      "C:/dev/s333xhub/src/lib/fanmail.ts",
+      "C:/dev/s333xhub/supabase/functions/fanmail-email/index.ts"
+     ]
+    },
+    {
+     "change": "Drop page and shop card: one shipping story, no trust-badge boilerplate",
+     "exact": "drop/[id].tsx buy hint (replaces the two-line 'Secure checkout by Stripe · Limit 1 per fan / Price includes US shipping · made in-house · ships in 5–7 days'): 'One per fan. Ships in the US within 5 to 7 business days, shipping included.'\ndrop/[id].tsx 'Claimed. It enters the works with the run.' -> 'Claimed. Yours goes into the works now.'  OWNER DECISION: if pieces are actually made after the run closes, keep the old sentence and change the buy hint to 'One per fan. Ships when the run closes, shipping included.' Either way the legal Shipping clause in group 5 must say the same thing.\ndrop/[id].tsx 'Reserved for you for a few minutes.' stays.\nshop.tsx: delete the 'LIMIT 1 PER FAN' chip on every card and the unused chip style. If a scarcity cue is wanted, render it only when status === 'live'.\nEdition numbers unpadded everywhere: registry row `#${claim.edition_number}` (drop the padStart(2,'0')), settings My Pieces `#${piece.edition_number}`. The catalogue number keeps padStart(3,'0') ('DROP 001').",
+     "files": [
+      "C:/dev/s333xhub/src/app/drop/[id].tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shop.tsx",
+      "C:/dev/s333xhub/src/app/settings.tsx"
+     ]
+    },
+    {
+     "change": "Top 3, status chips, duration chips, tickets: small consistency slips",
+     "exact": "top8.tsx: 'Could not load the Top 8.' -> 'Could not load the Top 3.'; 'Only the artist can manage the Top 8.' -> 'Only the artist can pick the Top 3.'\nticket/[id].tsx status: `CHECKED IN · ${clockAt(...)}` (middot, not ' at ', matching the 'PAID · $25' sibling)\nshows.tsx pill: 'PAID. GETTING YOUR TICKET' -> 'PAID · GETTING YOUR TICKET…' (matches 'BUYING…')\ncompose.tsx poll length chips: '1 day', '3 days', '7 days', 'No end'\ndrop-new.tsx schedule chips: 'IN 1 HOUR', 'IN 6 HOURS', 'IN 24 HOURS', 'IN 3 DAYS', 'IN 7 DAYS' (replaces 'TONIGHT +6H'); hoist the list to src/constants/drops.ts and have drop-edit prepend 'KEEP AS SET'\nsign-up.tsx eyebrow 'Free. No subscription, ever.' -> 'Free, no subscription' (a label, not a sentence in caps)\nsettings.tsx delete-account: heading 'DANGER ZONE' deleted (layout in group 2); confirm chips read 'Delete account' / 'Cancel'\nsettings.tsx notification hints deleted ('When you get a DM', 'Messages in the group chat', 'When the artist drops something new', 'When a new show or tour date is added'); labels stay 'Direct messages', 'Community', 'New posts', 'Show announcements'",
+     "files": [
+      "C:/dev/s333xhub/src/app/top8.tsx",
+      "C:/dev/s333xhub/src/app/ticket/[id].tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shows.tsx",
+      "C:/dev/s333xhub/src/app/compose.tsx",
+      "C:/dev/s333xhub/src/app/drop-new.tsx",
+      "C:/dev/s333xhub/src/app/drop-edit/[id].tsx",
+      "C:/dev/s333xhub/src/constants/drops.ts (new)",
+      "C:/dev/s333xhub/src/app/(auth)/sign-up.tsx",
+      "C:/dev/s333xhub/src/app/settings.tsx"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "2. App structure and typography",
+   "items": [
+    {
+     "change": "One type token file so small labels stop drifting (24 copies, 9 sizes, 11 tracking values today)",
+     "exact": "In src/constants/type.ts next to DISPLAY_FONT, export plain style objects and spread them into existing StyleSheets:\n  capLabel = { color: '#6d7076', fontSize: 10.5, fontWeight: '700', letterSpacing: 1.6 }\n  capLabelAccent = { ...capLabel, color: '#c3cdd6' }\n  kicker = { color: '#8f99a3', fontSize: 10, fontWeight: '700', letterSpacing: 1.6 }\n  eyebrow = { color: '#c3cdd6', fontSize: 9.5, fontWeight: '700', letterSpacing: 1.4 }\n  eyebrowLg = { ...eyebrow, fontSize: 10, letterSpacing: 1.6 }   (ticket detail card only)\n  stockLeft = { fontSize: 11, fontWeight: '700', letterSpacing: 1.2 }   ('N LEFT' on shop card and drop page)\n  sectionHead = { fontFamily: DISPLAY_FONT, fontSize: 15, letterSpacing: 2, color: '#f4f5f6' }   (the TOP 3 style)\n  pageTitle = { color: '#f4f5f6', fontSize: 22, fontFamily: DISPLAY_FONT, letterSpacing: 2 }\n  pushedTitle = { color: '#fff', fontSize: 17, fontFamily: DISPLAY_FONT, letterSpacing: 2 }\n  pillText = { color: '#0b0c0e', fontWeight: '800', fontSize: 13, letterSpacing: 1 }\nReplace: shop.tsx kicker/footLabel, drop/[id].tsx kicker/statLabel/sectionLabel, ticket/[id].tsx eyebrow/order, scan.tsx bannerIdleTitle/counterLabel, shows.tsx sectionLabel/month/eyebrow, fan-tickets.tsx label/eyebrow, fanmail.tsx sectionLabel, settings.tsx sectionLabel/pieceStatus, show-new.tsx / drop-new.tsx / drop-edit/[id].tsx field `label` (one shared copy, uppercase captions are a fine Stripe-style choice for artist forms).\nsectionHead goes on every head that introduces a list: UPCOMING, PAST, MY TICKETS, THE REGISTRY, ARTIST, SENT, PICK YOUR NUMBER, TOP 3 (top8-card.tsx), the comments thread label (post/[id].tsx), so the three existing Anton heads stop drifting between 13/15/17.\nshop.tsx page title letterSpacing 3 -> pageTitle (S333XSHOP and S333XHUB track identically).\nPrimary white pills, one rule, caps: drop/[id].tsx BUY, drop-new.tsx, show-new.tsx (14/800/0.5 -> pillText), scan.tsx and ticket/[id].tsx (already there), fanmail 'SEND TO THE ARTIST', sign-in 'SIGN IN', sign-up 'CREATE ACCOUNT', forgot-password 'SEND RESET LINK', account-suspended 'SIGN OUT'.\nLeave the price treatments (shop card sans 16/700, drop Anton 30) and the auth title split (36/ls 4 wordmark vs 30/ls 1 heading) alone; that is hierarchy.",
+     "files": [
+      "C:/dev/s333xhub/src/constants/type.ts",
+      "C:/dev/s333xhub/src/app/(tabs)/shop.tsx",
+      "C:/dev/s333xhub/src/app/drop/[id].tsx",
+      "C:/dev/s333xhub/src/app/ticket/[id].tsx",
+      "C:/dev/s333xhub/src/app/scan.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shows.tsx",
+      "C:/dev/s333xhub/src/components/fan-tickets.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/fanmail.tsx",
+      "C:/dev/s333xhub/src/app/settings.tsx",
+      "C:/dev/s333xhub/src/app/show-new.tsx",
+      "C:/dev/s333xhub/src/app/drop-new.tsx",
+      "C:/dev/s333xhub/src/app/drop-edit/[id].tsx",
+      "C:/dev/s333xhub/src/components/top8-card.tsx",
+      "C:/dev/s333xhub/src/app/post/[id].tsx",
+      "C:/dev/s333xhub/src/app/(auth)/sign-in.tsx",
+      "C:/dev/s333xhub/src/app/(auth)/sign-up.tsx",
+      "C:/dev/s333xhub/src/app/(auth)/forgot-password.tsx",
+      "C:/dev/s333xhub/src/components/account-suspended.tsx"
+     ]
+    },
+    {
+     "change": "Two header shapes, not three: PushedHeader (Anton 17 caps) on every non-tab screen, RootHeader (Chat's letterhead) on every tab root",
+     "exact": "src/components/pushed-header.tsx: <PushedHeader title left? right? />. Three columns, left and right `flex: 1`, title `flex: 2, textAlign: 'center'` in pushedTitle; `left` defaults to the chevron-back Pressable with the existing canGoBack/replace fallback; padding 12 horizontal / 10 vertical. Use it on settings, top8, reports, legal-screen, drop/[id] (loading shell and loaded), show-new, drop-new, drop-edit, scan, ticket/[id] (drop its 22px title to this 17px). Delete every hard-coded `{ width: 24 }` / `{ width: 48 }` spacer and the four duplicated `headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' }` blocks.\nTitles: SETTINGS, REPORTS, TOP 3, TERMS OF SERVICE, PRIVACY POLICY, SHOP TERMS, TICKET, plus the existing DROP 001, NEW SHOW, NEW DROP, EDIT DRAFT, SCAN TICKETS. legal-screen.tsx renders `{title.toUpperCase()}` with numberOfLines={1}.\ncompose.tsx is a Cancel / title / Post modal bar like avatar-framer: heading becomes { color: '#fff', fontSize: 15, fontFamily: DISPLAY_FONT, letterSpacing: 2 } and 'New post' -> 'NEW POST'; Cancel/Post stay in system type exactly as avatar-framer's Cancel/Save.\nsrc/components/root-header.tsx: extract chat.tsx's topBar/title/titleRule (left-aligned, 28px Anton, lineHeight 34, letterSpacing 2, 1px rgba(255,255,255,0.14) rule beneath, pointerEvents=\"box-none\", actions slot at the rule's right end). Use it in feed.tsx (S333XHUB, flag + settings), shows.tsx (scan pill + add), fanmail.tsx, shop.tsx (add), chat.tsx. Export ROOT_HEADER_HEIGHT and derive every root's list paddingTop, FadeMask top and notice offset from it. This is the one item that changes tab-root layout; the alternative is to make Chat centered like the others, but the letterhead is the stronger, more editorial choice and fits the approved Letter chat.\nsrc/components/top-notice.tsx: one <TopNotice tone=\"error\"|\"ok\"> rendered under RootHeader replaces the six copied red lines (feed, shows, fanmail, shop, ticket, chat). Use the Channel pill form (bordered, dismissable, red-bordered error variant) for both tones so 'ok' stops being green in Fan Mail, silver in Shows and a dark pill in Comments.",
+     "files": [
+      "C:/dev/s333xhub/src/components/pushed-header.tsx (new)",
+      "C:/dev/s333xhub/src/components/root-header.tsx (new)",
+      "C:/dev/s333xhub/src/components/top-notice.tsx (new)",
+      "C:/dev/s333xhub/src/app/settings.tsx",
+      "C:/dev/s333xhub/src/app/top8.tsx",
+      "C:/dev/s333xhub/src/app/reports.tsx",
+      "C:/dev/s333xhub/src/components/legal-screen.tsx",
+      "C:/dev/s333xhub/src/app/drop/[id].tsx",
+      "C:/dev/s333xhub/src/app/show-new.tsx",
+      "C:/dev/s333xhub/src/app/drop-new.tsx",
+      "C:/dev/s333xhub/src/app/drop-edit/[id].tsx",
+      "C:/dev/s333xhub/src/app/scan.tsx",
+      "C:/dev/s333xhub/src/app/ticket/[id].tsx",
+      "C:/dev/s333xhub/src/app/compose.tsx",
+      "C:/dev/s333xhub/src/components/feed.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shows.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/fanmail.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shop.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/chat.tsx"
+     ]
+    },
+    {
+     "change": "Empty states built from each screen's own parts; one shared error card; the grey icon ring deleted everywhere",
+     "exact": "EMPTY (fetch succeeded, nothing there) uses no glyph, no ring, no shared component:\n- Feed: the project emblem at 0.16 opacity as a watermark (reuse the audio-player-card insets) with one Anton line beneath: NOTHING DROPPED.\n- Shows (fan): one ShowRow-shaped card, the 52px date block reads '---' / '--' in #8f99a3, venue line 'No dates announced', meta line 'You get a push when one is added.', no pill.\n- Shop (fan): one drop-card shell, kicker 'DROP 001' in #8f99a3 over a blank 4:3 art block in #07090b, title NOTHING ON THE SHELF, foot line 'You get a push when it goes live.'\n- Chat list and Channel: left-aligned Anton line directly under the letterhead rule (NOTHING HERE / QUIET IN HERE / NO MESSAGES).\n- Gone states (ticket, drop, post): plain left-aligned Anton title, nothing else.\n- Comments stays as is (project emblem, left-aligned, inside the list card); it is the reference.\nERROR/OFFLINE: one shared component modelled on post/[id].tsx failedCard + retryPill: solid #131519 card, radius 16, left-aligned Anton title (sectionHead), one sub 'Check your connection.', pill 'Try again' alignSelf flex-start. Replace all seven EmptyState error sites (feed, shows, shop, ticket, drop, post x2) and delete the bolted-on retry chips in feed.tsx and ticket/[id].tsx.\nDelete iconRing from empty-state.tsx, scan.tsx and qrMissingRing from ticket/[id].tsx. scan.tsx permission notices: the 20-radius card itself is the visual; draw the four reticle corners the scanner uses, two lines plus the CTA beneath. ticket/[id].tsx QrUnavailable: two lines centered in the QR-sized tile, no ring. empty-state.tsx shrinks to the error card; the `icon` prop does not survive.",
+     "files": [
+      "C:/dev/s333xhub/src/components/empty-state.tsx",
+      "C:/dev/s333xhub/src/components/feed.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shows.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shop.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/chat.tsx",
+      "C:/dev/s333xhub/src/app/channel/[id].tsx",
+      "C:/dev/s333xhub/src/app/post/[id].tsx",
+      "C:/dev/s333xhub/src/app/drop/[id].tsx",
+      "C:/dev/s333xhub/src/app/ticket/[id].tsx",
+      "C:/dev/s333xhub/src/app/scan.tsx",
+      "C:/dev/s333xhub/src/components/audio-player-card.tsx"
+     ]
+    },
+    {
+     "change": "Settings: from eight eyebrow+card groups to one flat list",
+     "exact": "Header: PushedHeader 'SETTINGS'.\nIdentity block: Avatar 56 + name (700 sans, not Anton) + email + the exact tag set from profile-card ('THE ARTIST' / 'TOP n FAN' / 'FAN', eyebrow token), fetching top_fans position the way profile-card does. No ACCOUNT eyebrow, no card, no avatar ring.\nEverything below is one flat list on the #0b0c0e page using the existing hairline row (borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#1c2025'). Delete every `sectionLabel` + `card` pair and the #666/11/1.5 style. Group words, sentence case, 13px, #6d7076, no tracking: 'Background', 'Notifications', 'Blocked' (only when blocked.length > 0), 'My pieces', 'About'.\nNotifications rows: label + Switch only; delete the `hint` field from PREF_LABELS, the prefHint render and style; prefRow paddingVertical 8 -> 11.\nPURCHASES section removed; 'Restore purchases' (with spinner and result line) becomes the first About row. About rows: Restore purchases / Terms of Service / Privacy Policy / Shop Terms / Email support (opens mailto:${SUPPORT_EMAIL}); delete the 'Support: {email}' footer.\nBottom: 'Sign out' centered text as today, then 'Delete account' as a lone red (#f87171) 15/600 centered text link, no heading above it (DANGER ZONE deleted, `dangerZone` wrapper renamed deleteSection with marginTop 4). The two-step confirm keeps its warning paragraph but renders inline with no card: warning text + chip row 'Delete account' (red text chip) / 'Cancel', both 600/13 sentence case.\nMY PIECES: hoist the group word and list outside the failed/loaded ternary; when piece.drop is null the title is `DROP ${String(drop_number).padStart(3, '0')}`, not 'Drop'.\nGreys: '#666' -> '#6d7076', '#555' -> '#55585f' throughout the file.",
+     "files": [
+      "C:/dev/s333xhub/src/app/settings.tsx",
+      "C:/dev/s333xhub/src/components/profile-card.tsx"
+     ]
+    },
+    {
+     "change": "The floating shadow card belongs to the feed only",
+     "exact": "Keep `shadowOpacity: 0.45, shadowRadius: 16, shadowOffset {0, 8}, elevation 6` on post-card.tsx and top8-card.tsx only.\nshows.tsx ShowRow: delete the four shadow lines and elevation; backgroundColor CHAT_SURFACE_ROW, borderWidth 1, borderColor CHAT_HAIRLINE_MINE (import from @/constants/chat-surfaces), radius 16, so it matches the MyTicketsStrip rows above it; the 52px date block stays the only bright object.\nshop.tsx tile: delete the shadow; keep the 1px project-colour border (cardGod/cardMazze) as the only edge; remove the 13px inset so the 4:3 art runs edge to edge under the kicker row (art radius 0 inside overflow hidden); kicker and foot row sit on the same translucent surface as the shows row.\nfanmail.tsx form panel and the artist notice card: delete the shadow only; keep #131519 so the #0f1114 inputs still read as sunken.",
+     "files": [
+      "C:/dev/s333xhub/src/app/(tabs)/shows.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/shop.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/fanmail.tsx",
+      "C:/dev/s333xhub/src/components/post-card.tsx",
+      "C:/dev/s333xhub/src/components/top8-card.tsx"
+     ]
+    },
+    {
+     "change": "One inline confirm: same tokens, two containers",
+     "exact": "Tokens: question text #9a9ba3 at 13 (retire #ccc, #e6e8ea and the 14px variant); the go word and Cancel both 600/13 sentence case ('Publish', 'Delete', 'Leave', 'Ban', 'Delete account', 'Cancel'); red #f87171 for anything destructive, white for go. Delete the 800/12/letterSpacing-1 uppercase confirmYes in drop/[id].tsx and show-new.tsx; fix the drop page where 'DELETE' currently inherits green #7ed354.\nContainer (a): inline chip row for feed (post-card), drop, show-new, reports and settings using post-card's chip (#1e2126, radius 999, padding 12/6); retire reports' #222226 r14 chip and the solid #131519 r12 confirmRow in drop/show-new.\nContainer (b): channel/[id].tsx keeps its floating pill (it is shared with the chat error bar on the translucent surface) but its confirmText/confirmYes/confirmNo adopt the tokens above.\nUpdate the reports.tsx comment to name the shared pattern.",
+     "files": [
+      "C:/dev/s333xhub/src/app/drop/[id].tsx",
+      "C:/dev/s333xhub/src/app/show-new.tsx",
+      "C:/dev/s333xhub/src/app/channel/[id].tsx",
+      "C:/dev/s333xhub/src/components/post-card.tsx",
+      "C:/dev/s333xhub/src/app/settings.tsx",
+      "C:/dev/s333xhub/src/app/reports.tsx"
+     ]
+    },
+    {
+     "change": "Artist forms share one set of parts; Compose keeps its identity but uses the app's tokens",
+     "exact": "src/components/form.tsx exports FieldLabel (capLabel), Field (TextInput: bg #131519, radius 12, padding 14, fontSize 15, marginBottom 12), Chip + ChipRow (radius 999, bg #1a1d22, text 10.5/700/ls 1, on = #c3cdd6 for options, #fff for segmented), PrimaryButton (white pill, pillText) and FormNote (sub text, lineHeight 16). show-new.tsx, drop-new.tsx and drop-edit/[id].tsx use them and lose their private copies.\nsrc/components/project-picker.tsx: one MAZZE / S333XGOD segmented control used by compose.tsx and drop-new.tsx.\ncompose.tsx: keep the bare 17px body input and the Cancel/Post header; projectChip and priceChip radius 16 -> 999; titleInput and pollInput -> radius 12 on #131519 (drop #0d0d0f); cancel #888 -> #8f99a3 at 15; error #ff6b6b -> #f87171; placeholder #555 -> #55585f.",
+     "files": [
+      "C:/dev/s333xhub/src/components/form.tsx (new)",
+      "C:/dev/s333xhub/src/components/project-picker.tsx (new)",
+      "C:/dev/s333xhub/src/app/show-new.tsx",
+      "C:/dev/s333xhub/src/app/drop-new.tsx",
+      "C:/dev/s333xhub/src/app/drop-edit/[id].tsx",
+      "C:/dev/s333xhub/src/app/compose.tsx"
+     ]
+    },
+    {
+     "change": "Anton never below 12px; tab-bar label off 6.5px; off-palette greys",
+     "exact": "Move every sub-12px Anton tag to the sans eyebrow token, uppercase: channel/[id].tsx header eyebrow ('COMMUNITY · 128', 'DIRECT MESSAGE'; keep its fixed height 12 / lineHeight 12), channel and chat.tsx artistTag ('THE ARTIST'), post/[id].tsx 'PINNED' (10/700/1.4), settings.tsx artistTag. audio-player-card.tsx's 11px eyebrow stays (part of the approved Editorial player). Leave the 13 to 15px uppercase Anton titles and the numeral indices ('#01', slot numbers, scan counter) alone.\n(tabs)/_layout.tsx circleLabel { fontSize: 6.5, fontWeight: '700', letterSpacing: 0.8 } -> { fontSize: 9, fontWeight: '800', letterSpacing: 1 } (the chip convention already used on shows.tsx and fan-tickets.tsx). Keep the word S333XSHOP; the teaser circle needs it.\nGreys on the sans-header screens: reports.tsx '#666' -> '#6d7076', '#555' -> '#6d7076' (muted) and '#55585f' (when), '#777' italic -> '#8f99a3' upright; legal-screen.tsx effective '#666' -> '#6d7076', body '#bbb' -> the post/[id] body colour.\nsign-up.tsx: the 'We sent a confirmation link to {email}. Tap it, then come back and sign in.' paragraph moves off styles.subtitle (12px caps, letterSpacing 3) onto an `explain` style copied from forgot-password.tsx ({ color: '#9a9ba3', fontSize: 13.5, lineHeight: 20, marginBottom: 16, textAlign: 'center' }).",
+     "files": [
+      "C:/dev/s333xhub/src/app/channel/[id].tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/chat.tsx",
+      "C:/dev/s333xhub/src/app/post/[id].tsx",
+      "C:/dev/s333xhub/src/app/settings.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/_layout.tsx",
+      "C:/dev/s333xhub/src/app/reports.tsx",
+      "C:/dev/s333xhub/src/components/legal-screen.tsx",
+      "C:/dev/s333xhub/src/app/(auth)/sign-up.tsx"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "3. Shipped data and defaults",
+   "items": [
+    {
+     "change": "No fan is ever named 'fan'; one word for a user who is gone",
+     "exact": "auth-provider.tsx: after loading the profile, treat display_name equal to 'fan' or empty as unnamed and route to a single-field name screen before the tabs (reuse the sign-up rule of 2+ characters and the existing update(display_name) grant). schema.sql: change the two 'fan' literals to '' with a comment 'app forces a name on first open'. Do not raise in the trigger and do not derive from the email. Owner: create the App Review demo account through the app's sign-up screen, not the Supabase dashboard.\nsrc/lib/profiles.ts: export const GONE_NAME = 'Deleted user'; export function displayName(p?: { display_name?: string | null } | null) { return p?.display_name ?? GONE_NAME; }. Replace 'Unknown', 'Unknown user', 'Someone', 'unknown', 'DM', 'Message' and the raw '?' name fallbacks at post-card.tsx, drop/[id].tsx registry, post/[id].tsx, channel/[id].tsx (both), chat.tsx, chat.ts (drop the 'DM' branch), moderation.ts (three), reports.tsx, top8-card.tsx, top8.tsx. Push SQL `coalesce(sender_name, 'Someone')` -> 'Deleted user' in step-push.sql and step-launch.sql; remove the 'New message' fallback body.\nAvatar: avatar.tsx owns the '?' glyph; delete the caller-side seeds 'S', 'F', '?' in chat.tsx and the ternary in top8-card.tsx; always pass raw display_name into Avatar (post-card.tsx passes post.author?.display_name, not the resolved label) so a deleted user never gets a 'D' initial. Keep settings.tsx '…' (own-name loading) and top8-card 'you?' (fan view).",
+     "files": [
+      "C:/dev/s333xhub/src/providers/auth-provider.tsx",
+      "C:/dev/s333xhub/supabase/schema.sql",
+      "C:/dev/s333xhub/src/lib/profiles.ts (new)",
+      "C:/dev/s333xhub/src/components/post-card.tsx",
+      "C:/dev/s333xhub/src/app/drop/[id].tsx",
+      "C:/dev/s333xhub/src/app/post/[id].tsx",
+      "C:/dev/s333xhub/src/app/channel/[id].tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/chat.tsx",
+      "C:/dev/s333xhub/src/lib/chat.ts",
+      "C:/dev/s333xhub/src/lib/moderation.ts",
+      "C:/dev/s333xhub/src/app/reports.tsx",
+      "C:/dev/s333xhub/src/components/top8-card.tsx",
+      "C:/dev/s333xhub/src/app/top8.tsx",
+      "C:/dev/s333xhub/src/components/avatar.tsx",
+      "C:/dev/s333xhub/supabase/step-push.sql",
+      "C:/dev/s333xhub/supabase/step-launch.sql"
+     ]
+    },
+    {
+     "change": "No invented headlines: 'Exclusive drop', 'Untitled track', 'Post', 'Drop'",
+     "exact": "post-card.tsx locked non-audio tease: render post.title only when it exists; otherwise the eyebrow `LOCKED · ${projectLabel(post.project)}` in the same small letter-spaced ghost-silver treatment AudioCover already uses, under the lock icon, above the unlock pill. Locked audio: `post.title ?? ''` (AudioCover shows the eyebrow). Player fallbacks 'Untitled track' (two) -> projectLabel(post.project) so nothing generic can surface on a legacy row. Do not add a required title to compose.\npost/[id].tsx header `post?.title ?? 'Post'` -> the author's display name via displayName(), never the bare word 'Post'.\nsettings.tsx My Pieces `piece.drop?.title ?? 'Drop'` -> `DROP ${String(drop_number).padStart(3, '0')}` and drop the duplicate sub line. Ticket/show fallbacks stay.",
+     "files": [
+      "C:/dev/s333xhub/src/components/post-card.tsx",
+      "C:/dev/s333xhub/src/app/post/[id].tsx",
+      "C:/dev/s333xhub/src/app/settings.tsx"
+     ]
+    },
+    {
+     "change": "One date table, two registers: AP months in every sentence, 3-letter caps only on the show poster block",
+     "exact": "src/lib/dates.ts: move WEEKDAYS, WEEKDAYS_SHORT, MONTHS (Jan, Feb, March, April, May, June, July, Aug, Sept, Oct, Nov, Dec) and clockTime out of chat-time.ts (chat-time re-imports). Export shortDate(d) -> 'Sept 7' this year / 'Sept 7, 2025' otherwise, and longDate(d) -> 'Mon, Sept 7'. Document in the file that the poster date block is the one place 3-letter caps ('SEP') is correct.\nposts.ts timeAgo > 7 days: return shortDate(new Date(iso)) instead of toLocaleDateString() (kills '9/7/2026' under author names in post-card, post/[id], reports, fanmail). Keep lowercase 'just now'.\nshows.ts showDateParts: keep `month` (Intl short, poster block) and add `monthAP` by indexing MONTHS with the venue-zone month number from the existing formatToParts; use monthAP in prose: ticket/[id].tsx 'Sat, Sept 14 · 8:00 PM EDT', fan-tickets.tsx same, scan.tsx 'Sat, Sept 14' (add the comma).\nfanmail.tsx cooldown: WEEKDAYS + shortDate + clockTime ('Monday, Sept 21 at 8:00 PM').\nshow-new.tsx: delete the three-letter slice; field tidies to shortDate with year ('Sept 15, 2026'); placeholder 'Sept 15, 2026'; hint 'e.g. Sept 15 or 9/15/2026'; previewLabel composes the exact fan string via showDateParts ('Sat, Oct 18 · 8:00 PM EDT'); parseDate keeps accepting 'sep' and 'sept'.\ndrop-new.tsx: `Opens ${longDate(dropsAt)} at ${clockTime(dropsAt.toISOString())}` ('Opens Tue, Sept 15 at 8:16 PM'), no seconds.\nstep-shows.sql push: replace to_char(..., 'Mon FMDD') with a case on extract(month from new.starts_at at time zone new.timezone) mapping 3 'March', 4 'April', 6 'June', 7 'July', 9 'Sept', else the 3-letter form, so the push reads 'Sept 6' like the chat.\nprofile-card.tsx 'September 2026' member-since stays.\nPrices: post-card.tsx (two) and compose.tsx build '$4.99' inline -> priceLabel from lib/shop. drop/[id].tsx gross stat: Math.floor instead of toFixed(0) and a thousands separator.",
+     "files": [
+      "C:/dev/s333xhub/src/lib/dates.ts (new)",
+      "C:/dev/s333xhub/src/lib/chat-time.ts",
+      "C:/dev/s333xhub/src/lib/posts.ts",
+      "C:/dev/s333xhub/src/lib/shows.ts",
+      "C:/dev/s333xhub/src/app/ticket/[id].tsx",
+      "C:/dev/s333xhub/src/components/fan-tickets.tsx",
+      "C:/dev/s333xhub/src/app/scan.tsx",
+      "C:/dev/s333xhub/src/app/(tabs)/fanmail.tsx",
+      "C:/dev/s333xhub/src/app/show-new.tsx",
+      "C:/dev/s333xhub/src/app/drop-new.tsx",
+      "C:/dev/s333xhub/supabase/step-shows.sql",
+      "C:/dev/s333xhub/src/components/post-card.tsx",
+      "C:/dev/s333xhub/src/app/compose.tsx",
+      "C:/dev/s333xhub/src/app/drop/[id].tsx"
+     ]
+    },
+    {
+     "change": "Push notification copy",
+     "exact": "Canonical definitions live in step-launch.sql; mirror into step-push.sql, step-shop.sql and step-shows.sql, then re-run the function bodies in the Supabase SQL editor.\nNew post (title 'S333XGOD just dropped' / 'MAZZE just dropped' stays); body fallback when a post has no title or body: 'audio' -> 'New track', 'video' -> 'New video', 'poll' -> 'New poll', 'photo' -> 'New photo', else 'New post'. Delete 'in the app', 'cast your vote' and 'Open S333XHUB to see it'.\nShipped piece: title 'Shipped' (no emoji); body `d.title || ' #' || new.edition_number || ' is on the way.'` stays.\nMessage: sender fallback 'Deleted user'; no 'New message' body.\nShow: title `coalesce(nullif(new.title, ''), new.city)`; body `new.venue || ' · ' || when_label` (with the AP month case above). If title is the show's name, body becomes `new.city || ' · ' || new.venue || ' · ' || when_label`.",
+     "files": [
+      "C:/dev/s333xhub/supabase/step-launch.sql",
+      "C:/dev/s333xhub/supabase/step-push.sql",
+      "C:/dev/s333xhub/supabase/step-shop.sql",
+      "C:/dev/s333xhub/supabase/step-shows.sql"
+     ]
+    },
+    {
+     "change": "Lock screen shows the performer, not the app",
+     "exact": "player-provider.tsx: add `artist: string` to the Track type; line `artist: 'S333XHUB'` -> `artist: current.artist`; delete the '// TEMP DEBUG' comment. audio-player-card.tsx playTrack call adds `artist: project === 's333xgod' ? 'S333XGOD' : 'Mazze'` (title case, the name as it appears on streaming services, not the in-app eyebrow form). Stripe sheet merchantDisplayName 'S333XHUB' stays.",
+     "files": [
+      "C:/dev/s333xhub/src/providers/player-provider.tsx",
+      "C:/dev/s333xhub/src/components/audio-player-card.tsx"
+     ]
+    },
+    {
+     "change": "Support address and public URL on a domain the company owns",
+     "exact": "Order matters. (1) At Porkbun add free email forwarding support@s333xhub.com -> southeasterngroup28@gmail.com, send a test, confirm it lands. If the owner will not touch s333xhub.com yet, use support@ronsollc.com on the mail setup that already serves ricardo@. Never a first-name address on a fan-facing surface. (2) legal-content.ts SUPPORT_EMAIL = 'support@s333xhub.com'; account-suspended.tsx imports SUPPORT_EMAIL instead of its literal. (3) Replace all seven site literals: s333xgod/index.html, privacy.html (two), terms.html, shop-terms.html (two), delete-account.html (keep ?subject=Delete%20my%20S333XHUB%20account). (4) App Store Connect support email and privacy contact to match. (5) Leave ricardo@ronsollc.com on the RONSO site.\nlinks.ts PUBLIC_SITE_URL 'https://southeasterngroup28-blip.github.io/s333xgod' -> 'https://app.s333xhub.com' (not the apex; that is the artist site). Steps: Porkbun CNAME `app` -> southeasterngroup28-blip.github.io; add a CNAME file containing app.s333xhub.com to C:/dev/s333xgod and set it in the repo's Pages settings; Supabase Auth > URL Configuration add https://app.s333xhub.com/** before shipping the app change (confirm and reset emails depend on it); App Store Connect Privacy Policy / Support / EULA URLs updated; old github.io URL keeps redirecting.",
+     "files": [
+      "C:/dev/s333xhub/src/lib/legal-content.ts",
+      "C:/dev/s333xhub/src/components/account-suspended.tsx",
+      "C:/dev/s333xhub/src/constants/links.ts",
+      "C:/dev/s333xgod/index.html",
+      "C:/dev/s333xgod/privacy.html",
+      "C:/dev/s333xgod/terms.html",
+      "C:/dev/s333xgod/shop-terms.html",
+      "C:/dev/s333xgod/delete-account.html",
+      "C:/dev/s333xgod/CNAME (new)"
+     ]
+    },
+    {
+     "change": "Fan-mail email leaves the sandbox",
+     "exact": "Resend: add s333xhub.com as a sending domain (SPF/DKIM at Porkbun), wait for Verified. supabase/functions/fanmail-email/index.ts: `from: 'S333XHUB <fanmail@s333xhub.com>'` (or a FANMAIL_FROM_EMAIL secret); delete the '(sign up WITH the destination email)' clause in the header comment. Deploy as `supabase functions deploy fanmail-email`, delete the 'swift-function' deployment in the dashboard. src/lib/fanmail.ts `.invoke('swift-function', ...)` -> `.invoke('fanmail-email', ...)` and delete the 'Deployed under the dashboard's default slug' comment. Send one real submission and confirm delivery.",
+     "files": [
+      "C:/dev/s333xhub/supabase/functions/fanmail-email/index.ts",
+      "C:/dev/s333xhub/src/lib/fanmail.ts"
+     ]
+    },
+    {
+     "change": "Housekeeping that stops the tells coming back",
+     "exact": "Rename src/app/top8.tsx -> top3.tsx (update _layout.tsx Stack.Screen name and top8-card.tsx router.push('/top3')), Top8ManagerScreen -> Top3ManagerScreen, src/components/top8-card.tsx -> top3-card.tsx and Top8Card -> Top3Card (feed.tsx import), and the 'Top 8' comments in social.ts. Leave the top_fans table and policies.\nAdd scripts/lint-copy.mjs, run in CI: scan string literals and JSX text in src/**/*.{ts,tsx} and body text in C:/dev/s333xgod/*.html and C:/dev/ronso/*.html for ' — ', ' – ', ' - ' (spaced), '&mdash;', '&ndash;', '→', and the curly characters ‘ ’ “ ”; fail on any hit outside an allowlist (code comments, the shows.tsx '–' placeholder).\nlegal-content.ts header comment lines 1-4 -> '// Legal copy for S333XHUB. Source of truth for the in-app legal screens and the s333xgod site: node scripts/export-legal.mjs C:\\dev\\s333xgod. TODO before launch: one-hour lawyer read.' (the word 'templates' does not survive).",
+     "files": [
+      "C:/dev/s333xhub/src/app/top8.tsx",
+      "C:/dev/s333xhub/src/app/_layout.tsx",
+      "C:/dev/s333xhub/src/components/top8-card.tsx",
+      "C:/dev/s333xhub/src/components/feed.tsx",
+      "C:/dev/s333xhub/src/lib/social.ts",
+      "C:/dev/s333xhub/scripts/lint-copy.mjs (new)",
+      "C:/dev/s333xhub/src/lib/legal-content.ts"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "4. Company site (RONSO LLC)",
+   "items": [
+    {
+     "change": "Name the products; say each fact once",
+     "exact": "Hero paragraph (replaces 'RONSO LLC is an independent company based in Miami, Florida. We design, build, and run our own products end to end...'): 'RONSO LLC is a Miami company. It builds and runs S333XHUB, the fan app for the artist Mazze (S333XGOD), and S333XSHOP, the numbered-run store inside it.' Keep the h1.\nmeta description and og:description: 'RONSO LLC is a Miami company. It builds and runs S333XHUB, the fan app for the artist Mazze (S333XGOD), and S333XSHOP, the numbered-run store inside it.' / 'The Miami company behind S333XHUB and S333XSHOP.'\n'What we do' becomes a stacked list (max-width 62ch, no grid, no h3), each item a bold term and one sentence:\n  <p><strong>S333XHUB.</strong> An iPhone app for one artist's fans: music and videos first, the fan chat, show dates and a direct line to the artist. Designed, built and run by the company. <a href=\"https://app.s333xhub.com\">app.s333xhub.com</a></p>\n  <p><strong>S333XSHOP.</strong> Hand-finished pieces in numbered limited runs, sold inside the app, packed and shipped by us.</p>\n  <p><strong>Show tickets.</strong> Sold inside the app, scanned at the door.</p>\nDelete the About section entirely ('RONSO operates on a simple rule...' and 'The company is independent and privately held...'); the Company list already carries independent and privately held. Keep the Company dl and the contact ricardo@ronsollc.com.",
+     "files": [
+      "C:/dev/ronso/index.html"
+     ]
+    },
+    {
+     "change": "Drop the accent-coloured tracked eyebrows; one heading voice",
+     "exact": "Delete the .label rule and class=\"label\" from the h2s. h2 { font-size:22px; font-weight:600; letter-spacing:-.01em; line-height:1.25; color:var(--ink); margin:0 0 20px }. Delete .cols and its media query. .facts dt: font-size:11.5px; letter-spacing:.08em; keep uppercase and color:var(--ink-3) (once the h2 tracking is gone this is the one place tracking appears and reads deliberate). Keep .wordmark letter-spacing .22em.",
+     "files": [
+      "C:/dev/ronso/index.html"
+     ]
+    },
+    {
+     "change": "Legal page chrome matches the app site",
+     "exact": "privacy.html <title> 'Privacy Policy · RONSO LLC'; terms.html <title> 'Terms of Use · RONSO LLC'. Date line on both: 'Effective September 15, 2026' (no colon, no 'Last updated'). Both sites then show one plain line under the h1 in the same form.",
+     "files": [
+      "C:/dev/ronso/privacy.html",
+      "C:/dev/ronso/terms.html"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "5. App site and legal pages (s333xgod + legal-content.ts)",
+   "items": [
+    {
+     "change": "One stylesheet across all seven pages, derived from brand.ts; the app's face, not a dark template",
+     "exact": "Shared <style> (or site.css) on index, privacy, terms, shop-terms, delete-account, confirm-email, reset-password:\n  body { background:#000; color:#fff; font-family:\"Helvetica Neue\", Helvetica, Arial, sans-serif; line-height:1.6 }\n  .dim { color:#8a8a92 }   (replaces .muted #888 and #ddd body text)\n  a { color:#c3cdd6; text-decoration:underline; text-decoration-color:#3a4048 }  a:hover { color:#fff }   (amber #fbbf24 removed from every page)\n  h1 { font-family:Anton, Impact, sans-serif; letter-spacing:.09em; font-weight:400 }  with <link href=\"https://fonts.googleapis.com/css2?family=Anton&display=swap\">; Anton on the wordmark and page h1 only, never body or h2\n  h2 { color:#fff; font-size:18px; font-weight:600; padding-top:24px; border-top:1px solid #222228 }   (ruled sections replace every .card box)\n  input { background:#101013; border-radius:12px }  button { border-radius:999px; background:#fff; color:#000 }\n  nav { border-top:1px solid #222228 }\nDelete .card everywhere, the #0b0c0e / #131519 / #131315 / #222 values, and the uppercase 3px-tracked .sub eyebrow on the two auth pages (replace with a sentence-case lead line).",
+     "files": [
+      "C:/dev/s333xgod/index.html",
+      "C:/dev/s333xgod/privacy.html",
+      "C:/dev/s333xgod/terms.html",
+      "C:/dev/s333xgod/shop-terms.html",
+      "C:/dev/s333xgod/delete-account.html",
+      "C:/dev/s333xgod/confirm-email.html",
+      "C:/dev/s333xgod/reset-password.html"
+     ]
+    },
+    {
+     "change": "index.html: the app's page, with the compliance facts kept but demoted",
+     "exact": "<title>S333XHUB · The official fan app for Mazze and S333XGOD</title>\n<meta name=\"description\" content=\"S333XHUB is the official fan app for the artist releasing as Mazze and S333XGOD, run by RONSO LLC. Music and videos first, the fan chat, a direct line to the artist, show tickets, and numbered pieces from S333XSHOP.\">\nHeader: Anton wordmark 'S333XHUB' left, small dim 'iPhone' right.\nTag line (keep .tag colour): 'The official app for the artist releasing as Mazze and S333XGOD.'\nLead (replaces the 'One feed straight from the artist... &mdash; plus... Coming soon to the iOS App Store.' paragraph): 'Music and videos before they land anywhere else. The fan chat. A direct line to the artist. Show dates, with tickets sold in the app. Numbered pieces from S333XSHOP.'\nStatus line, dim: 'iPhone only. App Store listing not live yet.' (swap for the real badge link at launch; never 'Coming soon')\nh2 'In the app' (replaces 'What we sell', no card):\n  <p><b>Post unlocks.</b> Certain posts are unlocked with a one-time purchase through Apple. No subscriptions.</p>\n  <p><b>S333XSHOP.</b> Hand-finished pieces made by the artist in numbered limited runs, sold in the app and shipped within the United States. Payments are processed by Stripe. Shipping, damage and refund terms are in the <a href=\"shop-terms.html\">Shop Terms</a>.</p>\n  <p><b>Show tickets.</b> Tickets for the artist's own shows are sold in the app and checked at the door by QR code. Some shows link out to a venue's box office; those sales are the venue's. Payments are processed by Stripe.</p>\nh2 'Company' (replaces 'Who runs this', no card):\n  <p>S333XHUB and S333XSHOP are operated by <a href=\"https://ronsollc.com\">RONSO LLC</a>, a Florida limited liability company, on behalf of the artist.</p>\n  <p>Support and order questions: <a href=\"mailto:support@s333xhub.com\">support@s333xhub.com</a>. We answer within 2 business days.</p>\nnav and footer unchanged. Never write 'tickets to every show' (link-out and no-ticket shows exist by design).",
+     "files": [
+      "C:/dev/s333xgod/index.html"
+     ]
+    },
+    {
+     "change": "Legal page chrome and the two auth pages",
+     "exact": "privacy.html, terms.html, shop-terms.html: the line under the h1 reads exactly 'Effective <Month D, YYYY>' (delete ' · How S333XHUB handles your data', ' · The rules for using S333XHUB', ' · Buying a numbered piece'); drop the self-link from each page's bottom nav; shop-terms h1 'Shop Terms' and <title> 'Shop Terms · S333XHUB'.\nconfirm-email.html: <title>Email confirmed · S333XHUB</title>; delete the .big #mark div, the .big rule, `const mark` and both mark.textContent lines (no emoji, no glyph; reset-password has no mark either); lead line 'Email confirmation' in sentence case; success 'Your email is confirmed. Open S333XHUB and sign in.'; failure (never concatenate error_description; console.warn it): 'This link has expired or was already used. Open S333XHUB and sign in, or sign up again to get a new link.'\nreset-password.html: <title>Reset password · S333XHUB</title>; if urlError is present show the failure immediately instead of waiting 3500ms; verified line 'Choose a new password.' shown once; every link failure 'This link has expired or was already used. Open S333XHUB, tap Forgot password, and request a new one.'; updateUser failure branches on error.code: same_password -> 'That is your current password. Choose a different one.', weak_password -> 'That password is too easy to guess. Try a longer one.', else the expired-link line; never error.message; success 'Password changed. Open S333XHUB and sign in.'\ndelete-account.html (and the identical copy at C:/dev/s333xhub/docs/delete-account.html): first paragraph 'Deleting your account removes your profile, display name, email, chat messages, notification preferences and block list. This cannot be undone. Unlocked posts are not refunded; refunds are handled by Apple under its store policies. Records of shop orders and show tickets are kept for tax purposes with your account no longer attached to them.' In-app steps (no arrows, no Danger zone, no card): 'In the app, open Settings, scroll to the bottom, and tap Delete my account. Confirm once and the account is gone immediately.' Email paragraph with straight quotes: subject \"Delete my S333XHUB account\". Footer: 'S333XHUB is the fan app for the artist releasing as Mazze and S333XGOD, operated by RONSO LLC. Questions about your data: see the Privacy Policy, or email us.'",
+     "files": [
+      "C:/dev/s333xgod/privacy.html",
+      "C:/dev/s333xgod/terms.html",
+      "C:/dev/s333xgod/shop-terms.html",
+      "C:/dev/s333xgod/confirm-email.html",
+      "C:/dev/s333xgod/reset-password.html",
+      "C:/dev/s333xgod/delete-account.html",
+      "C:/dev/s333xhub/docs/delete-account.html"
+     ]
+    },
+    {
+     "change": "Terms of Service rewritten against the shipped product (source: legal-content.ts, then regenerate)",
+     "exact": "Add constants: OPERATOR_NAME = 'RONSO LLC'; OPERATOR_ADDRESS = '10437 NW 82nd St, Unit 12, Miami, FL 33178'. EFFECTIVE_DATE -> the ship date (material change). TERMS_SECTIONS becomes:\n1. 'What this is': `${APP_NAME} is operated by RONSO LLC, a Florida limited liability company (\"RONSO\", \"we\"), for the independent artist who releases music as Mazze and S333XGOD (\"the Artist\"). By creating an account you agree to these Terms and to our Privacy Policy. If you don't agree, don't use the app.`\n2. 'Who can use it': `You must be at least 17 years old to use ${APP_NAME}. By signing up you confirm you meet this requirement. Accounts are personal. Don't share your login or use someone else's.`\n3. 'Your account': `Fan accounts are free. There are no subscriptions. The only things that cost money are one-time post unlocks, show tickets, and pieces from S333XSHOP. You're responsible for what happens under your account. You can delete your account at any time in Settings. The Privacy Policy says what is removed and what is kept.`\n4. 'Post unlocks': `Unlocks are one-time purchases made through Apple's in-app purchase system and follow Apple's payment terms. An unlock gives you permanent personal access to that post inside the app. It is not a download, a license to redistribute, or ownership of the music. Refunds for unlocks are handled by Apple under its policies, not by us. If you reinstall the app or switch phones, use \"Restore Purchases\" to get your unlocks back at no charge.`\n5. 'Show tickets' (new): `Some shows sell tickets inside the app. You pay by card or Apple Pay through Stripe, not through the App Store, so this section applies instead of Apple's terms. A ticket is tied to one show and one account, admits one person, and is a QR code under My Tickets that is scanned once at the door. A ticket that has already been scanned or refunded will be refused. Tickets cannot be transferred or resold. The name you give at checkout may be checked against ID at the door. If the Artist cancels a show, or the last ticket sells to someone else while your payment is going through, we refund the full price to the card you paid with. Otherwise tickets are not refundable. Venue rules, including age limits, apply to entry.`  OWNER DECISION: the last two refund sentences state the rule the code enforces today (auto-refund on cancel, sold-out or past show; everything else manual through Stripe). If the owner intends to refund date changes or advance requests, write that rule here instead; the clause must match what will actually be honored.\n6. 'S333XSHOP' (new): `Numbered physical pieces from S333XSHOP are sold under the Shop Terms, which are part of these Terms.`\n7. 'The Artist's content': body unchanged; heading apostrophe straight.\n8. 'Your content and behavior': `You can post messages and voice notes in chat, send the Artist direct messages, comment and vote on posts, set a profile photo, and send fan mail (a photo, video or audio clip with a note, once a week). You own what you write, record and upload. Chat messages, comments and profile photos are shown inside the app to other members. Fan mail goes to the Artist privately and is not posted in the app. Don't post anything illegal, anything that harasses, threatens or demeans someone, anything sexually explicit, anything you don't have the right to share, or anything that pretends to be someone else. Content that sexualizes a minor closes the account and is reported to law enforcement. Spam is removed. Written messages pass through a word filter before they post.`\n9. 'Moderation': `You can report any post, message, or user, and block any user (blocking hides their messages from you). Reports are reviewed and acted on within 24 hours. RONSO and the Artist may remove any content or suspend or terminate any account that breaks these rules, at their discretion.`\n10. 'Apple-specific terms': first sentence `If you use ${APP_NAME} on an Apple device: these Terms are between you and RONSO LLC, not Apple.`; rest unchanged.\n11. 'No guarantees': `The app is provided \"as is\". We work to keep it available and bug-free but can't promise uninterrupted service. To the maximum extent the law allows, our total liability to you is limited to the amount you've paid in the app, including for tickets and S333XSHOP pieces, in the past 12 months.`\n12. 'Changes and contact': `We may update these Terms; meaningful changes will be announced in the app, and continuing to use it means you accept them. These Terms are governed by the laws of ${GOVERNING_STATE}, USA. Questions: ${SUPPORT_EMAIL}, or by mail to ${OPERATOR_NAME}, ${OPERATOR_ADDRESS}.`\nThen `node scripts/export-legal.mjs C:\\dev\\s333xgod` from C:/dev/s333xhub. Have a Florida lawyer read the result once; it is an hour.",
+     "files": [
+      "C:/dev/s333xhub/src/lib/legal-content.ts",
+      "C:/dev/s333xgod/terms.html (generated)",
+      "C:/dev/s333xhub/scripts/export-legal.mjs"
+     ]
+    },
+    {
+     "change": "Privacy Policy rewritten to admit everything the app handles and name the real processors",
+     "exact": "PRIVACY_SECTIONS becomes:\n0. 'Who we are' (new, first): `This policy is issued by RONSO LLC, a Florida limited liability company (\"we\"), which operates ${APP_NAME} for the artist releasing as Mazze and S333XGOD (\"the Artist\").`\n1. 'What we collect': `Account: your email address, the display name you choose, and a profile photo if you add one. Using the app: messages, voice notes and photos you send in chat, direct messages to the Artist, comments, reactions and poll votes, fan mail you send and the photo, video or audio attached to it, your notification settings, your block list, reports you file, and a record of posts you've unlocked. Tickets and pieces: the name you give at checkout, your shipping address for a piece, what you bought and its edition number, and Stripe's reference for the payment. Notifications: a device push token if you turn them on. GIF search: the words you type in the GIF picker go to Tenor to return results. We do not collect your contacts or your location, and we do not track you across other apps.`\n2. 'How we use it': `To run the app: showing your name on your messages, delivering chat, remembering your unlocks, getting your ticket scanned and your piece shipped, sending only the notifications you've left enabled, and handling reports and blocks. We don't sell your data, and there is no advertising in the app.`\n3. 'Where it lives': `Accounts, messages, photos, orders and tickets are stored with Supabase on servers in the United States. Post unlocks go through Apple's in-app purchase system; RevenueCat keeps the receipt record so unlocks can be restored. Shop orders and show tickets are paid through Stripe, which handles your card details. We never see your card number. Push notifications are delivered through Expo's notification service. Fan mail reaches the Artist's inbox through Resend. GIF search runs through Tenor. Each of these companies handles data only to provide its part of the service, not for its own use.`  (If the Tenor key is unset at launch, phrase it 'GIF search, when available, runs through Tenor.')\n4. 'Who can see what': `Other fans see your display name, your profile photo if you set one, and the messages you post in chats they are in. If you buy a piece, your display name and edition number appear in that drop's registry, which every member can see. The Artist sees what fans send: the community chat, direct messages, fan mail, and the name and address on any order, so it can be shipped. Your email address is never shown to anyone. For a physical order we give your name and address to the shipping carrier. Beyond that we share nothing, unless the law requires it.`\n5. 'How long we keep it': `For as long as your account exists. A message you delete disappears for everyone straight away; a message the Artist removes is hidden but kept for moderation. When you delete your account in the app, your profile, messages, notification preferences, block list and unlock history are erased immediately; if you ask by email, within 30 days. Two things stay: shop orders and show tickets (your name, shipping address, what you bought and what you paid) are kept for as long as tax and accounting law requires, up to seven years, with your account no longer attached to them; and any report you filed stays in our moderation log.`  (Verify 'immediately' against the delete RPC before shipping; the public delete page already claims it. Do not promise a periodic purge.)\n6. 'Deleting your account': `In the app, open Settings, scroll to the bottom, and tap Delete my account. Without the app, email ${SUPPORT_EMAIL} from your account's email address, or use the account-deletion page on our site, and we'll delete your account within 30 days.`\n7. 'Children': unchanged.\n8. 'Changes and contact': `If this policy changes in a meaningful way, we'll announce it in the app. Questions or requests about your data: ${SUPPORT_EMAIL}, or by mail to ${OPERATOR_NAME}, ${OPERATOR_ADDRESS}.`\nRegenerate privacy.html with the export script.",
+     "files": [
+      "C:/dev/s333xhub/src/lib/legal-content.ts",
+      "C:/dev/s333xgod/privacy.html (generated)"
+     ]
+    },
+    {
+     "change": "Shop Terms name the seller and tell one shipping story",
+     "exact": "SHOP_TERMS_SECTIONS becomes:\n0. 'Who you are buying from' (new, first): `S333XSHOP is run by RONSO LLC, a Florida limited liability company, on behalf of the Artist. Every order is a contract with RONSO LLC. \"We\" and \"us\" on this page means RONSO LLC. Pieces are made and numbered by the Artist and shipped by RONSO LLC.`  OWNER: once the Stripe statement descriptor is set (Dashboard > Settings > Business > Public details) to RONSO LLC or S333XSHOP, add one sentence here that matches it exactly. Do not add a shipping city unless pieces really leave from the Miami address.\n1. 'What you are buying': `S333XSHOP sells physical, hand-finished collectible pieces made by the Artist in numbered limited runs. Each piece is one of a fixed run (for example, #7 of 50) and runs are never reproduced. Every piece is made to order or in small batches. Minor variations are part of what makes each one unique, not defects.`\n2. 'Prices and payment': `Prices are shown in US dollars and include standard shipping within the United States. Payment is processed by Stripe. We never see or store your card details. Applicable sales tax is calculated and added at checkout.`\n3. 'Limits and the registry': `Drops are limited to one piece per fan. Your edition number and display name appear in the drop's public registry inside the app. That visibility is part of owning a numbered piece.`\n4. 'Shipping': `Pieces ship within 5 to 7 business days of your order. You'll get a notification with a tracking number the moment yours ships. We ship within the United States only. Make sure your shipping address is correct at checkout; packages returned because of an incorrect address can be reshipped at your cost.`  (The parenthetical about pieces still in production is deleted; the drop page cannot say which. If the owner's answer in group 1 is 'made after the run closes', the first sentence becomes 'Pieces ship after the run closes; the drop page shows the run's progress.' and the drop page must show it.)\n5. 'Damaged, lost, or wrong items': `If your piece arrives damaged, email ${SUPPORT_EMAIL} within 7 days of delivery with photos of the piece and the packaging. We'll replace it if the run allows, or refund you in full. If tracking shows your package lost in transit, we'll work with the carrier and make it right. If we ship you the wrong number, we'll fix it at no cost to you.`\n6. 'Returns and refunds': `Because every piece is a numbered limited collectible, all sales are final. There are no returns or exchanges for change of mind. This does not affect the damaged and lost protections above, and nothing here limits your rights under applicable consumer law. Approved refunds go back to your original payment method; the refunded number returns to the run.`\n7. 'Order issues and contact': `For order status, address changes before shipping, or damage claims, email ${SUPPORT_EMAIL} with your drop number and edition number. We answer within 2 business days.`\n8. 'Governing law': unchanged.\nRegenerate shop-terms.html; the drop page buy hint (group 1) and this Shipping clause must state the same lead time.",
+     "files": [
+      "C:/dev/s333xhub/src/lib/legal-content.ts",
+      "C:/dev/s333xgod/shop-terms.html (generated)",
+      "C:/dev/s333xhub/src/app/drop/[id].tsx"
+     ]
+    }
+   ]
+  }
+ ]
+}
