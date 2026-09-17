@@ -37,7 +37,10 @@ import {
   PickVideoButton,
   type PickedImageDraft,
 } from '@/components/media-pickers';
+import { ProjectPicker } from '@/components/project-picker';
 import { CHAT_COMPOSER } from '@/constants/chat-surfaces';
+import { DISPLAY_FONT } from '@/constants/type';
+import { fanCopy } from '@/lib/fan-error';
 import { errorFeedback, pressFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import {
   createPost,
@@ -49,6 +52,7 @@ import {
   type Project,
   type UploadHandle,
 } from '@/lib/posts';
+import { priceLabel } from '@/lib/shop';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { useAuth } from '@/providers/auth-provider';
 
@@ -58,10 +62,6 @@ const MAX_IMAGES = 4;
 // picks from these instead of typing a number. Extend the list as needed —
 // each one becomes a registered product in App Store Connect at step 7.
 const PRICE_OPTIONS = [499, 999, 1499, 1999];
-
-function formatPrice(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
-}
 
 /**
  * Twitter-banner-style framing: the WHOLE image is shown, a bright 16:9
@@ -436,10 +436,7 @@ export default function ComposeScreen() {
         return;
       }
       errorFeedback();
-      // Supabase errors carry a message but aren't Error instances.
-      const message =
-        (e as { message?: string })?.message ?? 'Something went wrong. Try again.';
-      setError(message);
+      setError(fanCopy(e, "Couldn't post. Try again."));
     }
   }
 
@@ -458,7 +455,7 @@ export default function ComposeScreen() {
           style={({ pressed }) => (pressed ? styles.textPressed : undefined)}>
           <Text style={styles.cancel}>Cancel</Text>
         </Pressable>
-        <Text style={styles.heading}>New post</Text>
+        <Text style={styles.heading}>NEW POST</Text>
         <Pressable
           onPress={handlePost}
           disabled={!canPost}
@@ -487,31 +484,19 @@ export default function ComposeScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         automaticallyAdjustKeyboardInsets>
-        <View style={styles.projectRow}>
-          {(['mazze', 's333xgod'] as const).map((p) => (
-            <Pressable
-              key={p}
-              style={({ pressed }) => [
-                styles.projectChip,
-                project === p && styles.projectChipActive,
-                pressed && styles.chipPressed,
-              ]}
-              onPress={() => {
-                tapFeedback();
-                setProject(p);
-              }}
-              disabled={posting}>
-              <Text style={[styles.projectChipText, project === p && styles.projectChipTextActive]}>
-                {p === 's333xgod' ? 'S333XGOD' : 'MAZZE'}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+        <ProjectPicker
+          value={project}
+          onChange={(p) => {
+            tapFeedback();
+            setProject(p);
+          }}
+          disabled={posting}
+        />
 
         <TextInput
           style={styles.input}
           placeholder={pollMode ? 'Ask the question…' : 'Say something…'}
-          placeholderTextColor="#555"
+          placeholderTextColor="#55585f"
           multiline
           value={body}
           onChangeText={setBody}
@@ -542,7 +527,7 @@ export default function ComposeScreen() {
             ) : null}
             <View style={styles.pollDurationRow}>
               {[
-                { label: '24h', hours: 24 },
+                { label: '1 day', hours: 24 },
                 { label: '3 days', hours: 72 },
                 { label: '7 days', hours: 168 },
                 { label: 'No end', hours: null },
@@ -605,7 +590,7 @@ export default function ComposeScreen() {
             <TextInput
               style={styles.titleInput}
               placeholder="Track title"
-              placeholderTextColor="#555"
+              placeholderTextColor="#55585f"
               value={trackTitle}
               onChangeText={setTrackTitle}
             />
@@ -778,7 +763,7 @@ export default function ComposeScreen() {
                   disabled={posting}>
                   <Text
                     style={[styles.priceText, priceCents === cents && styles.priceTextActive]}>
-                    {formatPrice(cents)}
+                    {priceLabel(cents)}
                   </Text>
                 </Pressable>
               ))}
@@ -894,8 +879,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  cancel: { color: '#888', fontSize: 16 },
-  heading: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  cancel: { color: '#8f99a3', fontSize: 15 },
+  heading: { color: '#fff', fontSize: 15, fontFamily: DISPLAY_FONT, letterSpacing: 2 },
   post: { color: '#fff', fontSize: 16, fontWeight: '700' },
   postDisabled: { opacity: 0.4 },
   textPressed: { opacity: 0.55 },
@@ -936,16 +921,6 @@ const styles = StyleSheet.create({
   confirmYes: { color: '#f87171', fontWeight: '700', fontSize: 13 },
   confirmNo: { color: '#8a8a92', fontSize: 13 },
   content: { padding: 16 },
-  projectRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
-  projectChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 16,
-    backgroundColor: '#131519',
-  },
-  projectChipActive: { backgroundColor: '#ffffff' },
-  projectChipText: { color: '#aaa', fontSize: 13, fontWeight: '700', letterSpacing: 1 },
-  projectChipTextActive: { color: '#000' },
   input: {
     color: '#fff',
     fontSize: 17,
@@ -1007,9 +982,9 @@ const styles = StyleSheet.create({
   editorSave: { color: '#c3cdd6', fontSize: 16, fontWeight: '700' },
   editorBody: { flexGrow: 1, justifyContent: 'center', padding: 16 },
   titleInput: {
-    backgroundColor: '#0d0d0f',
+    backgroundColor: '#131519',
     color: '#fff',
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 12,
     fontSize: 15,
     marginTop: 12,
@@ -1031,15 +1006,15 @@ const styles = StyleSheet.create({
   priceChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: '#0d0d0f',
+    borderRadius: 999,
+    backgroundColor: '#1a1d22',
   },
   priceChipActive: { backgroundColor: '#c3cdd6' },
   priceText: { color: '#aaa', fontSize: 14, fontWeight: '700' },
   priceTextActive: { color: '#000' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  empty: { color: '#555' },
-  error: { color: '#ff6b6b', marginTop: 12 },
+  empty: { color: '#55585f' },
+  error: { color: '#f87171', marginTop: 12 },
   pollToggle: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1057,7 +1032,7 @@ const styles = StyleSheet.create({
   pollInput: {
     backgroundColor: '#131519',
     color: '#fff',
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 13,
     fontSize: 14,
     marginBottom: 8,

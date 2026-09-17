@@ -11,6 +11,7 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar } from '@/components/avatar';
 import { Skeleton } from '@/components/skeleton';
+import { eyebrow } from '@/constants/type';
 import { tapFeedback } from '@/lib/haptics';
 import { supabase } from '@/lib/supabase';
 
@@ -123,7 +124,7 @@ export function ProfileCardProvider({ children }: PropsWithChildren) {
                 {profile.role === 'artist' ? (
                   <Text style={styles.tagArtist}>THE ARTIST</Text>
                 ) : profile.topFanPosition ? (
-                  <Text style={styles.tagTop}>★ TOP {profile.topFanPosition} FAN</Text>
+                  <Text style={styles.tagTop}>TOP {profile.topFanPosition} FAN</Text>
                 ) : (
                   <Text style={styles.tagFan}>FAN</Text>
                 )}
@@ -185,15 +186,10 @@ const styles = StyleSheet.create({
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 14 },
   name: { color: '#fff', fontSize: 19, fontWeight: '700' },
   cross: { color: '#dce3ea', fontSize: 17, fontWeight: '700' },
-  tagArtist: {
-    color: '#c3cdd6',
-    fontSize: 10.5,
-    fontWeight: '700',
-    letterSpacing: 2,
-    marginTop: 6,
-  },
-  tagTop: { color: '#e8d27b', fontSize: 10.5, fontWeight: '700', letterSpacing: 2, marginTop: 6 },
-  tagFan: { color: '#6d7076', fontSize: 10.5, fontWeight: '700', letterSpacing: 2, marginTop: 6 },
+  // The one artist tag (chat, channel, settings share the token and the string).
+  tagArtist: { ...eyebrow, marginTop: 6 },
+  tagTop: { ...eyebrow, color: '#e8d27b', marginTop: 6 },
+  tagFan: { ...eyebrow, color: '#6d7076', marginTop: 6 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14 },
   meta: { color: '#6d7076', fontSize: 12.5 },
   stateTitle: { color: '#e8e9eb', fontSize: 15, fontWeight: '600', textAlign: 'center', paddingTop: 8 },

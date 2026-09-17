@@ -64,7 +64,7 @@ export function PickPhotosButton({ disabled, label, maxCount, onPicked, onError,
         <Ionicons name="image-outline" size={20} color="#6c7078" />
       ) : (
         <>
-          <span aria-hidden>📷</span>
+          <Ionicons name="image-outline" size={20} color="#fff" />
           <span>{label}</span>
         </>
       )}
@@ -79,7 +79,7 @@ export function PickPhotosButton({ disabled, label, maxCount, onPicked, onError,
           e.currentTarget.value = '';
           if (files.length === 0) return;
           if (files.some((f) => f.size > MAX_FILE_BYTES)) {
-            onError('One of those photos is over the 50 MB limit - pick a smaller one.');
+            onError('One of those photos is over the 50 MB limit. Pick a smaller one.');
             return;
           }
           try {
@@ -106,7 +106,8 @@ export function PickPhotosButton({ disabled, label, maxCount, onPicked, onError,
             );
             onPicked(images);
           } catch (err) {
-            onError(`Couldn't read those photos: ${(err as { message?: string })?.message ?? String(err)}`);
+            console.warn('[media-pickers] photos', err);
+            onError('Could not open your photos. Try again.');
           }
         }}
       />
@@ -147,7 +148,7 @@ type VideoProps = {
 export function PickVideoButton({ disabled, label, onPicked, onError }: VideoProps) {
   return (
     <label style={boxStyle(disabled)}>
-      <span aria-hidden>🎬</span>
+      <Ionicons name="videocam-outline" size={20} color="#fff" />
       <span>{label}</span>
       <input
         type="file"
@@ -160,7 +161,7 @@ export function PickVideoButton({ disabled, label, onPicked, onError }: VideoPro
           if (!file) return;
           if (file.size > MAX_FILE_BYTES) {
             onError(
-              `That video is ${(file.size / (1024 * 1024)).toFixed(0)} MB — the limit is 50 MB. Export it smaller.`
+              `That video is ${(file.size / (1024 * 1024)).toFixed(0)} MB. The limit is 50 MB. Export it smaller.`
             );
             return;
           }
@@ -168,7 +169,7 @@ export function PickVideoButton({ disabled, label, onPicked, onError }: VideoPro
             const info = await probeVideo(file);
             if (info.duration > VIDEO_MAX_SECONDS) {
               onError(
-                `That video is ${Math.round(info.duration)} seconds — the cap is ${VIDEO_MAX_SECONDS}. Trim it and try again.`
+                `That video is ${Math.round(info.duration)} seconds. The cap is ${VIDEO_MAX_SECONDS}. Trim it and try again.`
               );
               return;
             }
@@ -181,7 +182,8 @@ export function PickVideoButton({ disabled, label, onPicked, onError }: VideoPro
               height: info.height || null,
             });
           } catch (err) {
-            onError(`Couldn't read that video: ${(err as { message?: string })?.message ?? String(err)}`);
+            console.warn('[media-pickers] videos', err);
+            onError('Could not open your videos. Try again.');
           }
         }}
       />
@@ -199,7 +201,7 @@ type AudioProps = {
 export function PickAudioButton({ disabled, label, onPicked, onError }: AudioProps) {
   return (
     <label style={boxStyle(disabled)}>
-      <span aria-hidden>🎵</span>
+      <Ionicons name="musical-notes-outline" size={20} color="#fff" />
       <span>{label}</span>
       <input
         type="file"
@@ -219,7 +221,7 @@ export function PickAudioButton({ disabled, label, onPicked, onError }: AudioPro
           if (file.size > MAX_FILE_BYTES) {
             const mb = Math.round(file.size / (1024 * 1024));
             onError(
-              `That file is ${mb} MB — the cap is 50 MB. WAV files are huge; export it as MP3 or M4A and it'll fit easily.`
+              `That file is ${mb} MB. The cap is 50 MB. WAV files are huge; export it as MP3 or M4A and it will fit easily.`
             );
             return;
           }

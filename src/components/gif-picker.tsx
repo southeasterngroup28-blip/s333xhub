@@ -14,8 +14,9 @@ import {
 import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { tapFeedback } from '@/lib/haptics';
+import { fanCopy } from '@/lib/fan-error';
 import { searchGifs, trendingGifs, type GifResult } from '@/lib/gifs';
+import { tapFeedback } from '@/lib/haptics';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { DISPLAY_FONT } from '@/constants/type';
 
@@ -74,7 +75,7 @@ export function GifPicker({ visible, onClose, onPick }: Props) {
         })
         .catch((e) => {
           if (seq !== searchSeq.current) return;
-          setError((e as { message?: string })?.message ?? 'GIF search failed.');
+          setError(fanCopy(e, 'Could not load GIFs.'));
         })
         .finally(() => {
           if (seq === searchSeq.current) setLoading(false);

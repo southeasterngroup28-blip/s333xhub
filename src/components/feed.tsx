@@ -1,4 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { Image } from 'expo-image';
 import { useFocusEffect, useNavigation, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
@@ -7,12 +8,21 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { AppBackground } from '@/components/app-background';
 import { EdgeGlass, FadeMask } from '@/components/edge-fade';
+import { ErrorCard } from '@/components/empty-state';
 import { PostCard } from '@/components/post-card';
-import { EmptyState } from '@/components/empty-state';
+import {
+  ROOT_FADE_TOP,
+  ROOT_LIST_TOP,
+  ROOT_NOTICE_TOP,
+  RootHeader,
+} from '@/components/root-header';
 import { PostSkeleton } from '@/components/skeleton';
+import { Top3Card } from '@/components/top3-card';
+import { TopNotice } from '@/components/top-notice';
 import { ScalePressable } from '@/components/ui/scale-pressable';
-import { Top8Card } from '@/components/top8-card';
 import { CHAT_SURFACE } from '@/constants/chat-surfaces';
+import { sectionHead } from '@/constants/type';
+import { fanCopy } from '@/lib/fan-error';
 import { tapFeedback } from '@/lib/haptics';
 import {
   consumeFeedStale,
@@ -34,8 +44,10 @@ import {
 import { useAuth } from '@/providers/auth-provider';
 import { usePlayerControls } from '@/providers/player-provider';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
-import { DISPLAY_FONT } from '@/constants/type';
 
+// The watermark behind an empty feed: the S333XGOD star, the mark the app
+// is named after. Same insets as the audio card's no-cover ground.
+const EMBLEM = require('../../assets/images/emblem-s333xgod.png');
 
 export function Feed() {
   const { profile, profileError } = useAuth();
@@ -132,7 +144,7 @@ export function Feed() {
       // Surface feed failures instead of silently showing an empty feed —
       // and let the next tab focus retry past the 120s throttle.
       lastLoadAt.current = 0;
-      setFeedError((e as { message?: string })?.message ?? 'Could not load the feed.');
+      setFeedError(fanCopy(e, 'Could not load the feed.'));
     } finally {
       // Rows first mount when `loading` flips false — on a slow signing or
       // social await that moment can be well past the pre-setPosts window,
@@ -319,7 +331,7 @@ export function Feed() {
           <PostSkeleton />
         </View>
       ) : (
-        <FadeMask>
+        <FadeMask top={ROOT_FADE_TOP}>
           <Animated.FlatList
             ref={listRef as never}
             data={posts}
@@ -341,7 +353,7 @@ export function Feed() {
             onEndReachedThreshold={0.5}
             ListHeaderComponent={
               <>
-                <Top8Card fans={topFans} viewerIsArtist={isArtist} />
+                <Top3Card fans={topFans} viewerIsArtist={isArtist} />
               </>
             }
             ListFooterComponent={
@@ -365,7 +377,7 @@ export function Feed() {
                       loadMore();
                     }}>
                     <Text style={styles.footerRetryText}>
-                      {"Couldn't load older posts. Tap to retry."}
+                      {"Couldn't load older posts. Try again."}
                     </Text>
                   </Pressable>
                 </Animated.View>
@@ -373,33 +385,26 @@ export function Feed() {
             }
             ListEmptyComponent={
               feedError ? (
-                <Animated.View entering={reduceMotion ? undefined : FadeIn.duration(180)}>
-                  <EmptyState
-                    icon="cloud-offline-outline"
-                    title="Could not load the feed"
-                    sub="Check your connection and try again."
-                  />
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.retryChip,
-                      pressed && styles.retryChipPressed,
-                    ]}
-                    hitSlop={8}
-                    onPress={() => {
+                <View style={styles.emptyPad}>
+                  <ErrorCard
+                    title="COULDN'T LOAD THE FEED"
+                    onRetry={() => {
                       tapFeedback();
                       setFeedError(null);
                       setLoading(true);
                       loadFresh();
-                    }}>
-                    <Text style={styles.retryChipText}>Try again</Text>
-                  </Pressable>
-                </Animated.View>
+                    }}
+                  />
+                </View>
               ) : (
-                <EmptyState
-                  icon="flash-outline"
-                  title="Nothing dropped yet"
-                  sub="When the artist posts, it lands here first."
-                />
+                // A fetch that came back with nothing: the emblem as a
+                // watermark, one Anton line beneath.
+                <View style={styles.emptyPad}>
+                  <View style={styles.emptyStage}>
+                    <Image source={EMBLEM} style={styles.emptyEmblem} contentFit="contain" />
+                  </View>
+                  <Text style={styles.emptyTitle}>NOTHING DROPPED</Text>
+                </View>
               )
             }
           />
@@ -408,30 +413,37 @@ export function Feed() {
 
       <EdgeGlass />
 
-      {/* The header floats OVER the list; posts slide beneath it and
-          dissolve exactly in its zone — never in open space. */}
-      <View style={[styles.topBar, { top: insets.top }]} pointerEvents="box-none">
-        <Text style={styles.title}>S333XHUB</Text>
-        <View style={styles.topActions}>
-          {isArtist ? (
+      {/* The letterhead floats OVER the list; posts slide beneath it and
+          dissolve exactly in its zone, never in open space. */}
+      <RootHeader
+        title="S333XHUB"
+        actions={
+          <>
+            {isArtist ? (
+              <Pressable
+                onPress={() => router.push('/reports')}
+                hitSlop={12}
+                style={({ pressed }) => [styles.action, pressed && styles.iconPressed]}>
+                <Ionicons name="flag-outline" size={21} color="#8f99a3" />
+              </Pressable>
+            ) : null}
             <Pressable
-              onPress={() => router.push('/reports')}
+              onPress={() => router.push('/settings')}
               hitSlop={12}
-              style={({ pressed }) => (pressed ? styles.iconPressed : undefined)}>
-              <Ionicons name="flag-outline" size={21} color="#8f99a3" />
+              style={({ pressed }) => [styles.action, pressed && styles.iconPressed]}>
+              <Ionicons name="settings-outline" size={21} color="#8f99a3" />
             </Pressable>
-          ) : null}
-          <Pressable
-            onPress={() => router.push('/settings')}
-            hitSlop={12}
-            style={({ pressed }) => (pressed ? styles.iconPressed : undefined)}>
-            <Ionicons name="settings-outline" size={21} color="#8f99a3" />
-          </Pressable>
-        </View>
-      </View>
+          </>
+        }
+      />
 
       {feedError && posts.length > 0 ? (
-        <Text style={[styles.feedError, { top: insets.top + 48 }]}>{feedError}</Text>
+        <TopNotice
+          tone="error"
+          text={feedError}
+          onDismiss={() => setFeedError(null)}
+          absoluteTop={insets.top + ROOT_NOTICE_TOP}
+        />
       ) : null}
 
       {profile?.role === 'artist' ? (
@@ -449,45 +461,24 @@ export function Feed() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
-  loadingPad: { paddingTop: 52 },
-  topBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    zIndex: 20,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  title: {
-    color: '#f4f5f6',
-    fontSize: 22,
-    fontFamily: DISPLAY_FONT,
-    letterSpacing: 2,
-  },
-  topActions: {
-    position: 'absolute',
-    right: 16,
-    flexDirection: 'row',
-    gap: 18,
-    alignItems: 'center',
-  },
+  loadingPad: { paddingTop: ROOT_LIST_TOP },
+  // The two letterhead actions, spaced a touch wider than the slot's gap.
+  action: { paddingLeft: 8 },
   iconPressed: { opacity: 0.55 },
-  feedError: {
+  list: { paddingTop: ROOT_LIST_TOP, paddingBottom: 170, flexGrow: 1 },
+  emptyPad: { paddingHorizontal: 14 },
+  // The emblem as a watermark: the audio card's no-cover insets, on a
+  // 16:9 stage, with the one line under it.
+  emptyStage: { aspectRatio: 16 / 9 },
+  emptyEmblem: {
     position: 'absolute',
-    left: 0,
-    right: 0,
-    zIndex: 20,
-    textAlign: 'center',
-    color: '#f87171',
-    paddingHorizontal: 16,
-    fontSize: 13,
+    top: '12.5%',
+    bottom: '12.5%',
+    left: '22.5%',
+    right: '22.5%',
+    opacity: 0.16,
   },
-  list: { paddingTop: 52, paddingBottom: 170, flexGrow: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
-  empty: { color: '#555' },
+  emptyTitle: { ...sectionHead, lineHeight: 19, paddingHorizontal: 2 },
   footerWrap: { alignItems: 'center', paddingVertical: 8 },
   footerRetry: {
     minHeight: 44,
@@ -498,16 +489,6 @@ const styles = StyleSheet.create({
   },
   footerRetryPressed: { opacity: 0.6 },
   footerRetryText: { color: '#c3cdd6', fontSize: 13, fontWeight: '600' },
-  retryChip: {
-    alignSelf: 'center',
-    backgroundColor: '#1e2126',
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginTop: 16,
-  },
-  retryChipPressed: { opacity: 0.7 },
-  retryChipText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   fab: {
     position: 'absolute',
     right: 20,

@@ -4,7 +4,7 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/components/brand-mark';
-import { DISPLAY_FONT } from '@/constants/type';
+import { DISPLAY_FONT, pillText } from '@/constants/type';
 import { errorFeedback, pressFeedback } from '@/lib/haptics';
 import { SUPPORT_EMAIL } from '@/lib/legal-content';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
@@ -58,7 +58,7 @@ export function AccountSuspended() {
           {signingOut ? (
             <ActivityIndicator color="#0b0c0e" />
           ) : (
-            <Text style={styles.buttonText}>Sign out</Text>
+            <Text style={styles.buttonText}>SIGN OUT</Text>
           )}
         </Pressable>
       </Animated.View>
@@ -86,5 +86,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   buttonPressed: { opacity: 0.85 },
-  buttonText: { color: '#0b0c0e', fontSize: 15, fontWeight: '700' },
+  buttonText: pillText,
 });

@@ -23,15 +23,25 @@ import { useFocusEffect, useNavigation } from 'expo-router';
 
 import { AppBackground } from '@/components/app-background';
 import { EdgeGlass, FadeMask } from '@/components/edge-fade';
-import { EmptyState } from '@/components/empty-state';
-import { ChatRowSkeleton } from '@/components/skeleton';
+import { ErrorCard } from '@/components/empty-state';
 import {
   PickAudioButton,
   PickPhotosButton,
   PickVideoButton,
 } from '@/components/media-pickers';
-import { CHAT_SURFACE } from '@/constants/chat-surfaces';
 import {
+  ROOT_FADE_TOP,
+  ROOT_LIST_TOP,
+  ROOT_NOTICE_TOP,
+  RootHeader,
+} from '@/components/root-header';
+import { ChatRowSkeleton } from '@/components/skeleton';
+import { TopNotice } from '@/components/top-notice';
+import { pillText, sectionHead } from '@/constants/type';
+import { clockTime, shortDate, WEEKDAYS } from '@/lib/dates';
+import { fanCopy } from '@/lib/fan-error';
+import {
+  FAN_MAIL_KIND_LABEL,
   fetchMyFanMail,
   nextFanMailAt,
   submitFanMail,
@@ -42,7 +52,6 @@ import { errorFeedback, pressFeedback, successFeedback, tapFeedback } from '@/li
 import { timeAgo, UploadCancelledError, type UploadHandle } from '@/lib/posts';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { useAuth } from '@/providers/auth-provider';
-import { DISPLAY_FONT } from '@/constants/type';
 
 type Draft = {
   kind: FanMailKind;
@@ -141,7 +150,7 @@ export default function FanMailScreen() {
       // refetch from the error state hangs, which is the lie this guards.
       setLoadError(null);
     } catch (e) {
-      const message = (e as { message?: string })?.message ?? 'Could not load fan mail.';
+      const message = fanCopy(e, 'Could not load fan mail.');
       if (hasLoaded.current) {
         // The cooldown is already known from a good load: the form stays
         // honest, so this is just a passing red line.
@@ -207,7 +216,7 @@ export default function FanMailScreen() {
       setItems((prev) => [item, ...prev.filter((i) => i.id !== item.id)]);
       setDraft(null);
       setNote('');
-      flashNotice('Sent to the artist. 🖤');
+      flashNotice('Sent to the artist.');
       // Reconcile quietly: what is on screen is already right, so a blip
       // here is not worth a red line over the success notice.
       fetchMyFanMail()
@@ -220,7 +229,7 @@ export default function FanMailScreen() {
         setDraft(null);
       } else {
         errorFeedback();
-        flashError((e as { message?: string })?.message ?? 'Could not send that.');
+        flashError(fanCopy(e, 'Could not send that.'));
       }
     } finally {
       resetSending();
@@ -256,10 +265,10 @@ export default function FanMailScreen() {
   const rowExit = reduceMotion ? undefined : FadeOut.duration(150);
 
   const sendLabel = cancelling
-    ? 'Cancelling...'
+    ? 'CANCELLING…'
     : sentFraction >= 1
-      ? 'Delivering...'
-      : `Sending ${Math.round(sentFraction * 100)}%`;
+      ? 'DELIVERING…'
+      : `SENDING ${Math.round(sentFraction * 100)}%`;
   // Once the bytes are up there is nothing left to call off: the record is
   // being written and the X would only lie.
   const canCancel = !sending || (sentFraction < 1 && !cancelling);
@@ -269,31 +278,31 @@ export default function FanMailScreen() {
       <AppBackground />
 
       {isArtist ? (
-        <View style={[styles.list, styles.loadingPad]}>
+        <View style={styles.list}>
           <View style={styles.card}>
             <View style={styles.row}>
               <View style={styles.kindIcon}>
                 <Ionicons name="mail" size={17} color="#c3cdd6" />
               </View>
               <View style={styles.meta}>
-                <Text style={styles.sender}>Fan mail goes straight to your email</Text>
+                <Text style={styles.sender}>Fan mail goes to your email</Text>
                 <Text style={styles.sub}>
-                  Submissions never display in the app. Each one lands in your private
-                  inbox with the fan&apos;s name, their note, and a download link.
+                  Nothing shows up in the app. Each one lands in your inbox with the
+                  fan&apos;s name, their note and a download link.
                 </Text>
               </View>
             </View>
           </View>
         </View>
       ) : loading ? (
-        <View style={[styles.list, styles.loadingPad]}>
+        <View style={styles.list}>
           <ChatRowSkeleton />
         </View>
       ) : (
-        <FadeMask>
+        <FadeMask top={ROOT_FADE_TOP}>
         <ScrollView
           ref={scrollRef}
-          contentContainerStyle={[styles.list, styles.loadingPad]}
+          contentContainerStyle={styles.list}
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets
           refreshControl={
@@ -309,27 +318,13 @@ export default function FanMailScreen() {
           {loadError ? (
             // Honest: with no list there is no way to know this week's
             // cooldown, so the send form stays hidden until a load lands.
-            <Animated.View entering={reduceMotion ? undefined : FadeIn.duration(180)}>
-              <EmptyState
-                icon="mail-open-outline"
-                title="Can't load fan mail"
-                sub="Check your connection and try again."
-              />
-              <Pressable
-                style={({ pressed }) => [styles.openPill, styles.retryPill, pressed && styles.pillPressed]}
-                hitSlop={8}
-                onPress={retryLoad}
-                accessibilityRole="button">
-                <Text style={styles.openPillText}>Try again</Text>
-              </Pressable>
-            </Animated.View>
+            <ErrorCard title="COULDN'T LOAD FAN MAIL" onRetry={retryLoad} />
           ) : (
             <Animated.View style={styles.card} layout={layout}>
               <Text style={styles.pitch}>
-                Send the artist your pictures, videos, beats, or music. It goes straight to
-                him, privately.
+                Send him a photo, a video or a beat. It goes to him, nobody else.
               </Text>
-              <Text style={styles.price}>Free · one per week · straight to his inbox</Text>
+              <Text style={styles.price}>Free. One a week.</Text>
 
               {nextAt ? (
                 <Animated.View
@@ -339,8 +334,8 @@ export default function FanMailScreen() {
                   exiting={rowExit}>
                   <Ionicons name="hourglass-outline" size={16} color="#8f99a3" />
                   <Text style={styles.cooldownText}>
-                    This week&apos;s submission is sent. Your next one unlocks{' '}
-                    {nextAt.toLocaleString(undefined, { weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.
+                    Sent this week. You can send again {WEEKDAYS[nextAt.getDay()]},{' '}
+                    {shortDate(nextAt)} at {clockTime(nextAt.toISOString())}.
                   </Text>
                 </Animated.View>
               ) : draft ? (
@@ -373,7 +368,7 @@ export default function FanMailScreen() {
                   entering={rowEnter}
                   exiting={rowExit}>
                   <PickPhotosButton
-                    label="Picture"
+                    label={FAN_MAIL_KIND_LABEL.picture}
                     maxCount={1}
                     disabled={sending}
                     // Streams from the file path: no base64 copy is ever read.
@@ -392,7 +387,7 @@ export default function FanMailScreen() {
                     onError={flashError}
                   />
                   <PickVideoButton
-                    label="Video"
+                    label={FAN_MAIL_KIND_LABEL.video}
                     disabled={sending}
                     onPicked={(video) =>
                       setDraft({
@@ -406,7 +401,7 @@ export default function FanMailScreen() {
                     onError={flashError}
                   />
                   <PickAudioButton
-                    label="Beat / music"
+                    label={FAN_MAIL_KIND_LABEL.audio}
                     disabled={sending}
                     onPicked={(audio) =>
                       setDraft({
@@ -426,7 +421,7 @@ export default function FanMailScreen() {
                 <Animated.View key="form" entering={rowEnter} exiting={rowExit}>
                   <TextInput
                     style={styles.noteInput}
-                    placeholder="Say something about it… (optional)"
+                    placeholder="Say something about it…"
                     placeholderTextColor="#55585f"
                     value={note}
                     onChangeText={setNote}
@@ -450,7 +445,7 @@ export default function FanMailScreen() {
                         </View>
                       </>
                     ) : (
-                      <Text style={styles.sendText}>Send to the artist</Text>
+                      <Text style={styles.sendText}>SEND TO THE ARTIST</Text>
                     )}
                   </Pressable>
                 </Animated.View>
@@ -460,7 +455,7 @@ export default function FanMailScreen() {
 
           {!loadError && items.length > 0 ? (
             <Animated.View layout={layout}>
-              <Text style={styles.sectionLabel}>YOUR SUBMISSIONS</Text>
+              <Text style={styles.sectionHead}>SENT</Text>
               {items.map((item) => (
                 <Animated.View
                   key={item.id}
@@ -471,8 +466,8 @@ export default function FanMailScreen() {
                       <Ionicons name={KIND_ICON[item.kind]} size={17} color="#c3cdd6" />
                     </View>
                     <View style={styles.meta}>
-                      <Text style={styles.sender}>{item.kind}</Text>
-                      <Text style={styles.sub}>{timeAgo(item.created_at)} · sent ✓</Text>
+                      <Text style={styles.sender}>{FAN_MAIL_KIND_LABEL[item.kind]}</Text>
+                      <Text style={styles.sub}>{timeAgo(item.created_at)}</Text>
                     </View>
                   </View>
                 </Animated.View>
@@ -484,27 +479,27 @@ export default function FanMailScreen() {
       )}
 
       <EdgeGlass />
-      <View style={[styles.topBar, { top: insets.top }]} pointerEvents="box-none">
-        <Text style={styles.title}>FAN MAIL</Text>
-      </View>
-      {notice ? (
-        <Animated.View
-          style={[styles.noticeWrap, { top: insets.top + 48 }]}
-          pointerEvents="none"
-          entering={reduceMotion ? undefined : FadeInDown.duration(280)}
-          exiting={reduceMotion ? undefined : FadeOut.duration(200)}>
-          <View style={styles.noticePill}>
-            <Text style={styles.notice}>{notice}</Text>
-          </View>
-        </Animated.View>
-      ) : null}
+      <RootHeader title="FAN MAIL" />
+      {/* The one notice pill, floated under the letterhead. The wrapper keeps
+          the fade the pill had before it was shared. */}
       {error ? (
-        <Animated.Text
-          style={[styles.error, { top: insets.top + 48 }]}
+        <Animated.View
+          key="error"
+          style={[styles.noticeWrap, { top: insets.top + ROOT_NOTICE_TOP }]}
+          pointerEvents="box-none"
           entering={reduceMotion ? undefined : FadeIn.duration(150)}
           exiting={reduceMotion ? undefined : FadeOut.duration(150)}>
-          {error}
-        </Animated.Text>
+          <TopNotice tone="error" text={error} onDismiss={() => setError(null)} />
+        </Animated.View>
+      ) : notice ? (
+        <Animated.View
+          key="notice"
+          style={[styles.noticeWrap, { top: insets.top + ROOT_NOTICE_TOP }]}
+          pointerEvents="box-none"
+          entering={reduceMotion ? undefined : FadeInDown.duration(280)}
+          exiting={reduceMotion ? undefined : FadeOut.duration(200)}>
+          <TopNotice tone="ok" text={notice} onDismiss={() => setNotice(null)} />
+        </Animated.View>
       ) : null}
     </SafeAreaView>
   );
@@ -512,61 +507,15 @@ export default function FanMailScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
-  topBar: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    zIndex: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  title: { color: '#f4f5f6', fontSize: 22, fontFamily: DISPLAY_FONT, letterSpacing: 2 },
-  noticeWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    zIndex: 20,
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  noticePill: {
-    backgroundColor: CHAT_SURFACE,
-    borderWidth: 1,
-    borderColor: 'rgba(79,192,122,0.35)',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-  },
-  notice: {
-    textAlign: 'center',
-    color: '#4fc07a',
-    fontSize: 13,
-  },
-  error: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    zIndex: 20,
-    textAlign: 'center',
-    color: '#f87171',
-    paddingHorizontal: 16,
-    fontSize: 13,
-  },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
-  muted: { color: '#55585f' },
-  list: { padding: 14, paddingBottom: 150 },
-  loadingPad: { paddingTop: 52 },
+  noticeWrap: { position: 'absolute', left: 0, right: 0, zIndex: 26 },
+  list: { padding: 14, paddingTop: ROOT_LIST_TOP, paddingBottom: 150 },
+  // Solid on purpose: the #0f1114 inputs inside still read as sunken. No
+  // shadow; the floating card belongs to the feed alone.
   card: {
     backgroundColor: '#131519',
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.45,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
   },
   pitch: { color: '#cbcdd1', fontSize: 14, lineHeight: 21 },
   price: { color: '#c3cdd6', fontSize: 12.5, fontWeight: '600', marginTop: 8 },
@@ -613,7 +562,7 @@ const styles = StyleSheet.create({
   },
   sendDisabled: { opacity: 0.4 },
   sendPressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
-  sendText: { color: '#0b0c0e', fontWeight: '700', fontSize: 15 },
+  sendText: pillText,
   sendTextTabular: { fontVariant: ['tabular-nums'] },
   // The live percent bar along the bottom edge of the white button.
   sendTrack: {
@@ -625,14 +574,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(11,12,14,0.12)',
   },
   sendFill: { height: 3, backgroundColor: '#0b0c0e' },
-  sectionLabel: {
-    color: '#6d7076',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    marginBottom: 8,
-    marginTop: 8,
-  },
+  sectionHead: { ...sectionHead, marginBottom: 8, marginTop: 8 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   kindIcon: {
     width: 38,
@@ -645,14 +587,4 @@ const styles = StyleSheet.create({
   meta: { flex: 1 },
   sender: { color: '#fff', fontWeight: '600', fontSize: 14 },
   sub: { color: '#6d7076', fontSize: 12, marginTop: 1 },
-  openPill: {
-    backgroundColor: '#1e2126',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  openPillText: { color: '#c3cdd6', fontWeight: '700', fontSize: 13 },
-  retryPill: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 18 },
-  pillPressed: { opacity: 0.7 },
-  noteText: { color: '#9a9ba3', fontSize: 13, marginTop: 10, fontStyle: 'italic' },
 });

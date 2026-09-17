@@ -1,3 +1,4 @@
+import { FanError } from '@/lib/fan-error';
 import { uploadWithProgress, type UploadHandle } from '@/lib/posts';
 import { supabase, requireUserId } from '@/lib/supabase';
 
@@ -15,6 +16,16 @@ export const FAN_MAIL_IS_FREE = true;
 export const FAN_MAIL_COOLDOWN_DAYS = 7;
 
 /**
+ * The deployed slug of supabase/functions/fanmail-email. The live deployment
+ * still sits under the dashboard's default name; 'fanmail-email' answers 404
+ * until `supabase functions deploy fanmail-email` runs with the Resend
+ * domain verified (de-ai-audit group 3, "Fan-mail email leaves the
+ * sandbox"). Flip this to 'fanmail-email' in that same step, or every send
+ * writes its row and seeds the cooldown while no email reaches the artist.
+ */
+export const FAN_MAIL_EMAIL_FUNCTION = 'swift-function';
+
+/**
  * When this fan may send again, based on their own history —
  * null means they're clear to send right now.
  */
@@ -28,6 +39,13 @@ export function nextFanMailAt(items: { created_at: string }[]): Date | null {
 }
 
 export type FanMailKind = 'picture' | 'video' | 'audio';
+
+/** The word a fan reads for each kind: the pick buttons and the SENT list. */
+export const FAN_MAIL_KIND_LABEL: Record<FanMailKind, string> = {
+  picture: 'Photo',
+  video: 'Video',
+  audio: 'Beat',
+};
 
 export type FanMailItem = {
   id: string;
@@ -90,17 +108,16 @@ export async function submitFanMail(
     // Rejected insert (e.g. the once-a-week rule) must not strand the upload.
     supabase.storage.from('fan-mail').remove([path]).then(undefined, () => {});
     if ((error.message ?? '').includes('row-level security')) {
-      throw new Error("You've already sent this week's submission - one per week.");
+      throw new FanError('You already sent one this week.');
     }
     throw error;
   }
 
   // Deliver to the artist's private inbox. Nothing displays in-app; if the
-  // email function isn't deployed yet this fails silently and the row +
-  // file still exist for a manual re-send.
-  // Deployed under the dashboard's default slug "swift-function".
+  // email function isn't reachable this fails silently and the row + file
+  // still exist for a manual re-send.
   await supabase.functions
-    .invoke('swift-function', { body: { fan_mail_id: row.id } })
+    .invoke(FAN_MAIL_EMAIL_FUNCTION, { body: { fan_mail_id: row.id } })
     .catch(() => {});
 
   return { ...(row as Omit<FanMailItem, 'sender'>), sender: null };

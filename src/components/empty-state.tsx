@@ -1,4 +1,4 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { OFFLINE_SUB, RETRY } from '@/constants/copy';
@@ -40,29 +40,6 @@ export function ErrorCard({ title, sub = OFFLINE_SUB, onRetry }: ErrorCardProps)
   );
 }
 
-type LegacyProps = {
-  /** Ignored. Kept only so feed.tsx and fanmail.tsx compile until their merge lands. */
-  icon?: string;
-  title: string;
-  sub?: string;
-  action?: { label: string; onPress: () => void };
-};
-
-/**
- * TODO(merge): delete once feed.tsx and fanmail.tsx move to ErrorCard and
- * their own empty lines. With an action it renders the error card; without
- * one, a plain left-aligned Anton line.
- */
-export function EmptyState({ title, sub, action }: LegacyProps) {
-  if (action) return <ErrorCard title={title.toUpperCase()} sub={sub} onRetry={action.onPress} />;
-  return (
-    <View style={styles.line}>
-      <Text style={styles.title}>{title.toUpperCase()}</Text>
-      {sub ? <Text style={styles.sub}>{sub}</Text> : null}
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   // Solid fill on purpose: a read surface over fan photo backgrounds.
   card: {
@@ -71,7 +48,6 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingHorizontal: 16,
   },
-  line: { paddingVertical: 16, paddingHorizontal: 2 },
   title: { ...sectionHead, lineHeight: 19 },
   sub: { color: '#6d7076', fontSize: 12.5, marginTop: 4 },
   pill: {

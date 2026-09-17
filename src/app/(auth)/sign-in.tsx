@@ -20,7 +20,7 @@ import { authErrorCopy, isEmailNotConfirmed } from '@/lib/auth-errors';
 import { errorFeedback, pressFeedback } from '@/lib/haptics';
 import { supabase } from '@/lib/supabase';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
-import { DISPLAY_FONT } from '@/constants/type';
+import { DISPLAY_FONT, pillText } from '@/constants/type';
 
 export default function SignInScreen() {
   const reduceMotion = useReduceMotion();
@@ -151,7 +151,7 @@ export default function SignInScreen() {
             {submitting ? (
               <ActivityIndicator color="#0b0c0e" />
             ) : (
-              <Text style={styles.buttonText}>Sign in</Text>
+              <Text style={styles.buttonText}>SIGN IN</Text>
             )}
           </Pressable>
         </Animated.View>
@@ -223,7 +223,7 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.4 },
   buttonPressed: { transform: [{ scale: 0.97 }], opacity: 0.9 },
-  buttonText: { color: '#0b0c0e', fontSize: 15, fontWeight: '700' },
+  buttonText: pillText,
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
   footerText: { color: '#888' },
   footerLink: { color: '#c3cdd6', fontWeight: '600' },

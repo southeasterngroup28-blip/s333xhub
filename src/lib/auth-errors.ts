@@ -19,7 +19,7 @@ export const AUTH_ERROR_COPY = {
   emailNotConfirmed: 'Confirm your email first. Check your inbox.',
   invalidEmail: "That email address doesn't look right. Check it and try again.",
   network: 'Could not reach the server. Check your connection and try again.',
-  fallback: 'Something went wrong. Try again in a moment.',
+  fallback: "That didn't go through. Try again in a moment.",
 } as const;
 
 /** True when a sign-in was refused because the address is not confirmed yet. */

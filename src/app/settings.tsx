@@ -3,6 +3,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,7 +17,10 @@ import { Avatar } from '@/components/avatar';
 import { AvatarFramer } from '@/components/avatar-framer';
 import { PickPhotosButton, type PickedImageDraft } from '@/components/media-pickers';
 import { invalidateBackgroundCache } from '@/components/app-background';
+import { PushedHeader } from '@/components/pushed-header';
+import { capLabel, chip, confirmDanger, confirmQuestion, confirmWord, eyebrow } from '@/constants/type';
 import { removeMyAvatar, setMyAvatar } from '@/lib/avatars';
+import { fanCopy } from '@/lib/fan-error';
 import { errorFeedback, pressFeedback, selectFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import { restorePurchases } from '@/lib/payments';
 import { markFeedStale } from '@/lib/posts';
@@ -30,6 +34,7 @@ import {
   setNotificationPref,
   type NotificationPrefs,
 } from '@/lib/notifications';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/auth-provider';
 
 /** Which of the mount fetches failed, so each section can say so and retry. */
@@ -46,17 +51,22 @@ function RetryLine({ onRetry }: { onRetry: () => void }) {
       }}
       style={({ pressed }) => [styles.retryLine, pressed && styles.retryLinePressed]}
       accessibilityRole="button">
-      <Text style={styles.retryLineText}>Couldn&apos;t load. Tap to retry.</Text>
+      <Text style={styles.retryLineText}>Could not load. Tap to retry.</Text>
     </Pressable>
   );
 }
 
-const PREF_LABELS: { key: keyof NotificationPrefs; label: string; hint: string }[] = [
-  { key: 'new_posts', label: 'New posts', hint: 'When the artist drops something new' },
-  { key: 'group_chat', label: 'Community chat', hint: 'Messages in the group chat' },
-  { key: 'dms', label: 'Direct messages', hint: 'When you get a DM' },
-  { key: 'shows', label: 'Show announcements', hint: 'When a new show or tour date is added' },
+const PREF_LABELS: { key: keyof NotificationPrefs; label: string }[] = [
+  { key: 'new_posts', label: 'New posts' },
+  { key: 'group_chat', label: 'Community' },
+  { key: 'dms', label: 'Direct messages' },
+  { key: 'shows', label: 'Show announcements' },
 ];
+
+/** A sentence-case group word over a run of hairline rows. */
+function Group({ children }: { children: string }) {
+  return <Text style={styles.group}>{children}</Text>;
+}
 
 export default function SettingsScreen() {
   const { session, profile, signOut, refreshProfile } = useAuth();
@@ -76,6 +86,8 @@ export default function SettingsScreen() {
   /** Freshly picked photo awaiting circle-framing in the editor. */
   const [avatarDraft, setAvatarDraft] = useState<PickedImageDraft | null>(null);
   const [pieces, setPieces] = useState<MyPiece[]>([]);
+  /** This fan's Top 3 slot, read the way the profile card reads it. */
+  const [topFanPosition, setTopFanPosition] = useState<number | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [restoreNotice, setRestoreNotice] = useState<string | null>(null);
   const restoreTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -106,9 +118,10 @@ export default function SettingsScreen() {
   );
 
   const isArtist = profile?.role === 'artist';
+  const userId = session?.user.id;
 
   // Each section fetches on its own and remembers its own failure, so a
-  // dead connection reads as "couldn't load" - never as "nothing here".
+  // dead connection reads as "could not load" - never as "nothing here".
   const loadBlocked = useCallback(async () => {
     setFailed((f) => ({ ...f, blocked: false }));
     try {
@@ -139,11 +152,24 @@ export default function SettingsScreen() {
     }
   }, []);
 
+  // The tag under the name. A miss here just leaves the plain FAN tag, the
+  // way the profile card does; nothing else depends on it.
+  const loadTopFan = useCallback(async () => {
+    if (!userId) return;
+    const { data } = await supabase
+      .from('top_fans')
+      .select('position')
+      .eq('user_id', userId)
+      .maybeSingle();
+    setTopFanPosition(data?.position ?? null);
+  }, [userId]);
+
   const load = useCallback(() => {
     loadBlocked();
     loadPrefs();
     loadPieces();
-  }, [loadBlocked, loadPrefs, loadPieces]);
+    loadTopFan();
+  }, [loadBlocked, loadPrefs, loadPieces, loadTopFan]);
 
   // On focus, not just on mount: coming back from a legal page (or a drop)
   // re-runs the fetches, so a failure self-heals on return.
@@ -162,7 +188,7 @@ export default function SettingsScreen() {
       await setNotificationPref(key, value, previous);
     } catch (e) {
       setPrefs(previous); // revert on failure
-      setError((e as { message?: string })?.message ?? 'Could not save that setting.');
+      setError(fanCopy(e, 'Could not save that setting.'));
     }
   }
 
@@ -186,7 +212,7 @@ export default function SettingsScreen() {
         return next;
       });
       errorFeedback();
-      setError((e as { message?: string })?.message ?? 'Could not unblock.');
+      setError(fanCopy(e, 'Could not unblock.'));
     }
   }
 
@@ -199,7 +225,7 @@ export default function SettingsScreen() {
       await signOut();
     } catch (e) {
       errorFeedback();
-      setError((e as { message?: string })?.message ?? 'Could not delete the account.');
+      setError(fanCopy(e, 'Could not delete the account.'));
       setBusy(false);
       setConfirmDelete(0);
     }
@@ -228,87 +254,86 @@ export default function SettingsScreen() {
     try {
       const count = await restorePurchases();
       // Whatever the count, the feed re-reads its unlocks on the next
-      // focus - "All set" must never sit over a still-locked feed.
+      // focus - the result line must never sit over a still-locked feed.
       markFeedStale();
       if (count > 0) successFeedback();
       flashRestore(
         count > 0
-          ? `All set. ${count} unlock${count === 1 ? '' : 's'} on this account.`
-          : 'No purchases found for this account yet.'
+          ? `${count} unlock${count === 1 ? '' : 's'} on this account.`
+          : 'No unlocks on this account.'
       );
     } catch (e) {
       errorFeedback();
-      setError((e as { message?: string })?.message ?? 'Could not restore.');
+      setError(fanCopy(e, 'Could not restore.'));
     } finally {
       setRestoring(false);
     }
   }
 
+  const showBlocked = failed.blocked || blocked.length > 0;
+  const showPieces = failed.pieces || pieces.length > 0;
+
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Pressable
-          onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
-          hitSlop={12}>
-          <Ionicons name="chevron-back" size={24} color="#fff" />
-        </Pressable>
-        <Text style={styles.headerTitle}>Settings</Text>
-        <View style={{ width: 24 }} />
-      </View>
+      <PushedHeader title="SETTINGS" fallback="/(tabs)" />
 
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.sectionLabel}>ACCOUNT</Text>
-        <View style={styles.card}>
-          <View style={styles.accountRow}>
-            <Avatar path={shownAvatar} focus={shownFocus} name={profile?.display_name} size={56} />
-            <View style={styles.accountMeta}>
-              <Text style={styles.name}>{profile?.display_name ?? '…'}</Text>
-              <Text style={styles.email}>{session?.user.email}</Text>
-              {isArtist ? <Text style={styles.artistTag}>Artist account</Text> : null}
-            </View>
-          </View>
-          <View style={styles.avatarActions}>
-            <PickPhotosButton
-              label={shownAvatar ? 'Change photo' : 'Add profile photo'}
-              maxCount={1}
-              disabled={avatarBusy}
-              onPicked={(picked) => {
-                // Framing first — the upload happens on Save in the editor.
-                if (picked[0]) setAvatarDraft(picked[0]);
-              }}
-              onError={setError}
-            />
-            {shownAvatar ? (
-              <Pressable
-                disabled={avatarBusy}
-                onPress={async () => {
-                  setAvatarBusy(true);
-                  try {
-                    await removeMyAvatar();
-                    setAvatarPath(null);
-                    setAvatarFocus(null);
-                    refreshProfile().catch(() => {});
-                  } catch (e) {
-                    setError((e as { message?: string })?.message ?? 'Could not remove it.');
-                  } finally {
-                    setAvatarBusy(false);
-                  }
-                }}>
-                <Text style={styles.avatarRemove}>Remove</Text>
-              </Pressable>
-            ) : null}
-            {avatarBusy ? <ActivityIndicator color="#8f99a3" size="small" /> : null}
+        {/* Who this is: the profile card's block, no card around it. */}
+        <View style={styles.identity}>
+          <Avatar path={shownAvatar} focus={shownFocus} name={profile?.display_name} size={56} />
+          <View style={styles.identityMeta}>
+            <Text style={styles.name}>{profile?.display_name ?? '…'}</Text>
+            <Text style={styles.email}>{session?.user.email}</Text>
+            {isArtist ? (
+              <Text style={styles.tagArtist}>THE ARTIST</Text>
+            ) : topFanPosition ? (
+              <Text style={styles.tagTop}>TOP {topFanPosition} FAN</Text>
+            ) : (
+              <Text style={styles.tagFan}>FAN</Text>
+            )}
           </View>
         </View>
+        <View style={styles.avatarActions}>
+          <PickPhotosButton
+            label={shownAvatar ? 'Change photo' : 'Add profile photo'}
+            maxCount={1}
+            disabled={avatarBusy}
+            onPicked={(picked) => {
+              // Framing first; the upload happens on Save in the editor.
+              if (picked[0]) setAvatarDraft(picked[0]);
+            }}
+            onError={setError}
+          />
+          {shownAvatar ? (
+            <Pressable
+              disabled={avatarBusy}
+              onPress={async () => {
+                setAvatarBusy(true);
+                try {
+                  await removeMyAvatar();
+                  setAvatarPath(null);
+                  setAvatarFocus(null);
+                  refreshProfile().catch(() => {});
+                } catch (e) {
+                  setError(fanCopy(e, 'Could not remove it.'));
+                } finally {
+                  setAvatarBusy(false);
+                }
+              }}>
+              <Text style={styles.avatarRemove}>Remove</Text>
+            </Pressable>
+          ) : null}
+          {avatarBusy ? <ActivityIndicator color="#8f99a3" size="small" /> : null}
+        </View>
 
-        <Text style={styles.sectionLabel}>BACKGROUND</Text>
-        <View style={styles.card}>
+        <Group>Background</Group>
+        <View style={styles.block}>
           <Text style={styles.muted}>
             {isArtist
               ? 'Set the background every fan sees, or one just for you.'
-              : 'Make the feed yours. Your background only shows on your account.'}
+              : 'Your background only shows on your account.'}
           </Text>
-          {bgNotice ? <Text style={styles.bgNotice}>{bgNotice}</Text> : null}
+          {bgNotice ? <Text style={styles.okNote}>{bgNotice}</Text> : null}
           <View style={styles.bgActions}>
             <PickPhotosButton
               label="My background"
@@ -322,7 +347,7 @@ export default function SettingsScreen() {
                   invalidateBackgroundCache();
                   flashBg('Saved.');
                 } catch (e) {
-                  setError((e as { message?: string })?.message ?? 'Could not save background.');
+                  setError(fanCopy(e, 'Could not save background.'));
                 } finally {
                   setBgBusy(false);
                 }
@@ -342,7 +367,7 @@ export default function SettingsScreen() {
                     invalidateBackgroundCache();
                     flashBg('App default updated for all fans.');
                   } catch (e) {
-                    setError((e as { message?: string })?.message ?? 'Could not set the default.');
+                    setError(fanCopy(e, 'Could not set the default.'));
                   } finally {
                     setBgBusy(false);
                   }
@@ -359,9 +384,9 @@ export default function SettingsScreen() {
               try {
                 await clearMyBackground();
                 invalidateBackgroundCache();
-                flashBg(isArtist ? 'Personal override removed.' : 'Back to the artist’s background.');
+                flashBg(isArtist ? 'Personal override removed.' : "Back to the artist's background.");
               } catch (e) {
-                setError((e as { message?: string })?.message ?? 'Could not reset.');
+                setError(fanCopy(e, 'Could not reset.'));
               } finally {
                 setBgBusy(false);
               }
@@ -370,100 +395,95 @@ export default function SettingsScreen() {
           </Pressable>
         </View>
 
-        <Text style={styles.sectionLabel}>NOTIFICATIONS</Text>
-        <View style={styles.card}>
-          {failed.prefs ? (
-            // The defaults must not be tappable here: saving one switch
-            // upserts the whole row and would overwrite real opt-outs.
+        <Group>Notifications</Group>
+        {failed.prefs ? (
+          // The defaults must not be tappable here: saving one switch
+          // upserts the whole row and would overwrite real opt-outs.
+          <View style={styles.block}>
             <RetryLine onRetry={loadPrefs} />
-          ) : (
-            PREF_LABELS.map((row) => (
-              <View key={row.key} style={styles.prefRow}>
-                <View style={styles.prefText}>
-                  <Text style={styles.prefLabel}>{row.label}</Text>
-                  <Text style={styles.prefHint}>{row.hint}</Text>
+          </View>
+        ) : (
+          PREF_LABELS.map((row) => (
+            <View key={row.key} style={styles.prefRow}>
+              <Text style={styles.prefLabel}>{row.label}</Text>
+              <Switch
+                value={prefs[row.key]}
+                onValueChange={(value) => togglePref(row.key, value)}
+                trackColor={{ false: '#333', true: '#c3cdd6' }}
+                thumbColor="#fff"
+              />
+            </View>
+          ))
+        )}
+
+        {/* Nothing blocked, nothing to say: the group only appears with rows in it. */}
+        {showBlocked ? (
+          <>
+            <Group>Blocked</Group>
+            {failed.blocked ? (
+              <View style={styles.block}>
+                <RetryLine onRetry={loadBlocked} />
+              </View>
+            ) : (
+              blocked.map((user) => (
+                <View key={user.id} style={styles.blockedRow}>
+                  <Text style={styles.blockedName}>{user.name}</Text>
+                  <Pressable
+                    onPress={() => handleUnblock(user.id)}
+                    hitSlop={8}
+                    style={({ pressed }) => (pressed ? styles.textPressed : undefined)}>
+                    <Text style={styles.unblock}>Unblock</Text>
+                  </Pressable>
                 </View>
-                <Switch
-                  value={prefs[row.key]}
-                  onValueChange={(value) => togglePref(row.key, value)}
-                  trackColor={{ false: '#333', true: '#c3cdd6' }}
-                  thumbColor="#fff"
-                />
-              </View>
-            ))
-          )}
-          <Text style={styles.prefNote}>
-            Notifications start arriving with the App Store version of the app.
-          </Text>
-        </View>
-
-        <Text style={styles.sectionLabel}>BLOCKED USERS</Text>
-        <View style={styles.card}>
-          {failed.blocked ? (
-            <RetryLine onRetry={loadBlocked} />
-          ) : blocked.length === 0 ? (
-            <Text style={styles.muted}>You haven&apos;t blocked anyone.</Text>
-          ) : (
-            blocked.map((user) => (
-              <View key={user.id} style={styles.blockedRow}>
-                <Text style={styles.blockedName}>{user.name}</Text>
-                <Pressable
-                  onPress={() => handleUnblock(user.id)}
-                  hitSlop={8}
-                  style={({ pressed }) => (pressed ? styles.textPressed : undefined)}>
-                  <Text style={styles.unblock}>Unblock</Text>
-                </Pressable>
-              </View>
-            ))
-          )}
-        </View>
-
-        {failed.pieces ? (
-          <>
-            <Text style={styles.sectionLabel}>MY PIECES</Text>
-            <View style={styles.card}>
-              <RetryLine onRetry={loadPieces} />
-            </View>
-          </>
-        ) : pieces.length > 0 ? (
-          <>
-            <Text style={styles.sectionLabel}>MY PIECES</Text>
-            <View style={styles.card}>
-              {pieces.map((piece) => (
-                <Pressable
-                  key={piece.id}
-                  style={({ pressed }) => [styles.pieceRow, pressed && styles.textPressed]}
-                  onPress={() => piece.drop && router.push(`/drop/${piece.drop.id}` as never)}>
-                  <Text style={styles.pieceNum}>#{String(piece.edition_number).padStart(2, '0')}</Text>
-                  <View style={styles.pieceMeta}>
-                    <Text style={styles.pieceTitle} numberOfLines={1}>
-                      {piece.drop?.title ?? 'Drop'}
-                    </Text>
-                    <Text style={styles.pieceSub}>
-                      DROP {String(piece.drop?.drop_number ?? 0).padStart(3, '0')}
-                    </Text>
-                  </View>
-                  <Text
-                    style={[
-                      styles.pieceStatus,
-                      piece.status === 'shipped' && styles.pieceStatusShipped,
-                    ]}>
-                    {piece.status === 'shipped'
-                      ? 'SHIPPED'
-                      : piece.status === 'in_works'
-                        ? 'IN THE WORKS'
-                        : 'CLAIMED'}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+              ))
+            )}
           </>
         ) : null}
 
-        <Text style={styles.sectionLabel}>PURCHASES</Text>
-        <View style={styles.card}>
+        {showPieces ? (
+          <>
+            <Group>My pieces</Group>
+            {failed.pieces ? (
+              <View style={styles.block}>
+                <RetryLine onRetry={loadPieces} />
+              </View>
+            ) : (
+              pieces.map((piece) => {
+                const catalogue = `DROP ${String(piece.drop?.drop_number ?? 0).padStart(3, '0')}`;
+                return (
+                  <Pressable
+                    key={piece.id}
+                    style={({ pressed }) => [styles.pieceRow, pressed && styles.textPressed]}
+                    onPress={() => piece.drop && router.push(`/drop/${piece.drop.id}` as never)}>
+                    <Text style={styles.pieceNum}>#{piece.edition_number}</Text>
+                    <View style={styles.pieceMeta}>
+                      <Text style={styles.pieceTitle} numberOfLines={1}>
+                        {piece.drop?.title ?? catalogue}
+                      </Text>
+                      {piece.drop?.title ? <Text style={styles.pieceSub}>{catalogue}</Text> : null}
+                    </View>
+                    <Text
+                      style={[
+                        styles.pieceStatus,
+                        piece.status === 'shipped' && styles.pieceStatusShipped,
+                      ]}>
+                      {piece.status === 'shipped'
+                        ? 'SHIPPED'
+                        : piece.status === 'in_works'
+                          ? 'IN THE WORKS'
+                          : 'CLAIMED'}
+                    </Text>
+                  </Pressable>
+                );
+              })
+            )}
+          </>
+        ) : null}
+
+        <Group>About</Group>
+        <View style={styles.aboutRow}>
           <Pressable
-            style={({ pressed }) => [styles.aboutRow, pressed && styles.textPressed]}
+            style={({ pressed }) => [styles.aboutPress, pressed && styles.textPressed]}
             disabled={restoring}
             onPress={handleRestore}>
             <Text style={styles.aboutLink}>{restoring ? 'Restoring…' : 'Restore purchases'}</Text>
@@ -473,31 +493,34 @@ export default function SettingsScreen() {
               <Ionicons name="refresh" size={16} color="#444" />
             )}
           </Pressable>
-          {restoreNotice ? <Text style={styles.bgNotice}>{restoreNotice}</Text> : null}
+          {restoreNotice ? <Text style={styles.okNote}>{restoreNotice}</Text> : null}
         </View>
-
-        <Text style={styles.sectionLabel}>ABOUT</Text>
-        <View style={styles.card}>
-          <Pressable
-            style={({ pressed }) => [styles.aboutRow, pressed && styles.textPressed]}
-            onPress={() => router.push('/legal/terms')}>
-            <Text style={styles.aboutLink}>Terms of Service</Text>
-            <Ionicons name="chevron-forward" size={16} color="#444" />
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.aboutRow, pressed && styles.textPressed]}
-            onPress={() => router.push('/legal/privacy')}>
-            <Text style={styles.aboutLink}>Privacy Policy</Text>
-            <Ionicons name="chevron-forward" size={16} color="#444" />
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.aboutRow, pressed && styles.textPressed]}
-            onPress={() => router.push('/legal/shop-terms' as never)}>
-            <Text style={styles.aboutLink}>Shop Terms & Shipping</Text>
-            <Ionicons name="chevron-forward" size={16} color="#444" />
-          </Pressable>
-          <Text style={styles.supportNote}>Support: {SUPPORT_EMAIL}</Text>
-        </View>
+        <Pressable
+          style={({ pressed }) => [styles.aboutRow, styles.aboutPress, pressed && styles.textPressed]}
+          onPress={() => router.push('/legal/terms')}>
+          <Text style={styles.aboutLink}>Terms of Service</Text>
+          <Ionicons name="chevron-forward" size={16} color="#444" />
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.aboutRow, styles.aboutPress, pressed && styles.textPressed]}
+          onPress={() => router.push('/legal/privacy')}>
+          <Text style={styles.aboutLink}>Privacy Policy</Text>
+          <Ionicons name="chevron-forward" size={16} color="#444" />
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.aboutRow, styles.aboutPress, pressed && styles.textPressed]}
+          onPress={() => router.push('/legal/shop-terms' as never)}>
+          <Text style={styles.aboutLink}>Shop Terms</Text>
+          <Ionicons name="chevron-forward" size={16} color="#444" />
+        </Pressable>
+        <Pressable
+          style={({ pressed }) => [styles.aboutRow, styles.aboutPress, pressed && styles.textPressed]}
+          onPress={() => {
+            Linking.openURL(`mailto:${SUPPORT_EMAIL}`).catch(() => {});
+          }}>
+          <Text style={styles.aboutLink}>Email support</Text>
+          <Ionicons name="mail-outline" size={16} color="#444" />
+        </Pressable>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -509,38 +532,41 @@ export default function SettingsScreen() {
           onPress={handleSignOut}
           disabled={signingOut}>
           {signingOut ? (
-            <ActivityIndicator size="small" color="#888" />
+            <ActivityIndicator size="small" color="#8f99a3" />
           ) : (
             <Text style={styles.signOutText}>Sign out</Text>
           )}
         </Pressable>
 
         {!isArtist ? (
-          <View style={styles.dangerZone}>
-            <Text style={styles.sectionLabel}>DANGER ZONE</Text>
+          <View style={styles.deleteSection}>
             {confirmDelete === 0 ? (
-              <Pressable style={styles.deleteButton} onPress={() => setConfirmDelete(1)}>
-                <Text style={styles.deleteText}>Delete my account</Text>
+              <Pressable
+                style={({ pressed }) => [styles.deleteButton, pressed && styles.textPressed]}
+                onPress={() => setConfirmDelete(1)}>
+                <Text style={styles.deleteText}>Delete account</Text>
               </Pressable>
             ) : (
-              <View style={styles.card}>
+              // The two-step confirm, inline: the warning, then the chip row
+              // every other confirm uses (tokens in constants/type).
+              <View style={styles.deleteConfirm}>
                 <Text style={styles.deleteWarning}>
                   This permanently deletes your account, your messages, and your purchases record.
                   It cannot be undone.
                 </Text>
-                <View style={styles.deleteRow}>
-                  <Pressable
-                    style={styles.deleteConfirm}
-                    onPress={handleDeleteAccount}
-                    disabled={busy}>
+                <View style={styles.confirmRow}>
+                  <Pressable style={styles.confirmChip} onPress={handleDeleteAccount} disabled={busy}>
                     {busy ? (
-                      <ActivityIndicator color="#fff" size="small" />
+                      <ActivityIndicator color="#f87171" size="small" />
                     ) : (
-                      <Text style={styles.deleteConfirmText}>Yes, delete everything</Text>
+                      <Text style={styles.confirmDanger}>Delete account</Text>
                     )}
                   </Pressable>
-                  <Pressable onPress={() => setConfirmDelete(0)} disabled={busy}>
-                    <Text style={styles.cancel}>Cancel</Text>
+                  <Pressable
+                    style={styles.confirmChip}
+                    onPress={() => setConfirmDelete(0)}
+                    disabled={busy}>
+                    <Text style={styles.confirmWord}>Cancel</Text>
                   </Pressable>
                 </View>
               </View>
@@ -548,7 +574,7 @@ export default function SettingsScreen() {
           </View>
         ) : (
           <Text style={styles.artistNote}>
-            The artist account can't be deleted from inside the app.
+            The artist account can&apos;t be deleted from inside the app.
           </Text>
         )}
       </ScrollView>
@@ -568,7 +594,7 @@ export default function SettingsScreen() {
             setAvatarFocus(focus);
             refreshProfile().catch(() => {});
           } catch (e) {
-            setError((e as { message?: string })?.message ?? 'Could not save the photo.');
+            setError(fanCopy(e, 'Could not save the photo.'));
           } finally {
             setAvatarBusy(false);
           }
@@ -578,75 +604,64 @@ export default function SettingsScreen() {
   );
 }
 
+/** The hairline every row in the flat list sits on. */
+const hairline = {
+  borderBottomWidth: StyleSheet.hairlineWidth,
+  borderBottomColor: '#1c2025',
+} as const;
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  content: { padding: 16, paddingBottom: 64 },
-  sectionLabel: {
-    color: '#666',
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    marginBottom: 8,
-    marginTop: 20,
-  },
-  card: { backgroundColor: '#131519', borderRadius: 12, padding: 16 },
-  accountRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  accountMeta: { flex: 1 },
-  avatarActions: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 14 },
+  content: { padding: 16, paddingTop: 8, paddingBottom: 64 },
+  // Sentence case, no tracking: a word over a run of rows, not a caption.
+  group: { color: '#6d7076', fontSize: 13, marginTop: 26, marginBottom: 4 },
+  /** A row that holds prose or controls rather than a label + action. */
+  block: { paddingVertical: 12, ...hairline },
+  identity: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 8 },
+  identityMeta: { flex: 1 },
+  name: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  email: { color: '#8f99a3', fontSize: 14, marginTop: 2 },
+  // The profile card's tag set, on the one eyebrow token.
+  tagArtist: { ...eyebrow, marginTop: 6 },
+  tagTop: { ...eyebrow, color: '#e8d27b', marginTop: 6 },
+  tagFan: { ...eyebrow, color: '#6d7076', marginTop: 6 },
+  avatarActions: { flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 10 },
   avatarRemove: { color: '#f87171', fontSize: 13, fontWeight: '600' },
   pieceRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingVertical: 9,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#1c2025',
+    paddingVertical: 11,
+    ...hairline,
   },
   pieceNum: { color: '#c3cdd6', fontWeight: '800', fontSize: 14, width: 38 },
   pieceMeta: { flex: 1 },
   pieceTitle: { color: '#fff', fontSize: 13.5, fontWeight: '600' },
-  pieceSub: { color: '#55585f', fontSize: 10, letterSpacing: 1, marginTop: 1 },
-  pieceStatus: { color: '#8f99a3', fontSize: 9.5, fontWeight: '700', letterSpacing: 1 },
+  pieceSub: { ...capLabel, marginTop: 2 },
+  pieceStatus: { ...capLabel, color: '#8f99a3' },
   pieceStatusShipped: { color: '#7ed354' },
-  name: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  email: { color: '#888', fontSize: 14, marginTop: 2 },
-  artistTag: { color: '#c3cdd6', fontSize: 12, fontWeight: '700', marginTop: 6 },
-  muted: { color: '#555' },
-  bgNotice: { color: '#4fc07a', fontSize: 13, marginTop: 8 },
+  muted: { color: '#55585f', fontSize: 13, lineHeight: 18 },
+  okNote: { color: '#4fc07a', fontSize: 13, marginTop: 8 },
   bgActions: { flexDirection: 'row', gap: 8, marginTop: 12, flexWrap: 'wrap' },
-  bgReset: { marginTop: 10 },
+  bgReset: { marginTop: 12, alignSelf: 'flex-start' },
   bgResetText: { color: '#8f99a3', fontSize: 13, fontWeight: '600' },
   prefRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    paddingVertical: 11,
+    ...hairline,
   },
-  prefText: { flex: 1, paddingRight: 12 },
-  prefLabel: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  prefHint: { color: '#777', fontSize: 12, marginTop: 1 },
-  prefNote: { color: '#555', fontSize: 12, marginTop: 10 },
-  aboutRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-  },
+  prefLabel: { color: '#fff', fontSize: 15, fontWeight: '600', flex: 1, paddingRight: 12 },
+  aboutRow: { paddingVertical: 12, ...hairline },
+  aboutPress: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   aboutLink: { color: '#fff', fontSize: 15 },
-  supportNote: { color: '#555', fontSize: 12, marginTop: 8 },
   blockedRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 11,
+    ...hairline,
   },
   blockedName: { color: '#fff', fontSize: 15 },
   unblock: { color: '#c3cdd6', fontWeight: '600' },
@@ -656,14 +671,16 @@ const styles = StyleSheet.create({
   retryLineText: { color: '#8f99a3', fontSize: 14, fontWeight: '600' },
   error: { color: '#f87171', marginTop: 16 },
   signOut: { marginTop: 28, alignItems: 'center', padding: 12 },
-  signOutText: { color: '#888', fontSize: 15 },
-  dangerZone: { marginTop: 12 },
+  signOutText: { color: '#8f99a3', fontSize: 15 },
+  deleteSection: { marginTop: 4 },
   deleteButton: { alignItems: 'center', padding: 12 },
   deleteText: { color: '#f87171', fontSize: 15, fontWeight: '600' },
-  deleteWarning: { color: '#ccc', fontSize: 14, lineHeight: 20 },
-  deleteRow: { flexDirection: 'row', alignItems: 'center', gap: 20, marginTop: 14 },
-  deleteConfirm: { backgroundColor: '#7f1d1d', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 },
-  deleteConfirmText: { color: '#fff', fontWeight: '700' },
-  cancel: { color: '#888' },
-  artistNote: { color: '#555', fontSize: 13, textAlign: 'center', marginTop: 24 },
+  // Inline, no card: the warning, then the shared chip row.
+  deleteConfirm: { paddingHorizontal: 4, paddingTop: 8 },
+  deleteWarning: { ...confirmQuestion, lineHeight: 19 },
+  confirmRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 12 },
+  confirmChip: chip,
+  confirmWord: confirmWord,
+  confirmDanger: confirmDanger,
+  artistNote: { color: '#55585f', fontSize: 13, textAlign: 'center', marginTop: 24 },
 });

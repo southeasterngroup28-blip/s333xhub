@@ -1,5 +1,7 @@
 import type { UploadTask } from 'expo-file-system/legacy';
 
+import { shortDate } from '@/lib/dates';
+import { FanError } from '@/lib/fan-error';
 import { requireUserId, supabase } from '@/lib/supabase';
 
 export type Project = 'mazze' | 's333xgod';
@@ -274,7 +276,7 @@ export async function uploadWithProgress(
     onBytes?.(source.file.size, source.file.size);
     return;
   }
-  if (!source.uri) throw new Error('That file could not be read. Pick it again.');
+  if (!source.uri) throw new FanError('That file could not be read. Pick it again.');
 
   // The handle exists before the first await: a cancel tapped during the
   // signing round trip (easily a second on cell) is not lost, because every
@@ -336,12 +338,15 @@ export async function uploadWithProgress(
     throw new UploadCancelledError();
   }
   if (result.status < 200 || result.status >= 300) {
-    let message = `Upload failed (${result.status}).`;
+    // The status and the storage server's words go to the log; the fan
+    // reads one sentence.
+    let detail = '';
     try {
       const parsed = JSON.parse(result.body) as { message?: string; error?: string };
-      message = parsed.message ?? parsed.error ?? message;
+      detail = parsed.message ?? parsed.error ?? '';
     } catch {}
-    throw new Error(message);
+    console.warn('[posts] upload failed', result.status, detail);
+    throw new FanError("Upload didn't finish. Try again.");
   }
 }
 
@@ -405,7 +410,7 @@ export async function createPost(
   const pollOptions = input.pollOptions ?? null;
 
   if (video && video.durationSeconds > VIDEO_MAX_SECONDS) {
-    throw new Error(`Videos are capped at ${VIDEO_MAX_SECONDS} seconds.`);
+    throw new FanError(`Videos are capped at ${VIDEO_MAX_SECONDS} seconds.`);
   }
 
   // Plan the whole batch first so the progress bar knows its total from
@@ -575,5 +580,5 @@ export function timeAgo(iso: string): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString();
+  return shortDate(new Date(iso));
 }

@@ -97,7 +97,8 @@ export function PickPhotosButton({
           }))
       );
     } catch (e) {
-      onError(`Photo picker failed: ${(e as { message?: string })?.message ?? String(e)}`);
+      console.warn('[media-pickers] photos', e);
+      onError('Could not open your photos. Try again.');
     } finally {
       setPicking(false);
     }
@@ -161,7 +162,7 @@ export function PickVideoButton({ disabled, label, onPicked, onError }: VideoPro
       // expo-image-picker reports video duration in milliseconds. A null
       // duration would read as 0s and silently bypass the 45s hard cap.
       if (asset.duration == null) {
-        onError("Couldn't read that video's length. Re-export it and try again.");
+        onError("Could not read that video's length. Re-export it and try again.");
         return;
       }
       const durationSeconds = asset.duration / 1000;
@@ -187,7 +188,8 @@ export function PickVideoButton({ disabled, label, onPicked, onError }: VideoPro
         height: asset.height ?? null,
       });
     } catch (e) {
-      onError(`Video picker failed: ${(e as { message?: string })?.message ?? String(e)}`);
+      console.warn('[media-pickers] videos', e);
+      onError('Could not open your videos. Try again.');
     } finally {
       setPicking(false);
     }
@@ -244,7 +246,8 @@ export function PickAudioButton({ disabled, label, onPicked, onError }: AudioPro
         name: asset.name,
       });
     } catch (e) {
-      onError(`Audio picker failed: ${(e as { message?: string })?.message ?? String(e)}`);
+      console.warn('[media-pickers] files', e);
+      onError('Could not open your files. Try again.');
     } finally {
       setPicking(false);
     }

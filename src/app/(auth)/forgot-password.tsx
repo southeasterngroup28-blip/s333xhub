@@ -20,7 +20,7 @@ import { authErrorCopy } from '@/lib/auth-errors';
 import { errorFeedback, pressFeedback, successFeedback } from '@/lib/haptics';
 import { supabase } from '@/lib/supabase';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
-import { DISPLAY_FONT } from '@/constants/type';
+import { DISPLAY_FONT, pillText } from '@/constants/type';
 
 /** Seconds before "Send the email again" is offered again. */
 const RESEND_COOLDOWN = 30;
@@ -85,7 +85,7 @@ export default function ForgotPasswordScreen() {
     }
     if (sent) {
       successFeedback();
-      setNotice('Sent again ✓');
+      setNotice('Sent again.');
     }
     setCooldown(RESEND_COOLDOWN);
     setSent(true);
@@ -178,7 +178,7 @@ export default function ForgotPasswordScreen() {
                 {submitting ? (
                   <ActivityIndicator color="#0b0c0e" />
                 ) : (
-                  <Text style={styles.buttonText}>Send reset link</Text>
+                  <Text style={styles.buttonText}>SEND RESET LINK</Text>
                 )}
               </Pressable>
             </Animated.View>
@@ -238,7 +238,7 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.4 },
   buttonPressed: { transform: [{ scale: 0.97 }], opacity: 0.9 },
-  buttonText: { color: '#0b0c0e', fontSize: 15, fontWeight: '700' },
+  buttonText: pillText,
   resend: { alignItems: 'center', marginTop: 18 },
   resendText: { color: '#c3cdd6', fontSize: 13, fontWeight: '600' },
   resendTextDisabled: { color: '#666' },

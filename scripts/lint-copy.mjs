@@ -5,7 +5,9 @@
 //                                              supabase/functions/**/*.ts
 //   node scripts/lint-copy.mjs src supabase/functions ../s333xgod ../ronso
 //                                              adds the two sites' *.html
-//   node scripts/lint-copy.mjs --strict        pending files fail too
+//   node scripts/lint-copy.mjs --strict        pending files fail too (the
+//                                              list is empty; kept for the
+//                                              next parallel pass)
 //
 // What it scans: string literals, template literals and JSX text in the
 // app source and the edge functions (comments never count; the functions
@@ -42,24 +44,10 @@ const ALLOW = [
   { file: 'src/app/(tabs)/shows.tsx', text: '–' },
 ];
 
-// TODO(merge): files a parallel feel pass owns right now. Their hits are
-// reported but do not fail the run until --strict; empty this list once
-// the merge lands and the de-AI edits are applied to them.
-const PENDING = [
-  'src/app/compose.tsx',
-  'src/app/(tabs)/fanmail.tsx',
-  'src/lib/fanmail.ts',
-  'src/lib/posts.ts',
-  'src/components/media-pickers.tsx',
-  'src/components/media-pickers.web.tsx',
-  'src/components/gif-picker.tsx',
-  'src/app/(auth)/',
-  'src/lib/auth-errors.ts',
-  'src/app/settings.tsx',
-  'src/components/account-suspended.tsx',
-  'src/components/profile-card.tsx',
-  'src/components/feed.tsx',
-];
+// Files a parallel pass owns right now, if any. Their hits are reported
+// but do not fail the run until --strict. Empty once that pass lands and
+// the copy edits are applied to them.
+const PENDING = [];
 
 // ---- walking -----------------------------------------------------------
 

@@ -9,16 +9,13 @@ import { displayName } from '@/lib/profiles';
 import type { TopFan } from '@/lib/social';
 import { sectionHead } from '@/constants/type';
 
-// TODO(merge): rename this file to top3-card.tsx and the export to Top3Card
-// once feed.tsx (which imports both names) is back from its feel pass.
-
 type Props = {
   fans: TopFan[];
   viewerIsArtist: boolean;
 };
 
 /** The MySpace classic, distilled: the artist's hand-picked Top 3, atop the feed. */
-export function Top8Card({ fans, viewerIsArtist }: Props) {
+export function Top3Card({ fans, viewerIsArtist }: Props) {
   const router = useRouter();
   const { showProfile } = useProfileCard();
   if (fans.length === 0 && !viewerIsArtist) return null;

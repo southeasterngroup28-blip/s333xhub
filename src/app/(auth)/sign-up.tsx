@@ -1,3 +1,4 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { Link } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -19,9 +20,10 @@ import { ResendConfirmation } from '@/components/resend-confirmation';
 import { CONFIRM_EMAIL_URL } from '@/constants/links';
 import { authErrorCopy } from '@/lib/auth-errors';
 import { errorFeedback, pressFeedback, tapFeedback } from '@/lib/haptics';
+import { isUnnamed } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
-import { DISPLAY_FONT } from '@/constants/type';
+import { DISPLAY_FONT, pillText } from '@/constants/type';
 
 export default function SignUpScreen() {
   const reduceMotion = useReduceMotion();
@@ -55,8 +57,17 @@ export default function SignUpScreen() {
     []
   );
 
+  const trimmedName = displayName.trim();
+  // The database's placeholder name ('fan', any case) is refused here with a
+  // hint, the same rule the name screen applies (see app/name.tsx).
+  const placeholderName = trimmedName.length >= 2 && isUnnamed(trimmedName);
   const canSubmit =
-    !submitting && displayName.trim().length >= 2 && email.trim().length > 3 && password.length >= 8 && acceptedTerms;
+    !submitting &&
+    trimmedName.length >= 2 &&
+    !placeholderName &&
+    email.trim().length > 3 &&
+    password.length >= 8 &&
+    acceptedTerms;
 
   async function handleSignUp() {
     if (submitting || !canSubmit) return;
@@ -70,7 +81,7 @@ export default function SignUpScreen() {
       password,
       options: {
         // Saved onto the auth user; the database trigger copies it into profiles.
-        data: { display_name: displayName.trim() },
+        data: { display_name: trimmedName },
         emailRedirectTo: CONFIRM_EMAIL_URL,
       },
     });
@@ -103,7 +114,7 @@ export default function SignUpScreen() {
       <SafeAreaView style={styles.safe}>
         <Animated.View style={styles.container} entering={enter} exiting={exit}>
           <Text style={styles.title}>Check your email</Text>
-          <Text style={styles.subtitle}>
+          <Text style={styles.explain}>
             We sent a confirmation link to {email.trim()}. Tap it, then come back and sign in.
           </Text>
           <Animated.View entering={enter}>
@@ -133,7 +144,7 @@ export default function SignUpScreen() {
                 as the rows below down. One clock for both. */}
             <Animated.View layout={shift}>
               <Text style={styles.title}>Create account</Text>
-              <Text style={styles.subtitle}>Free. No subscription, ever.</Text>
+              <Text style={styles.subtitle}>Free, no subscription</Text>
 
               <TextInput
                 style={styles.input}
@@ -145,7 +156,13 @@ export default function SignUpScreen() {
                 submitBehavior="submit"
                 onSubmitEditing={() => emailRef.current?.focus()}
                 value={displayName}
-                onChangeText={setDisplayName}
+                onChangeText={(text) => {
+                  // The hint shares the error line's slot, so its arrival
+                  // and exit glide the rows the same way an error does.
+                  const next = text.trim();
+                  if ((next.length >= 2 && isUnnamed(next)) !== placeholderName) armShift();
+                  setDisplayName(text);
+                }}
               />
               <TextInput
                 ref={emailRef}
@@ -185,7 +202,7 @@ export default function SignUpScreen() {
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: acceptedTerms }}>
                 <View style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}>
-                  {acceptedTerms ? <Text style={styles.checkmark}>✓</Text> : null}
+                  {acceptedTerms ? <Ionicons name="checkmark" size={14} color="#c3cdd6" /> : null}
                 </View>
                 <Text style={styles.termsText}>
                   I agree to the{' '}
@@ -200,7 +217,11 @@ export default function SignUpScreen() {
               </Pressable>
             </Animated.View>
 
-            {error ? (
+            {placeholderName ? (
+              <Animated.Text style={styles.hint} entering={enter} exiting={exit}>
+                Pick a different name.
+              </Animated.Text>
+            ) : error ? (
               <Animated.Text style={styles.error} entering={enter} exiting={exit}>
                 {error}
               </Animated.Text>
@@ -219,7 +240,7 @@ export default function SignUpScreen() {
                 {submitting ? (
                   <ActivityIndicator color="#0b0c0e" />
                 ) : (
-                  <Text style={styles.buttonText}>Create account</Text>
+                  <Text style={styles.buttonText}>CREATE ACCOUNT</Text>
                 )}
               </Pressable>
             </Animated.View>
@@ -261,6 +282,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 32,
   },
+  explain: { color: '#9a9ba3', fontSize: 13.5, lineHeight: 20, marginBottom: 16, textAlign: 'center' },
   input: {
     backgroundColor: '#131519',
     color: '#fff',
@@ -281,10 +303,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkboxChecked: { backgroundColor: 'transparent', borderColor: '#c3cdd6' },
-  checkmark: { color: '#c3cdd6', fontWeight: '800' },
   termsText: { color: '#aaa', flex: 1 },
   termsLink: { color: '#fff', textDecorationLine: 'underline' },
   error: { color: '#ff6b6b', marginBottom: 12, textAlign: 'center' },
+  hint: { color: '#9a9ba3', fontSize: 13, marginBottom: 12, textAlign: 'center' },
   button: {
     backgroundColor: '#ffffff',
     borderRadius: 999,
@@ -299,7 +321,7 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.4 },
   buttonPressed: { transform: [{ scale: 0.97 }], opacity: 0.9 },
-  buttonText: { color: '#0b0c0e', fontSize: 15, fontWeight: '700' },
+  buttonText: pillText,
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
   footerText: { color: '#888' },
   footerLink: { color: '#c3cdd6', fontWeight: '600' },
