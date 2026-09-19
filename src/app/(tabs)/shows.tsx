@@ -392,6 +392,18 @@ function ShowRow({
   // Artist: the sold line + the scanner live on in-app dates that haven't
   // wrapped. `editable` is the artist flag, so fans never see either.
   const artistSales = editable && !past && show.sales_mode === 'in_app';
+  // Fan, about to see the BUY pill: the refund rule sits next to it, the
+  // same rule the Terms state. A term shown at checkout is one Stripe
+  // accepts as dispute evidence; one that lives only in the Terms is not.
+  const buyable =
+    !!ticketing &&
+    !ticketing.ticket &&
+    !cancelled &&
+    !soldOut &&
+    !past &&
+    mode === 'in_app' &&
+    price > 0 &&
+    ticketing.left !== 0;
 
   return (
     <Pressable
@@ -421,6 +433,9 @@ function ShowRow({
         <Text style={styles.city} numberOfLines={1}>
           {show.city} · {date.weekday} {date.time}
         </Text>
+        {buyable ? (
+          <Text style={styles.refundRule}>No refunds unless the show is cancelled.</Text>
+        ) : null}
         {artistSales ? (
           <View style={styles.salesLine}>
             <Text style={styles.salesText}>{soldLabel(show, sold)}</Text>
@@ -581,6 +596,7 @@ const styles = StyleSheet.create({
   venue: { color: '#fff', fontSize: 14.5, fontWeight: '700' },
   venueCancelled: { textDecorationLine: 'line-through', color: '#8f99a3' },
   city: { color: '#8f99a3', fontSize: 12, marginTop: 2 },
+  refundRule: { color: '#55585f', fontSize: 11, marginTop: 4 },
   action: { alignItems: 'flex-end', gap: 6 },
   pill: {
     backgroundColor: '#fff',

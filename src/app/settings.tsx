@@ -551,7 +551,8 @@ export default function SettingsScreen() {
               // every other confirm uses (tokens in constants/type).
               <View style={styles.deleteConfirm}>
                 <Text style={styles.deleteWarning}>
-                  This permanently deletes your account, your messages, and your purchases record.
+                  This permanently deletes your account, your messages and your unlock history.
+                  Shop orders and show tickets are kept for tax records without your name attached.
                   It cannot be undone.
                 </Text>
                 <View style={styles.confirmRow}>

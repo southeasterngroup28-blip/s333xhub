@@ -183,6 +183,21 @@ export async function fetchReportTargetPreview(report: Report): Promise<string> 
 
 /** Permanently deletes the signed-in fan's account and all their data. */
 export async function deleteMyAccount(): Promise<void> {
+  // Every row cascades from auth.users, but storage files are not rows: the
+  // profile photo (a public bucket) and the background would outlive the
+  // account. Remove both first, best effort; the deletion goes ahead either
+  // way. Chat media and fan mail files have no fan-side delete policy and
+  // are purged by hand within the 30 days the Privacy Policy states.
+  const userId = await requireUserId();
+  const { data: me } = await supabase
+    .from('profiles')
+    .select('avatar_path, background_path')
+    .eq('id', userId)
+    .maybeSingle();
+  await Promise.allSettled([
+    me?.avatar_path ? supabase.storage.from('avatars').remove([me.avatar_path]) : null,
+    me?.background_path ? supabase.storage.from('backgrounds').remove([me.background_path]) : null,
+  ]);
   const { error } = await supabase.rpc('delete_my_account');
   if (error) throw error;
 }

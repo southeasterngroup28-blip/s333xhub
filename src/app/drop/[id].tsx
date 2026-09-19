@@ -358,7 +358,7 @@ export default function DropScreen() {
               </Text>
             </Pressable>
             <Text style={styles.subCenter}>
-              One per fan. Ships in the US within 5 to 7 business days, shipping included.
+              One per fan. All sales final. Ships in the US within 5 business days, shipping included.
             </Text>
           </>
         ) : null}

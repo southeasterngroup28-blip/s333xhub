@@ -710,6 +710,13 @@ export default function ShowFormScreen() {
                     />
                   ))}
                 </ChipRow>
+                {status === 'cancelled' && sold > 0 ? (
+                  // Nothing refunds sold tickets on its own. The Terms promise a full
+                  // refund without the fan asking, so the artist makes each one in Stripe.
+                  <FormNote>
+                    {`${sold} sold. Refund every ticket in Stripe. Fans were promised a full refund without asking.`}
+                  </FormNote>
+                ) : null}
               </>
             ) : null}
 
