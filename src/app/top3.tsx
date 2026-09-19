@@ -1,4 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -11,8 +12,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { PushedHeader } from '@/components/pushed-header';
-import { TopNotice } from '@/components/top-notice';
 import { fanCopy } from '@/lib/fan-error';
 import { errorFeedback, successFeedback } from '@/lib/haptics';
 import { displayName } from '@/lib/profiles';
@@ -28,6 +27,7 @@ import { DISPLAY_FONT } from '@/constants/type';
 
 export default function Top3ManagerScreen() {
   const { profile } = useAuth();
+  const router = useRouter();
   const [fans, setFans] = useState<TopFan[]>([]);
   const [pickingSlot, setPickingSlot] = useState<number | null>(null);
   const [query, setQuery] = useState('');
@@ -107,14 +107,23 @@ export default function Top3ManagerScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <PushedHeader title="TOP 3" />
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+          hitSlop={12}
+          accessibilityLabel="Back">
+          <Ionicons name="chevron-back" size={24} color="#fff" />
+        </Pressable>
+        <Text style={styles.headerTitle}>Top 3</Text>
+        <View style={{ width: 24 }} />
+      </View>
 
       <Text style={styles.hint}>
         Your three hand-picked fans, shown to everyone at the top of the feed. Change it
         weekly. Three spots keep them fighting for it.
       </Text>
 
-      {error ? <TopNotice tone="error" text={error} onDismiss={() => setError(null)} /> : null}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
         {Array.from({ length: 3 }, (_, i) => i + 1).map((position) => {
@@ -189,7 +198,16 @@ export default function Top3ManagerScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
   hint: { color: '#6d7076', fontSize: 12.5, paddingHorizontal: 16, paddingBottom: 12, lineHeight: 18 },
+  error: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 8 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   muted: { color: '#6d7076' },
   list: { paddingHorizontal: 16, paddingBottom: 48 },

@@ -26,11 +26,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppBackground } from '@/components/app-background';
 import { Avatar } from '@/components/avatar';
 import { EdgeGlass, FadeMask } from '@/components/edge-fade';
-import { ErrorCard } from '@/components/empty-state';
+import { EmptyState } from '@/components/empty-state';
 import { useProfileCard } from '@/components/profile-card';
 import { CommentSkeleton, Skeleton } from '@/components/skeleton';
-import { REPORT_FAILED, REPORT_SENT } from '@/constants/copy';
-import { DISPLAY_FONT, eyebrow, sectionHead } from '@/constants/type';
+import { OFFLINE_SUB, REPORT_FAILED, REPORT_SENT, RETRY } from '@/constants/copy';
+import { DISPLAY_FONT } from '@/constants/type';
 import { errorFeedback, pressFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import { fileReport, REPORT_REASONS } from '@/lib/moderation';
 import { fetchPostById, timeAgo, type Post, type Project } from '@/lib/posts';
@@ -664,24 +664,29 @@ export default function CommentsScreen() {
             ))}
           </View>
         ) : postGone ? (
-          <View style={[styles.gone, { paddingTop: listTop }]}>
-            <Text style={styles.goneTitle}>THIS POST IS GONE</Text>
+          <View style={styles.goneWrap}>
+            <EmptyState icon="eye-off-outline" title="This post is gone" />
           </View>
         ) : !post ? (
-          <View style={[styles.gone, { paddingTop: listTop }]}>
-            <ErrorCard
-              title="COULDN'T LOAD THIS POST"
-              onRetry={() => {
-                tapFeedback();
-                setError(null);
-                setPostLoading(true);
-                loadPost();
-                if (loadFailed) {
-                  // The comments fetch failed too; retry both at once.
-                  setLoadFailed(false);
-                  setLoading(true);
-                  load();
-                }
+          <View style={styles.goneWrap}>
+            <EmptyState
+              icon="cloud-offline-outline"
+              title="Couldn't load this post"
+              sub={OFFLINE_SUB}
+              action={{
+                label: RETRY,
+                onPress: () => {
+                  tapFeedback();
+                  setError(null);
+                  setPostLoading(true);
+                  loadPost();
+                  if (loadFailed) {
+                    // The comments fetch failed too; retry both at once.
+                    setLoadFailed(false);
+                    setLoading(true);
+                    load();
+                  }
+                },
               }}
             />
           </View>
@@ -720,12 +725,25 @@ export default function CommentsScreen() {
               }
               ListEmptyComponent={
                 loadFailed ? (
-                  <ErrorCard title="COULDN'T LOAD COMMENTS" onRetry={retryLoad} />
+                  <Animated.View
+                    style={styles.failedCard}
+                    entering={reduceMotion ? undefined : FadeInDown.duration(220)}>
+                    <Text style={styles.emptyTitle}>{"COULDN'T LOAD COMMENTS"}</Text>
+                    <Text style={styles.emptySub}>{OFFLINE_SUB}</Text>
+                    <Pressable
+                      style={({ pressed }) => [styles.retryPill, pressed && styles.retryPillPressed]}
+                      hitSlop={8}
+                      onPress={retryLoad}>
+                      <Text style={styles.retryPillText}>{RETRY}</Text>
+                    </Pressable>
+                  </Animated.View>
                 ) : (
                   // Only a fetch that genuinely succeeded empty says so.
                   <View style={styles.empty}>
                     <Image source={emblem} style={styles.emptyEmblem} contentFit="contain" />
-                    <Text style={styles.emptyTitle}>NO COMMENTS</Text>
+                    <View style={styles.emptyText}>
+                      <Text style={styles.emptyTitle}>NO COMMENTS</Text>
+                    </View>
                   </View>
                 )
               }
@@ -856,8 +874,7 @@ const styles = StyleSheet.create({
   skeletons: { paddingHorizontal: 14 },
   skeletonLabel: { marginBottom: 14 },
   skeletonRow: { marginBottom: 10 },
-  gone: { paddingHorizontal: 14 },
-  goneTitle: { ...sectionHead, paddingVertical: 8 },
+  goneWrap: { flex: 1, justifyContent: 'center' },
 
   // ---- thread ----
   list: { paddingHorizontal: 14, flexGrow: 1 },
@@ -869,7 +886,13 @@ const styles = StyleSheet.create({
     paddingTop: 2,
     paddingBottom: 10,
   },
-  threadLabelText: { ...sectionHead, lineHeight: 19 },
+  threadLabelText: {
+    color: '#fff',
+    fontFamily: DISPLAY_FONT,
+    fontSize: 13,
+    lineHeight: 16,
+    letterSpacing: 2,
+  },
   threadCount: {
     color: '#55585f',
     fontSize: 11.5,
@@ -898,11 +921,12 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     flexShrink: 1,
   },
-  // The sans eyebrow (Anton never goes below 12px), ruled off from the name.
   pinned: {
-    ...eyebrow,
+    color: SILVER,
+    fontFamily: DISPLAY_FONT,
     fontSize: 10,
     lineHeight: 13,
+    letterSpacing: 2,
     paddingLeft: 8,
     borderLeftWidth: 1,
     borderLeftColor: 'rgba(195, 205, 214, 0.35)',
@@ -1004,10 +1028,7 @@ const styles = StyleSheet.create({
     transform: [{ rotate: '45deg' }],
   },
 
-  // ---- empty ----
-  // The reference empty: the project emblem, left-aligned, inside the
-  // list card. Solid fill on purpose, a read surface over fan photo
-  // backgrounds. The failed card is the shared ErrorCard.
+  // ---- empty + failed ----
   empty: {
     backgroundColor: '#131519',
     borderRadius: 14,
@@ -1018,7 +1039,37 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   emptyEmblem: { width: 26, height: 26, opacity: 0.45 },
-  emptyTitle: { ...sectionHead, lineHeight: 19, flex: 1 },
+  emptyText: { flex: 1 },
+  emptyTitle: {
+    color: '#e8e9eb',
+    fontFamily: DISPLAY_FONT,
+    fontSize: 13,
+    lineHeight: 16,
+    letterSpacing: 1.6,
+  },
+  emptySub: { color: '#6d7076', fontSize: 12.5, marginTop: 2 },
+  // Solid fill on purpose — this file's documented decision for read
+  // surfaces over fan photo backgrounds.
+  failedCard: {
+    backgroundColor: '#131519',
+    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 13,
+  },
+  retryPill: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    minHeight: 44,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2a2e34',
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  retryPillPressed: { opacity: 0.7 },
+  retryPillText: { color: '#e8e9eb', fontSize: 13, fontWeight: '600' },
 
   // ---- composer: a pill floating over the bottom fade ----
   composerWrap: { position: 'absolute', left: 16, right: 16, zIndex: 20 },

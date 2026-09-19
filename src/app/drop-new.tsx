@@ -2,27 +2,31 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/providers/auth-provider';
 
-import { Chip, ChipRow, Field, FieldLabel, FormNote, PrimaryButton } from '@/components/form';
 import { PickPhotosButton, type PickedImageDraft } from '@/components/media-pickers';
-import { ProjectPicker } from '@/components/project-picker';
-import { PushedHeader } from '@/components/pushed-header';
-import { TopNotice } from '@/components/top-notice';
 import { DROP_WHEN_OPTIONS } from '@/constants/drops';
+import { DISPLAY_FONT } from '@/constants/type';
 import { clockTime, longDate } from '@/lib/dates';
 import { fanCopy } from '@/lib/fan-error';
-import type { Project } from '@/lib/posts';
 import { createDrop } from '@/lib/shop';
 
 export default function NewDropScreen() {
   const router = useRouter();
   const { profile } = useAuth();
   const [title, setTitle] = useState('');
-  const [project, setProject] = useState<Project>('s333xgod');
+  const [project, setProject] = useState<'mazze' | 's333xgod'>('s333xgod');
   const [price, setPrice] = useState('65');
   const [runSize, setRunSize] = useState('50');
   const [whenHours, setWhenHours] = useState<number>(24);
@@ -62,22 +66,34 @@ export default function NewDropScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <PushedHeader
-        title="NEW DROP"
-        left={
-          <Pressable onPress={() => router.back()} hitSlop={12}>
-            <Text style={styles.cancel}>Cancel</Text>
-          </Pressable>
-        }
-      />
+      <View style={styles.header}>
+        <Pressable onPress={() => router.back()} hitSlop={12}>
+          <Text style={styles.cancel}>Cancel</Text>
+        </Pressable>
+        <Text style={styles.headerTitle}>NEW DROP</Text>
+        <View style={{ width: 48 }} />
+      </View>
 
-      {error ? <TopNotice tone="error" text={error} onDismiss={() => setError(null)} /> : null}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <ScrollView contentContainerStyle={styles.body}>
-        <ProjectPicker value={project} onChange={setProject} />
+        <View style={styles.projectRow}>
+          {(['mazze', 's333xgod'] as const).map((p) => (
+            <Pressable
+              key={p}
+              style={[styles.projectChip, project === p && styles.projectChipOn]}
+              onPress={() => setProject(p)}>
+              <Text style={[styles.projectText, project === p && styles.projectTextOn]}>
+                {p.toUpperCase()}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
 
-        <Field
+        <TextInput
+          style={styles.input}
           placeholder="Piece title (e.g. Highs & Lows Figure)"
+          placeholderTextColor="#55585f"
           value={title}
           onChangeText={setTitle}
           maxLength={60}
@@ -85,31 +101,44 @@ export default function NewDropScreen() {
 
         <View style={styles.pairRow}>
           <View style={styles.pairCell}>
-            <FieldLabel>PRICE ($)</FieldLabel>
-            <Field keyboardType="decimal-pad" value={price} onChangeText={setPrice} />
+            <Text style={styles.label}>PRICE ($)</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="decimal-pad"
+              value={price}
+              onChangeText={setPrice}
+            />
           </View>
           <View style={styles.pairCell}>
-            <FieldLabel>RUN SIZE</FieldLabel>
-            <Field keyboardType="number-pad" value={runSize} onChangeText={setRunSize} />
+            <Text style={styles.label}>RUN SIZE</Text>
+            <TextInput
+              style={styles.input}
+              keyboardType="number-pad"
+              value={runSize}
+              onChangeText={setRunSize}
+            />
           </View>
         </View>
 
-        <FieldLabel>COUNTDOWN ENDS</FieldLabel>
-        <ChipRow style={styles.whenRow}>
+        <Text style={styles.label}>COUNTDOWN ENDS</Text>
+        <View style={styles.whenRow}>
           {DROP_WHEN_OPTIONS.map((option) => (
-            <Chip
+            <Pressable
               key={option.hours}
-              label={option.label}
-              on={whenHours === option.hours}
-              onPress={() => setWhenHours(option.hours)}
-            />
+              style={[styles.whenChip, whenHours === option.hours && styles.whenChipOn]}
+              onPress={() => setWhenHours(option.hours)}>
+              <Text
+                style={[styles.whenText, whenHours === option.hours && styles.whenTextOn]}>
+                {option.label}
+              </Text>
+            </Pressable>
           ))}
-        </ChipRow>
-        <FormNote>
+        </View>
+        <Text style={styles.sub}>
           {`Opens ${longDate(dropsAt)} at ${clockTime(dropsAt.toISOString())}. Nothing is visible to fans until you hit PUBLISH on the drop page. Publishing sends the push.`}
-        </FormNote>
+        </Text>
 
-        <FieldLabel>ARTWORK</FieldLabel>
+        <Text style={styles.label}>ARTWORK</Text>
         {image ? (
           <View>
             <Image source={{ uri: image.previewUri }} style={styles.preview} contentFit="cover" />
@@ -127,15 +156,19 @@ export default function NewDropScreen() {
           />
         )}
 
-        <PrimaryButton
-          label="CREATE AS DRAFT"
-          disabled={!valid}
-          busy={saving}
-          onPress={handleCreate}
-        />
-        <FormNote center>
+        <Pressable
+          style={[styles.create, (!valid || saving) && styles.createDisabled]}
+          disabled={!valid || saving}
+          onPress={handleCreate}>
+          {saving ? (
+            <ActivityIndicator color="#0b0c0e" />
+          ) : (
+            <Text style={styles.createText}>CREATE AS DRAFT</Text>
+          )}
+        </Pressable>
+        <Text style={styles.subCenter}>
           Drafts are only visible to you. Fans see it, and get the push, when you publish.
-        </FormNote>
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -143,11 +176,58 @@ export default function NewDropScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  headerTitle: { color: '#fff', fontSize: 17, fontFamily: DISPLAY_FONT, letterSpacing: 2 },
   cancel: { color: '#8f99a3', fontSize: 15 },
+  error: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 },
   body: { padding: 16, paddingBottom: 60 },
+  projectRow: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  projectChip: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: '#1a1d22',
+    alignItems: 'center',
+  },
+  projectChipOn: { backgroundColor: '#ffffff' },
+  projectText: { color: '#8f99a3', fontWeight: '800', fontSize: 12, letterSpacing: 1.5 },
+  projectTextOn: { color: '#0b0c0e' },
+  input: {
+    backgroundColor: '#131519',
+    color: '#fff',
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 15,
+    marginBottom: 12,
+  },
   pairRow: { flexDirection: 'row', gap: 10 },
   pairCell: { flex: 1 },
-  whenRow: { marginBottom: 8 },
+  label: {
+    color: '#6d7076',
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 1.6,
+    marginBottom: 7,
+    marginTop: 6,
+  },
+  whenRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 8 },
+  whenChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#1a1d22',
+  },
+  whenChipOn: { backgroundColor: '#c3cdd6' },
+  whenText: { color: '#8f99a3', fontWeight: '700', fontSize: 10.5, letterSpacing: 1 },
+  whenTextOn: { color: '#0b0c0e' },
+  sub: { color: '#55585f', fontSize: 12, lineHeight: 17, marginBottom: 8 },
+  subCenter: { color: '#55585f', fontSize: 11.5, textAlign: 'center', marginTop: 10 },
   preview: { width: '100%', aspectRatio: 4 / 3, borderRadius: 12, backgroundColor: '#14171b' },
   removeImage: {
     position: 'absolute',
@@ -160,4 +240,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  create: {
+    backgroundColor: '#ffffff',
+    borderRadius: 999,
+    padding: 15,
+    alignItems: 'center',
+    marginTop: 18,
+  },
+  createDisabled: { opacity: 0.4 },
+  createText: { color: '#0b0c0e', fontWeight: '800', fontSize: 14, letterSpacing: 0.5 },
 });

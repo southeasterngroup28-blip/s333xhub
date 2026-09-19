@@ -35,9 +35,8 @@ export function Avatar({ path, focus, name, size = 36 }: Props) {
         styles.fallback,
         { width: size, height: size, borderRadius: radius },
       ]}>
-      {/* The one '?' in the app: a missing or blank name, never a caller-side seed. */}
       <Text style={[styles.letter, { fontSize: Math.max(10, size * 0.4) }]}>
-        {(name?.trim() || '?').slice(0, 1).toUpperCase()}
+        {(name ?? '?').slice(0, 1).toUpperCase()}
       </Text>
     </View>
   );

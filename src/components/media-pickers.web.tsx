@@ -64,7 +64,7 @@ export function PickPhotosButton({ disabled, label, maxCount, onPicked, onError,
         <Ionicons name="image-outline" size={20} color="#6c7078" />
       ) : (
         <>
-          <Ionicons name="image-outline" size={20} color="#fff" />
+          <span aria-hidden>📷</span>
           <span>{label}</span>
         </>
       )}
@@ -148,7 +148,7 @@ type VideoProps = {
 export function PickVideoButton({ disabled, label, onPicked, onError }: VideoProps) {
   return (
     <label style={boxStyle(disabled)}>
-      <Ionicons name="videocam-outline" size={20} color="#fff" />
+      <span aria-hidden>🎬</span>
       <span>{label}</span>
       <input
         type="file"
@@ -201,7 +201,7 @@ type AudioProps = {
 export function PickAudioButton({ disabled, label, onPicked, onError }: AudioProps) {
   return (
     <label style={boxStyle(disabled)}>
-      <Ionicons name="musical-notes-outline" size={20} color="#fff" />
+      <span aria-hidden>🎵</span>
       <span>{label}</span>
       <input
         type="file"

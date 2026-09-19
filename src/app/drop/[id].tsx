@@ -17,22 +17,10 @@ import { useFocusEffect } from 'expo-router';
 
 import { AppBackground } from '@/components/app-background';
 import { Avatar } from '@/components/avatar';
-import { ErrorCard } from '@/components/empty-state';
-import { PushedHeader } from '@/components/pushed-header';
+import { EmptyState } from '@/components/empty-state';
 import { Skeleton } from '@/components/skeleton';
-import { TopNotice } from '@/components/top-notice';
-import {
-  DISPLAY_FONT,
-  capLabel,
-  chip,
-  confirmDanger,
-  confirmQuestion,
-  confirmWord,
-  kicker,
-  pillText,
-  sectionHead,
-  stockLeft,
-} from '@/constants/type';
+import { RETRY } from '@/constants/copy';
+import { DISPLAY_FONT } from '@/constants/type';
 import { fanCopy } from '@/lib/fan-error';
 import { pressFeedback, selectFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import { displayName } from '@/lib/profiles';
@@ -139,10 +127,11 @@ export default function DropScreen() {
 
   async function handleBuy() {
     pressFeedback();
-    // Hard gate: no Stripe yet means no orders. The screen never renders
-    // the grid or the button while SHOP_PAYMENTS_LIVE is off, so this is
-    // the belt to that brace.
-    if (!SHOP_PAYMENTS_LIVE) return;
+    // Hard gate, same as Fan Mail: no Stripe yet means no orders, period.
+    if (!SHOP_PAYMENTS_LIVE) {
+      setError("Orders aren't open yet.");
+      return;
+    }
     // Stripe Checkout flow lands here at phase 2.
   }
 
@@ -188,28 +177,38 @@ export default function DropScreen() {
     return (
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <AppBackground />
-        <PushedHeader title="DROP" fallback="/(tabs)/shop" />
+        <View style={styles.header}>
+          <Pressable onPress={goBack} hitSlop={12}>
+            <Ionicons name="chevron-back" size={24} color="#fff" />
+          </Pressable>
+          <Text style={styles.headerTitle}>DROP</Text>
+          <View style={{ width: 24 }} />
+        </View>
         {loading ? (
           <DropSkeleton />
         ) : error ? (
           // A failed lookup is not "gone": the drop may be live right now.
-          <View style={styles.body}>
-            <ErrorCard
-              title="COULDN'T LOAD THIS DROP"
-              onRetry={() => {
+          <EmptyState
+            icon="cloud-offline-outline"
+            title="Couldn't load this drop"
+            sub="Check your connection."
+            action={{
+              label: RETRY,
+              onPress: () => {
                 tapFeedback();
                 // Before load(): load() alone never re-sets loading, and the
                 // skeleton coming back instantly is the acknowledgment.
                 setLoading(true);
                 load();
-              }}
-            />
-          </View>
+              },
+            }}
+          />
         ) : (
           // A fetch that genuinely came back empty. This one CAN say gone.
-          <View style={styles.body}>
-            <Text style={styles.goneTitle}>THIS DROP IS GONE</Text>
-          </View>
+          <EmptyState
+            icon="bag-outline"
+            title="This drop is gone"
+          />
         )}
       </SafeAreaView>
     );
@@ -223,25 +222,28 @@ export default function DropScreen() {
   const taken = new Set(active.map((c) => c.edition_number));
   const mine = active.find((c) => c.user_id === session?.user.id) ?? null;
   const gross = owners.length * drop.price_cents;
-  const grossDollars = Math.floor(gross / 100).toLocaleString('en-US');
   const toShip = owners.filter((c) => c.status !== 'shipped').length;
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <AppBackground />
-      <PushedHeader
-        title={`DROP ${String(drop.drop_number).padStart(3, '0')}`}
-        fallback="/(tabs)/shop"
-      />
+      <View style={styles.header}>
+        <Pressable onPress={goBack} hitSlop={12}>
+          <Ionicons name="chevron-back" size={24} color="#fff" />
+        </Pressable>
+        <Text style={styles.headerTitle}>{`DROP ${String(drop.drop_number).padStart(3, '0')}`}</Text>
+        <View style={{ width: 24 }} />
+      </View>
 
       {notice ? (
-        <Animated.View
+        <Animated.Text
+          style={styles.notice}
           entering={reduceMotion ? undefined : FadeIn.duration(180)}
           exiting={reduceMotion ? undefined : FadeOut.duration(150)}>
-          <TopNotice tone="ok" text={notice} />
-        </Animated.View>
+          {notice}
+        </Animated.Text>
       ) : null}
-      {error ? <TopNotice tone="error" text={error} onDismiss={() => setError(null)} /> : null}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
 
       <ScrollView
         contentContainerStyle={styles.body}
@@ -321,13 +323,9 @@ export default function DropScreen() {
                   : 'Claimed. Yours goes into the works now.'}
             </Text>
           </View>
-        ) : status === 'live' && !isArtist && !SHOP_PAYMENTS_LIVE ? (
-          // No Stripe on this build: one line, no grid, no button.
-          <Text style={styles.sub}>{"Orders aren't open yet."}</Text>
         ) : status === 'live' && !isArtist ? (
           <>
-            <Text style={styles.sectionHead}>PICK YOUR NUMBER</Text>
-            <Text style={styles.subHead}>{"It's printed into the piece."}</Text>
+            <Text style={styles.sectionLabel}>PICK YOUR NUMBER. IT'S PRINTED INTO THE PIECE</Text>
             <View style={styles.numbers}>
               {Array.from({ length: drop.run_size }, (_, i) => i + 1).map((n) => {
                 const gone = taken.has(n);
@@ -366,10 +364,10 @@ export default function DropScreen() {
         {/* ---------- the registry ---------- */}
         {owners.length > 0 ? (
           <>
-            <Text style={styles.sectionHead}>THE REGISTRY</Text>
+            <Text style={styles.sectionLabel}>THE REGISTRY</Text>
             {owners.map((claim) => (
               <View key={claim.id} style={styles.claimRow}>
-                <Text style={styles.claimNum}>{`#${claim.edition_number}`}</Text>
+                <Text style={styles.claimNum}>#{String(claim.edition_number).padStart(2, '0')}</Text>
                 <Avatar
                   path={claim.owner?.avatar_path}
                   focus={claim.owner?.avatar_focus}
@@ -437,7 +435,7 @@ export default function DropScreen() {
 
         {isArtist ? (
           <>
-            <Text style={styles.sectionHead}>ARTIST</Text>
+            <Text style={styles.sectionLabel}>ARTIST</Text>
             <View style={styles.stats}>
               <View style={styles.stat}>
                 <Text style={styles.statBig}>
@@ -447,7 +445,7 @@ export default function DropScreen() {
                 <Text style={styles.statLabel}>SOLD</Text>
               </View>
               <View style={styles.stat}>
-                <Text style={styles.statBig}>{`$${grossDollars}`}</Text>
+                <Text style={styles.statBig}>${(gross / 100).toFixed(0)}</Text>
                 <Text style={styles.statLabel}>GROSS</Text>
               </View>
               <View style={styles.stat}>
@@ -466,16 +464,15 @@ export default function DropScreen() {
             ) : null}
             {!drop.is_published ? (
               confirmPublish ? (
-                // The inline confirm: question, go word, Cancel, in chips (post-card's).
                 <Animated.View
                   style={styles.confirmRow}
                   entering={reduceMotion ? undefined : FadeInDown.duration(160)}>
                   <Text style={styles.confirmText}>Go live and push every fan?</Text>
-                  <Pressable style={styles.confirmChip} onPress={handlePublish}>
-                    <Text style={styles.confirmGo}>Publish</Text>
+                  <Pressable onPress={handlePublish}>
+                    <Text style={styles.confirmYes}>PUBLISH</Text>
                   </Pressable>
-                  <Pressable style={styles.confirmChip} onPress={() => setConfirmPublish(false)}>
-                    <Text style={styles.confirmGo}>Cancel</Text>
+                  <Pressable onPress={() => setConfirmPublish(false)}>
+                    <Text style={styles.confirmNo}>Cancel</Text>
                   </Pressable>
                 </Animated.View>
               ) : (
@@ -491,11 +488,11 @@ export default function DropScreen() {
                   style={styles.confirmRow}
                   entering={reduceMotion ? undefined : FadeInDown.duration(160)}>
                   <Text style={styles.confirmText}>Delete this drop?</Text>
-                  <Pressable style={styles.confirmChip} onPress={handleDelete}>
-                    <Text style={styles.confirmDanger}>Delete</Text>
+                  <Pressable onPress={handleDelete}>
+                    <Text style={styles.confirmYes}>DELETE</Text>
                   </Pressable>
-                  <Pressable style={styles.confirmChip} onPress={() => setConfirmDelete(false)}>
-                    <Text style={styles.confirmGo}>Cancel</Text>
+                  <Pressable onPress={() => setConfirmDelete(false)}>
+                    <Text style={styles.confirmNo}>Cancel</Text>
                   </Pressable>
                 </Animated.View>
               ) : (
@@ -529,12 +526,29 @@ function DropSkeleton() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  muted: { color: '#55585f' },
   // Style applies after the height prop, so the aspect box wins.
   skeletonArt: { height: undefined, aspectRatio: 1 / 1.02, overflow: 'hidden' },
   skeletonKicker: { marginTop: 12 },
   skeletonPrice: { marginTop: 8 },
   skeletonNumbers: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 22 },
-  goneTitle: { ...sectionHead, paddingVertical: 8 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    color: '#fff',
+    fontSize: 17,
+    fontFamily: DISPLAY_FONT,
+    letterSpacing: 2,
+  },
+  notice: { color: '#4fc07a', paddingHorizontal: 16, paddingVertical: 4, fontSize: 13 },
+  error: { color: '#f87171', paddingHorizontal: 16, paddingVertical: 4, fontSize: 13 },
   body: { padding: 14, paddingBottom: 60 },
   art: {
     borderRadius: 16,
@@ -591,7 +605,13 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     transform: [{ rotate: '-9deg' }],
   },
-  kicker: { ...kicker, marginTop: 12 },
+  kicker: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    letterSpacing: 1.6,
+    color: '#8f99a3',
+    marginTop: 12,
+  },
   priceRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -599,14 +619,19 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   price: { fontFamily: DISPLAY_FONT, color: '#fff', fontSize: 30, letterSpacing: 1.5 },
-  leftText: { ...stockLeft, color: '#f87171' },
-  soldText: { ...stockLeft, color: '#8f99a3' },
+  leftText: { fontSize: 12, fontWeight: '700', letterSpacing: 1.4, color: '#f87171' },
+  soldText: { fontSize: 11, fontWeight: '700', letterSpacing: 1.4, color: '#8f99a3' },
   count: { fontFamily: DISPLAY_FONT, color: '#fff', fontSize: 24, letterSpacing: 2 },
   meter: { height: 5, borderRadius: 4, backgroundColor: '#23262b', overflow: 'hidden', marginTop: 9 },
   meterFill: { height: 5, borderRadius: 4, backgroundColor: '#c3cdd6' },
-  sectionHead: { ...sectionHead, marginTop: 22, marginBottom: 10 },
-  // The one-line sub directly under PICK YOUR NUMBER; closes the head's gap.
-  subHead: { color: '#8f99a3', fontSize: 12.5, lineHeight: 18, marginTop: -6, marginBottom: 10 },
+  sectionLabel: {
+    color: '#6d7076',
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 1.6,
+    marginTop: 22,
+    marginBottom: 10,
+  },
   numbers: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
   num: {
     width: 46,
@@ -628,7 +653,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   buyDisabled: { opacity: 0.4 },
-  buyText: pillText,
+  buyText: { color: '#0b0c0e', fontWeight: '800', fontSize: 14, letterSpacing: 0.5 },
   sub: { color: '#8f99a3', fontSize: 12.5, lineHeight: 18, marginTop: 4 },
   subCenter: { color: '#55585f', fontSize: 11.5, lineHeight: 17, textAlign: 'center', marginTop: 10 },
   mineCard: {
@@ -689,18 +714,19 @@ const styles = StyleSheet.create({
   },
   statBig: { fontFamily: DISPLAY_FONT, color: '#fff', fontSize: 20, letterSpacing: 1 },
   statDim: { color: '#55585f' },
-  statLabel: { ...capLabel, marginTop: 3 },
+  statLabel: { color: '#6d7076', fontSize: 9, fontWeight: '700', letterSpacing: 1.2, marginTop: 3 },
   confirmRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
+    gap: 14,
+    backgroundColor: '#131519',
+    borderRadius: 12,
+    padding: 13,
     marginTop: 14,
   },
-  confirmText: { ...confirmQuestion, flexShrink: 1 },
-  confirmChip: chip,
-  confirmGo: confirmWord,
-  confirmDanger,
+  confirmText: { color: '#ccc', flex: 1, fontSize: 13 },
+  confirmYes: { color: '#7ed354', fontWeight: '800', fontSize: 12, letterSpacing: 1 },
+  confirmNo: { color: '#8f99a3', fontSize: 13 },
   deleteRow: { alignItems: 'center', marginTop: 18 },
   deleteText: { color: '#f87171', fontSize: 13, fontWeight: '600' },
   editRow: {

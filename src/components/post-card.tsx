@@ -27,7 +27,6 @@ import { AudioCover, AudioPlayerCard, projectLabel } from '@/components/audio-pl
 import { Avatar } from '@/components/avatar';
 import { Skeleton } from '@/components/skeleton';
 import { REPORT_FAILED, REPORT_SENT } from '@/constants/copy';
-import { chip, confirmDanger, confirmQuestion, confirmWord, eyebrow } from '@/constants/type';
 import { fanCopy } from '@/lib/fan-error';
 import { errorFeedback, pressFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import { PurchaseCancelledError, UnlockPendingError, purchasePost } from '@/lib/payments';
@@ -236,8 +235,10 @@ function PollBar({
     <Pressable style={styles.pollBar} onPress={onPress}>
       <Animated.View style={[styles.pollFill, fill]} />
       <View style={styles.pollRow}>
-        {/* My own vote: the weight and the fill are the mark. */}
-        <Text style={[styles.pollLabel, mine && styles.pollLabelMine]}>{label}</Text>
+        <Text style={[styles.pollLabel, mine && styles.pollLabelMine]}>
+          {mine ? '● ' : ''}
+          {label}
+        </Text>
         <Text style={styles.pollPct}>{pct}%</Text>
       </View>
     </Pressable>
@@ -768,14 +769,9 @@ export const PostCard = memo(function PostCard({
           <View style={styles.teaseScrim} />
           <View style={styles.teaseContent}>
             <Ionicons name="lock-closed" size={20} color="#e8e9eb" />
-            {post.title ? (
-              <Text style={styles.teaseTitle} numberOfLines={1}>
-                {post.title}
-              </Text>
-            ) : (
-              // No title: the same small silver eyebrow the audio cover wears.
-              <Text style={styles.teaseEyebrow}>{`LOCKED · ${projectLabel(post.project)}`}</Text>
-            )}
+            <Text style={styles.teaseTitle} numberOfLines={1}>
+              {post.title ?? `LOCKED · ${projectLabel(post.project)}`}
+            </Text>
             {unlockPill}
             {/* Reserved slot: the notice appears without shoving the tease. */}
             <View style={styles.noticeSlot}>
@@ -957,12 +953,16 @@ const styles = StyleSheet.create({
   body: { color: '#cbcdd1', fontSize: 14, lineHeight: 22 },
   image: { borderRadius: 12, marginTop: 12, backgroundColor: '#1a1d22' },
   mediaGap: { marginTop: 12 },
-  // The inline confirm: the chip row every other confirm copies (tokens in constants/type).
   menuRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 10 },
-  menuLabel: { ...confirmQuestion, flexShrink: 1 },
-  menuChip: chip,
-  menuText: confirmWord,
-  menuDanger: confirmDanger,
+  menuLabel: { color: '#9a9ba3', fontSize: 13, flexShrink: 1 },
+  menuChip: {
+    backgroundColor: '#1e2126',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  menuText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  menuDanger: { color: '#f87171', fontSize: 13, fontWeight: '600' },
   reportedNote: { color: '#4fc07a', fontSize: 13, marginBottom: 8 },
   actionError: { color: '#f87171', fontSize: 13, marginBottom: 8 },
   missingMedia: { color: '#e6b45c', fontSize: 12.5, lineHeight: 18, marginTop: 10 },
@@ -1004,12 +1004,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
     textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowRadius: 8,
-  },
-  // AudioCover's eyebrow treatment, in the sans token, for a locked tease with no title.
-  teaseEyebrow: {
-    ...eyebrow,
-    textShadowColor: 'rgba(0,0,0,0.6)',
-    textShadowRadius: 6,
   },
   teaseSub: { color: '#aab2ba', fontSize: 11.5, textAlign: 'center' },
   noticeSlot: { minHeight: 18, justifyContent: 'center' },

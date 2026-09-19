@@ -1,13 +1,11 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeOut, LinearTransition } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { PushedHeader } from '@/components/pushed-header';
 import { Skeleton } from '@/components/skeleton';
-import { TopNotice } from '@/components/top-notice';
-import { chip, confirmDanger, confirmQuestion, confirmWord } from '@/constants/type';
 import { fanCopy } from '@/lib/fan-error';
 import { errorFeedback, successFeedback } from '@/lib/haptics';
 import { displayName } from '@/lib/profiles';
@@ -29,12 +27,13 @@ import { useAuth } from '@/providers/auth-provider';
 type ReportRow = Report & {
   preview: string;
   targetBannedAt: string | null;
-  /** False when a reported user has since deleted their account — nothing left to ban. */
+  /** False when a reported user has since deleted their account: nothing left to ban. */
   targetExists: boolean;
 };
 
 export default function ReportsScreen() {
   const { profile } = useAuth();
+  const router = useRouter();
   const reduceMotion = useReduceMotion();
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -153,21 +152,24 @@ export default function ReportsScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <PushedHeader
-        title="REPORTS"
-        fallback="/(tabs)"
-        right={
-          <Pressable onPress={load} hitSlop={12} accessibilityLabel="Refresh">
-            <Ionicons name="refresh" size={20} color="#8f99a3" />
-          </Pressable>
-        }
-      />
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
+          hitSlop={12}
+          accessibilityLabel="Back">
+          <Ionicons name="chevron-back" size={24} color="#fff" />
+        </Pressable>
+        <Text style={styles.headerTitle}>Reports</Text>
+        <Pressable onPress={load} hitSlop={12} accessibilityLabel="Refresh">
+          <Ionicons name="refresh" size={20} color="#888" />
+        </Pressable>
+      </View>
 
       <Text style={styles.slaNote}>
         Apple expects reported content to be acted on within 24 hours. Check this screen daily.
       </Text>
 
-      {error ? <TopNotice tone="error" text={error} onDismiss={() => setError(null)} /> : null}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {loading ? (
         <View style={styles.list}>
@@ -196,9 +198,7 @@ export default function ReportsScreen() {
                 {item.preview}
               </Text>
               {confirmBanId === item.id ? (
-                // The inline confirm (RN Alert doesn't work on web): the same
-                // question / go word / Cancel chips as the feed's delete, the
-                // drop page and the show form; tokens live in constants/type.
+                // Inline confirm (RN Alert doesn't work on web): same pattern as chat leave.
                 <View style={styles.actions}>
                   <Text style={styles.confirmText}>
                     {item.targetBannedAt ? 'Unban this user?' : 'Ban this user from the app?'}
@@ -284,21 +284,30 @@ function ReportSkeleton() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
-  slaNote: { color: '#6d7076', fontSize: 12, paddingHorizontal: 16, paddingBottom: 10 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  headerTitle: { color: '#fff', fontSize: 17, fontWeight: '700' },
+  slaNote: { color: '#666', fontSize: 12, paddingHorizontal: 16, paddingBottom: 10 },
+  error: { color: '#f87171', paddingHorizontal: 16, paddingVertical: 6 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
-  muted: { color: '#6d7076' },
+  muted: { color: '#555' },
   list: { padding: 16, flexGrow: 1 },
   card: { backgroundColor: '#131519', borderRadius: 12, padding: 14, marginBottom: 10 },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   type: { color: '#c3cdd6', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
-  when: { color: '#55585f', fontSize: 12 },
-  reason: { color: '#cbcdd1', fontSize: 14 },
-  preview: { color: '#8f99a3', fontSize: 13, marginTop: 6 },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12, flexWrap: 'wrap' },
-  confirmText: { ...confirmQuestion, flexShrink: 1 },
-  chip,
-  chipText: confirmWord,
-  chipDanger: confirmDanger,
+  when: { color: '#555', fontSize: 12 },
+  reason: { color: '#ccc', fontSize: 14 },
+  preview: { color: '#777', fontSize: 13, marginTop: 6, fontStyle: 'italic' },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
+  confirmText: { color: '#ccc', flex: 1, fontSize: 13 },
+  chip: { backgroundColor: '#222226', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7 },
+  chipText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  chipDanger: { color: '#f87171', fontSize: 13, fontWeight: '600' },
   skeletonGap: { marginTop: 8 },
   skeletonChips: { flexDirection: 'row', gap: 8, marginTop: 12 },
 });

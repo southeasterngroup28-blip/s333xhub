@@ -8,18 +8,11 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AppBackground } from '@/components/app-background';
 import { EdgeGlass, FadeMask } from '@/components/edge-fade';
 import { countdownTo, useNow } from '@/lib/countdown';
-import { ErrorCard } from '@/components/empty-state';
-import {
-  ROOT_FADE_TOP,
-  ROOT_LIST_TOP,
-  ROOT_NOTICE_TOP,
-  RootHeader,
-} from '@/components/root-header';
+import { EmptyState } from '@/components/empty-state';
 import { ChatRowSkeleton } from '@/components/skeleton';
-import { TopNotice } from '@/components/top-notice';
 import { ScalePressable } from '@/components/ui/scale-pressable';
-import { CHAT_HAIRLINE_MINE, CHAT_SURFACE_ROW } from '@/constants/chat-surfaces';
-import { DISPLAY_FONT, capLabel, kicker, sectionHead, stockLeft } from '@/constants/type';
+import { RETRY } from '@/constants/copy';
+import { DISPLAY_FONT } from '@/constants/type';
 import { fanCopy } from '@/lib/fan-error';
 import { tapFeedback } from '@/lib/haptics';
 import {
@@ -85,7 +78,7 @@ export default function ShopScreen() {
           <ChatRowSkeleton />
         </View>
       ) : (
-        <FadeMask top={ROOT_FADE_TOP}>
+        <FadeMask>
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={styles.list}
@@ -107,30 +100,29 @@ export default function ShopScreen() {
           {drops.length === 0 ? (
             error ? (
               // A failed load must never masquerade as an empty shelf.
-              <ErrorCard
-                title="COULDN'T LOAD THE SHOP"
-                onRetry={() => {
-                  tapFeedback();
-                  setLoading(true);
-                  load();
+              <EmptyState
+                icon="cloud-offline-outline"
+                title="Couldn't load the shop"
+                sub="Check your connection."
+                action={{
+                  label: RETRY,
+                  onPress: () => {
+                    tapFeedback();
+                    setLoading(true);
+                    load();
+                  },
                 }}
               />
             ) : (
-              // The shelf's own shape with nothing on it: kicker, blank art, one line.
-              <View style={styles.card}>
-                <View style={styles.cardHead}>
-                  <Text style={styles.kicker}>DROP 001</Text>
-                </View>
-                <View style={[styles.art, styles.artBlank]} />
-                <View style={styles.cardFoot}>
-                  <View>
-                    <Text style={styles.emptyTitle}>NOTHING ON THE SHELF</Text>
-                    <Text style={styles.footLabel}>
-                      {isArtist ? 'Tap + to set up Drop 001.' : 'You get a push when it goes live.'}
-                    </Text>
-                  </View>
-                </View>
-              </View>
+              <EmptyState
+                icon="bag-outline"
+                title="Nothing on the shelf"
+                sub={
+                  isArtist
+                    ? 'Tap + to set up Drop 001.'
+                    : 'You get a push when it goes live.'
+                }
+              />
             )
           ) : (
             drops.map((drop) => {
@@ -143,8 +135,6 @@ export default function ShopScreen() {
                   style={[styles.card, drop.project === 's333xgod' ? styles.cardGod : styles.cardMazze]}
                   onPress={() => router.push(`/drop/${drop.id}` as never)}>
                   <View style={styles.cardHead}>
-                    {/* A live drop gets the one green dot before its kicker (chat.tsx's countDot). */}
-                    {status === 'live' && drop.is_published ? <View style={styles.liveDot} /> : null}
                     <Text
                       style={[
                         styles.kicker,
@@ -160,6 +150,7 @@ export default function ShopScreen() {
                             ? ' · UPCOMING'
                             : ' · SOLD OUT'}
                     </Text>
+                    <Text style={styles.chip}>LIMIT 1 PER FAN</Text>
                   </View>
 
                   <View style={styles.art}>
@@ -225,26 +216,19 @@ export default function ShopScreen() {
       )}
 
       <EdgeGlass />
-      <RootHeader
-        title="S333XSHOP"
-        actions={
-          isArtist ? (
-            <Pressable
-              onPress={() => router.push('/drop-new' as never)}
-              hitSlop={12}
-              style={styles.newButton}>
-              <Ionicons name="add" size={22} color="#0b0c0e" />
-            </Pressable>
-          ) : null
-        }
-      />
+      <View style={[styles.topBar, { top: insets.top }]} pointerEvents="box-none">
+        <Text style={styles.title}>S333XSHOP</Text>
+        {isArtist ? (
+          <Pressable
+            onPress={() => router.push('/drop-new' as never)}
+            hitSlop={12}
+            style={styles.newButton}>
+            <Ionicons name="add" size={22} color="#0b0c0e" />
+          </Pressable>
+        ) : null}
+      </View>
       {error && drops.length > 0 ? (
-        <TopNotice
-          tone="error"
-          text={error}
-          onDismiss={() => setError(null)}
-          absoluteTop={insets.top + ROOT_NOTICE_TOP}
-        />
+        <Text style={[styles.error, { top: insets.top + 48 }]}>{error}</Text>
       ) : null}
     </SafeAreaView>
   );
@@ -252,7 +236,21 @@ export default function ShopScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
+  topBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  title: { color: '#f4f5f6', fontSize: 22, fontFamily: DISPLAY_FONT, letterSpacing: 3 },
   newButton: {
+    position: 'absolute',
+    right: 16,
     width: 34,
     height: 34,
     borderRadius: 17,
@@ -260,40 +258,54 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  list: { padding: 14, paddingTop: ROOT_LIST_TOP, paddingBottom: 150, flexGrow: 1 },
-  loadingPad: { paddingTop: ROOT_LIST_TOP },
-  // The same translucent surface as the shows row; the 1px project-colour
-  // border is the only edge, and the art runs edge to edge beneath the kicker.
+  error: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    textAlign: 'center',
+    color: '#f87171',
+    paddingHorizontal: 16,
+    fontSize: 13,
+  },
+  list: { padding: 14, paddingTop: 52, paddingBottom: 150, flexGrow: 1 },
+  loadingPad: { paddingTop: 52 },
   card: {
-    backgroundColor: CHAT_SURFACE_ROW,
+    backgroundColor: '#101216',
     borderRadius: 16,
+    padding: 13,
     marginBottom: 14,
     borderWidth: 1,
-    borderColor: CHAT_HAIRLINE_MINE,
-    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
   },
   cardGod: { borderColor: 'rgba(88, 178, 235, 0.22)' },
   cardMazze: { borderColor: 'rgba(126, 211, 84, 0.18)' },
-  cardHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    paddingHorizontal: 13,
-    paddingTop: 12,
-    paddingBottom: 10,
-  },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#7ed354' },
-  kicker,
+  cardHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  kicker: { fontSize: 10, fontWeight: '700', letterSpacing: 1.6, color: '#8f99a3' },
   kickerLive: { color: '#7ed354' },
   kickerSold: { color: '#f87171' },
+  chip: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: '#c3cdd6',
+    backgroundColor: 'rgba(195,205,214,0.1)',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
   art: {
+    marginTop: 10,
+    borderRadius: 12,
     aspectRatio: 4 / 3,
     backgroundColor: '#14171b',
     overflow: 'hidden',
     justifyContent: 'flex-end',
   },
-  artBlank: { backgroundColor: '#07090b' },
-  emptyTitle: { ...sectionHead, marginBottom: 4 },
   artEmblem: {
     position: 'absolute',
     alignSelf: 'center',
@@ -346,12 +358,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'baseline',
-    paddingHorizontal: 13,
-    paddingTop: 11,
-    paddingBottom: 13,
+    marginTop: 11,
   },
-  footLabel: { ...capLabel, color: '#8f99a3' },
-  leftText: { ...stockLeft, color: '#f87171' },
+  footLabel: { fontSize: 10.5, fontWeight: '700', letterSpacing: 1.4, color: '#8f99a3' },
+  leftText: { fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: '#f87171' },
   count: {
     fontFamily: DISPLAY_FONT,
     color: '#fff',
@@ -360,14 +370,6 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   price: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  meter: {
-    height: 5,
-    borderRadius: 4,
-    backgroundColor: '#23262b',
-    overflow: 'hidden',
-    marginHorizontal: 13,
-    marginBottom: 13,
-    marginTop: -4,
-  },
+  meter: { height: 5, borderRadius: 4, backgroundColor: '#23262b', overflow: 'hidden', marginTop: 9 },
   meterFill: { height: 5, borderRadius: 4, backgroundColor: '#c3cdd6' },
 });

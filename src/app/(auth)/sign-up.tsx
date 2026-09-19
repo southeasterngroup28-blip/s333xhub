@@ -1,4 +1,3 @@
-import Ionicons from '@expo/vector-icons/Ionicons';
 import { Link } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -23,7 +22,7 @@ import { errorFeedback, pressFeedback, tapFeedback } from '@/lib/haptics';
 import { isUnnamed } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
-import { DISPLAY_FONT, pillText } from '@/constants/type';
+import { DISPLAY_FONT } from '@/constants/type';
 
 export default function SignUpScreen() {
   const reduceMotion = useReduceMotion();
@@ -116,7 +115,7 @@ export default function SignUpScreen() {
       <SafeAreaView style={styles.safe}>
         <Animated.View style={styles.container} entering={enter} exiting={exit}>
           <Text style={styles.title}>Check your email</Text>
-          <Text style={styles.explain}>
+          <Text style={styles.subtitle}>
             We sent a confirmation link to {email.trim()}. Tap it, then come back and sign in.
           </Text>
           <Animated.View entering={enter}>
@@ -204,7 +203,7 @@ export default function SignUpScreen() {
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: confirmedAge }}>
                 <View style={[styles.checkbox, confirmedAge && styles.checkboxChecked]}>
-                  {confirmedAge ? <Ionicons name="checkmark" size={14} color="#c3cdd6" /> : null}
+                  {confirmedAge ? <Text style={styles.checkmark}>✓</Text> : null}
                 </View>
                 <Text style={styles.termsText}>I am 17 or older</Text>
               </Pressable>
@@ -218,7 +217,7 @@ export default function SignUpScreen() {
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: acceptedTerms }}>
                 <View style={[styles.checkbox, acceptedTerms && styles.checkboxChecked]}>
-                  {acceptedTerms ? <Ionicons name="checkmark" size={14} color="#c3cdd6" /> : null}
+                  {acceptedTerms ? <Text style={styles.checkmark}>✓</Text> : null}
                 </View>
                 <Text style={styles.termsText}>
                   I agree to the{' '}
@@ -256,7 +255,7 @@ export default function SignUpScreen() {
                 {submitting ? (
                   <ActivityIndicator color="#0b0c0e" />
                 ) : (
-                  <Text style={styles.buttonText}>CREATE ACCOUNT</Text>
+                  <Text style={styles.buttonText}>Create account</Text>
                 )}
               </Pressable>
             </Animated.View>
@@ -298,7 +297,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 32,
   },
-  explain: { color: '#9a9ba3', fontSize: 13.5, lineHeight: 20, marginBottom: 16, textAlign: 'center' },
   input: {
     backgroundColor: '#131519',
     color: '#fff',
@@ -319,6 +317,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkboxChecked: { backgroundColor: 'transparent', borderColor: '#c3cdd6' },
+  checkmark: { color: '#c3cdd6', fontWeight: '800' },
   termsText: { color: '#aaa', flex: 1 },
   termsLink: { color: '#fff', textDecorationLine: 'underline' },
   error: { color: '#ff6b6b', marginBottom: 12, textAlign: 'center' },
@@ -337,7 +336,7 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: { opacity: 0.4 },
   buttonPressed: { transform: [{ scale: 0.97 }], opacity: 0.9 },
-  buttonText: pillText,
+  buttonText: { color: '#0b0c0e', fontSize: 15, fontWeight: '700' },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
   footerText: { color: '#888' },
   footerLink: { color: '#c3cdd6', fontWeight: '600' },

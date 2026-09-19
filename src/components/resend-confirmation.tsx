@@ -57,7 +57,7 @@ export function ResendConfirmation({ email }: { email: string }) {
 const styles = StyleSheet.create({
   wrap: { alignItems: 'center', marginBottom: 12 },
   link: { color: '#c3cdd6', fontWeight: '600' },
-  linkDisabled: { color: '#6d7076' },
+  linkDisabled: { color: '#666' },
   notice: { color: '#4fc07a', marginTop: 8, fontSize: 13 },
   error: { color: '#ff6b6b', marginTop: 8, fontSize: 13, textAlign: 'center' },
 });

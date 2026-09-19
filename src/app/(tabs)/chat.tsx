@@ -16,15 +16,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AppBackground } from '@/components/app-background';
 import { Avatar } from '@/components/avatar';
 import { EdgeGlass, FadeMask } from '@/components/edge-fade';
-import { ErrorCard } from '@/components/empty-state';
-import {
-  ROOT_FADE_TOP,
-  ROOT_LIST_TOP,
-  ROOT_NOTICE_TOP,
-  RootHeader,
-} from '@/components/root-header';
+import { EmptyState } from '@/components/empty-state';
 import { Skeleton } from '@/components/skeleton';
-import { TopNotice } from '@/components/top-notice';
 import {
   fetchChatList,
   getOrCreateDm,
@@ -39,7 +32,7 @@ import { fetchBlockedIds } from '@/lib/moderation';
 import { GONE_NAME } from '@/lib/profiles';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/providers/auth-provider';
-import { DISPLAY_FONT, eyebrow, sectionHead } from '@/constants/type';
+import { DISPLAY_FONT } from '@/constants/type';
 import { CHAT_HAIRLINE_MINE, CHAT_SURFACE_ROW } from '@/constants/chat-surfaces';
 
 // The artist's badge on the DM row: the one spot of colour in the list.
@@ -77,12 +70,12 @@ function Cluster({ artist, fan }: { artist: ChatPerson | null; fan: ChatPerson |
         <Avatar
           path={artist?.avatar_path}
           focus={artist?.avatar_focus}
-          name={artist?.display_name}
+          name={artist?.display_name ?? 'S'}
           size={34}
         />
       </View>
       <View style={styles.clusterSmall}>
-        <Avatar path={fan?.avatar_path} focus={fan?.avatar_focus} name={fan?.display_name} size={24} />
+        <Avatar path={fan?.avatar_path} focus={fan?.avatar_focus} name={fan?.display_name ?? 'F'} size={24} />
       </View>
     </View>
   );
@@ -95,7 +88,7 @@ function Face({ person }: { person: ChatPerson | null }) {
       <Avatar
         path={person?.avatar_path}
         focus={person?.avatar_focus}
-        name={person?.display_name}
+        name={person?.display_name ?? '?'}
         size={44}
       />
       {person?.role === 'artist' ? (
@@ -115,8 +108,6 @@ export default function ChatListScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  /** The list fetch itself failed (as opposed to a rejoin or DM open). */
-  const [loadFailed, setLoadFailed] = useState(false);
   const [openingDm, setOpeningDm] = useState(false);
   const activityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -132,10 +123,8 @@ export default function ChatListScreen() {
       // to an empty set rather than taking the list down.
       const blockedIds = await fetchBlockedIds().catch(() => new Set<string>());
       setItems(await fetchChatList(myUserId, { previews: true, blockedIds }));
-      setLoadFailed(false);
       setError(null);
     } catch (e) {
-      setLoadFailed(true);
       setError(fanCopy(e, 'Could not load chats.'));
     } finally {
       setLoading(false);
@@ -231,7 +220,7 @@ export default function ChatListScreen() {
             <Text style={styles.name} numberOfLines={1}>
               {item.title}
             </Text>
-            {withArtist ? <Text style={styles.artistTag}>THE ARTIST</Text> : null}
+            {withArtist ? <Text style={styles.artistTag}>The artist</Text> : null}
             <View style={styles.line1Right}>
               {item.mutedAt ? <Ionicons name="notifications-off" size={13} color="#55555c" /> : null}
               {item.lastMessage ? (
@@ -272,7 +261,7 @@ export default function ChatListScreen() {
           ))}
         </View>
       ) : (
-        <FadeMask top={ROOT_FADE_TOP}>
+        <FadeMask top={78}>
           <FlatList
             data={items}
             keyExtractor={(item) => item.channelId}
@@ -290,9 +279,8 @@ export default function ChatListScreen() {
             ListFooterComponent={
               // Fans get a way to start their DM with the artist. The artist
               // only sees DMs fans have already started (that's the default
-              // while the artist is away — reversible later). A failed load
-              // shows the error card alone.
-              !isArtist && !hasDm && !loadFailed ? (
+              // while the artist is away — reversible later).
+              !isArtist && !hasDm ? (
                 <Pressable style={styles.dmButton} onPress={openArtistDm} disabled={openingDm}>
                   {openingDm ? (
                     <ActivityIndicator color="#000" />
@@ -306,19 +294,7 @@ export default function ChatListScreen() {
               ) : null
             }
             ListEmptyComponent={
-              loadFailed ? (
-                // A failed load is never dressed as an empty shelf.
-                <ErrorCard
-                  title="COULDN'T LOAD CHATS"
-                  onRetry={() => {
-                    setLoading(true);
-                    load();
-                  }}
-                />
-              ) : (
-                // A fetch that came back with nothing: one line under the rule.
-                <Text style={styles.emptyLine}>NOTHING HERE</Text>
-              )
+              <EmptyState icon="chatbubbles-outline" title="Nothing here" />
             }
             contentContainerStyle={styles.list}
           />
@@ -326,14 +302,13 @@ export default function ChatListScreen() {
       )}
 
       <EdgeGlass />
-      <RootHeader title="CHAT" />
+      {/* The title block floats over the rows, ruled off beneath like a letterhead. */}
+      <View style={[styles.topBar, { top: insets.top }]} pointerEvents="none">
+        <Text style={styles.title}>CHAT</Text>
+        <View style={styles.titleRule} />
+      </View>
       {error ? (
-        <TopNotice
-          tone="error"
-          text={error}
-          onDismiss={() => setError(null)}
-          absoluteTop={insets.top + ROOT_NOTICE_TOP}
-        />
+        <Text style={[styles.error, { top: insets.top + 68 }]}>{error}</Text>
       ) : null}
     </SafeAreaView>
   );
@@ -343,8 +318,34 @@ const SILVER = '#c3cdd6';
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#000000' },
-  list: { paddingHorizontal: 16, paddingTop: ROOT_LIST_TOP, paddingBottom: 150, flexGrow: 1 },
-  emptyLine: { ...sectionHead, paddingVertical: 8 },
+  topBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 10,
+  },
+  title: {
+    color: '#f4f5f6',
+    fontSize: 28,
+    lineHeight: 34,
+    fontFamily: DISPLAY_FONT,
+    letterSpacing: 1.5,
+  },
+  titleRule: { height: 1, backgroundColor: 'rgba(255,255,255,0.14)', marginTop: 8 },
+  list: { paddingHorizontal: 16, paddingTop: 64, paddingBottom: 150, flexGrow: 1 },
+  error: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    textAlign: 'center',
+    color: '#f87171',
+    paddingHorizontal: 16,
+    fontSize: 13,
+  },
 
   // ---- rows ----
   // Translucent charcoal cards with a faint edge: readable over the photo,
@@ -364,7 +365,13 @@ const styles = StyleSheet.create({
   rowText: { flex: 1, minWidth: 0 },
   line1: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   name: { color: '#fff', fontSize: 16, fontWeight: '600', flexShrink: 1 },
-  artistTag: { ...eyebrow, lineHeight: 12 },
+  artistTag: {
+    color: SILVER,
+    fontSize: 9,
+    lineHeight: 12,
+    fontFamily: DISPLAY_FONT,
+    letterSpacing: 2,
+  },
   line1Right: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 6 },
   time: { color: '#55555c', fontSize: 12, fontVariant: ['tabular-nums'] },
   line2: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 2 },

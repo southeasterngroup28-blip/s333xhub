@@ -23,21 +23,15 @@ import { useFocusEffect, useNavigation } from 'expo-router';
 
 import { AppBackground } from '@/components/app-background';
 import { EdgeGlass, FadeMask } from '@/components/edge-fade';
-import { ErrorCard } from '@/components/empty-state';
+import { EmptyState } from '@/components/empty-state';
+import { ChatRowSkeleton } from '@/components/skeleton';
 import {
   PickAudioButton,
   PickPhotosButton,
   PickVideoButton,
 } from '@/components/media-pickers';
-import {
-  ROOT_FADE_TOP,
-  ROOT_LIST_TOP,
-  ROOT_NOTICE_TOP,
-  RootHeader,
-} from '@/components/root-header';
-import { ChatRowSkeleton } from '@/components/skeleton';
-import { TopNotice } from '@/components/top-notice';
-import { pillText, sectionHead } from '@/constants/type';
+import { CHAT_SURFACE } from '@/constants/chat-surfaces';
+import { OFFLINE_SUB, RETRY } from '@/constants/copy';
 import { clockTime, shortDate, WEEKDAYS } from '@/lib/dates';
 import { fanCopy } from '@/lib/fan-error';
 import {
@@ -52,6 +46,7 @@ import { errorFeedback, pressFeedback, successFeedback, tapFeedback } from '@/li
 import { timeAgo, UploadCancelledError, type UploadHandle } from '@/lib/posts';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { useAuth } from '@/providers/auth-provider';
+import { DISPLAY_FONT } from '@/constants/type';
 
 type Draft = {
   kind: FanMailKind;
@@ -265,10 +260,10 @@ export default function FanMailScreen() {
   const rowExit = reduceMotion ? undefined : FadeOut.duration(150);
 
   const sendLabel = cancelling
-    ? 'CANCELLING…'
+    ? 'Cancelling…'
     : sentFraction >= 1
-      ? 'DELIVERING…'
-      : `SENDING ${Math.round(sentFraction * 100)}%`;
+      ? 'Delivering…'
+      : `Sending ${Math.round(sentFraction * 100)}%`;
   // Once the bytes are up there is nothing left to call off: the record is
   // being written and the X would only lie.
   const canCancel = !sending || (sentFraction < 1 && !cancelling);
@@ -278,7 +273,7 @@ export default function FanMailScreen() {
       <AppBackground />
 
       {isArtist ? (
-        <View style={styles.list}>
+        <View style={[styles.list, styles.loadingPad]}>
           <View style={styles.card}>
             <View style={styles.row}>
               <View style={styles.kindIcon}>
@@ -295,14 +290,14 @@ export default function FanMailScreen() {
           </View>
         </View>
       ) : loading ? (
-        <View style={styles.list}>
+        <View style={[styles.list, styles.loadingPad]}>
           <ChatRowSkeleton />
         </View>
       ) : (
-        <FadeMask top={ROOT_FADE_TOP}>
+        <FadeMask>
         <ScrollView
           ref={scrollRef}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, styles.loadingPad]}
           keyboardShouldPersistTaps="handled"
           automaticallyAdjustKeyboardInsets
           refreshControl={
@@ -318,7 +313,16 @@ export default function FanMailScreen() {
           {loadError ? (
             // Honest: with no list there is no way to know this week's
             // cooldown, so the send form stays hidden until a load lands.
-            <ErrorCard title="COULDN'T LOAD FAN MAIL" onRetry={retryLoad} />
+            <Animated.View entering={reduceMotion ? undefined : FadeIn.duration(180)}>
+              <EmptyState icon="mail-open-outline" title="Couldn't load fan mail" sub={OFFLINE_SUB} />
+              <Pressable
+                style={({ pressed }) => [styles.openPill, styles.retryPill, pressed && styles.pillPressed]}
+                hitSlop={8}
+                onPress={retryLoad}
+                accessibilityRole="button">
+                <Text style={styles.openPillText}>{RETRY}</Text>
+              </Pressable>
+            </Animated.View>
           ) : (
             <Animated.View style={styles.card} layout={layout}>
               <Text style={styles.pitch}>
@@ -445,7 +449,7 @@ export default function FanMailScreen() {
                         </View>
                       </>
                     ) : (
-                      <Text style={styles.sendText}>SEND TO THE ARTIST</Text>
+                      <Text style={styles.sendText}>Send to the artist</Text>
                     )}
                   </Pressable>
                 </Animated.View>
@@ -455,7 +459,7 @@ export default function FanMailScreen() {
 
           {!loadError && items.length > 0 ? (
             <Animated.View layout={layout}>
-              <Text style={styles.sectionHead}>SENT</Text>
+              <Text style={styles.sectionLabel}>SENT</Text>
               {items.map((item) => (
                 <Animated.View
                   key={item.id}
@@ -479,27 +483,27 @@ export default function FanMailScreen() {
       )}
 
       <EdgeGlass />
-      <RootHeader title="FAN MAIL" />
-      {/* The one notice pill, floated under the letterhead. The wrapper keeps
-          the fade the pill had before it was shared. */}
-      {error ? (
+      <View style={[styles.topBar, { top: insets.top }]} pointerEvents="box-none">
+        <Text style={styles.title}>FAN MAIL</Text>
+      </View>
+      {notice ? (
         <Animated.View
-          key="error"
-          style={[styles.noticeWrap, { top: insets.top + ROOT_NOTICE_TOP }]}
-          pointerEvents="box-none"
-          entering={reduceMotion ? undefined : FadeIn.duration(150)}
-          exiting={reduceMotion ? undefined : FadeOut.duration(150)}>
-          <TopNotice tone="error" text={error} onDismiss={() => setError(null)} />
-        </Animated.View>
-      ) : notice ? (
-        <Animated.View
-          key="notice"
-          style={[styles.noticeWrap, { top: insets.top + ROOT_NOTICE_TOP }]}
-          pointerEvents="box-none"
+          style={[styles.noticeWrap, { top: insets.top + 48 }]}
+          pointerEvents="none"
           entering={reduceMotion ? undefined : FadeInDown.duration(280)}
           exiting={reduceMotion ? undefined : FadeOut.duration(200)}>
-          <TopNotice tone="ok" text={notice} onDismiss={() => setNotice(null)} />
+          <View style={styles.noticePill}>
+            <Text style={styles.notice}>{notice}</Text>
+          </View>
         </Animated.View>
+      ) : null}
+      {error ? (
+        <Animated.Text
+          style={[styles.error, { top: insets.top + 48 }]}
+          entering={reduceMotion ? undefined : FadeIn.duration(150)}
+          exiting={reduceMotion ? undefined : FadeOut.duration(150)}>
+          {error}
+        </Animated.Text>
       ) : null}
     </SafeAreaView>
   );
@@ -507,15 +511,61 @@ export default function FanMailScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
-  noticeWrap: { position: 'absolute', left: 0, right: 0, zIndex: 26 },
-  list: { padding: 14, paddingTop: ROOT_LIST_TOP, paddingBottom: 150 },
-  // Solid on purpose: the #0f1114 inputs inside still read as sunken. No
-  // shadow; the floating card belongs to the feed alone.
+  topBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  title: { color: '#f4f5f6', fontSize: 22, fontFamily: DISPLAY_FONT, letterSpacing: 2 },
+  noticeWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  noticePill: {
+    backgroundColor: CHAT_SURFACE,
+    borderWidth: 1,
+    borderColor: 'rgba(79,192,122,0.35)',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  notice: {
+    textAlign: 'center',
+    color: '#4fc07a',
+    fontSize: 13,
+  },
+  error: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    textAlign: 'center',
+    color: '#f87171',
+    paddingHorizontal: 16,
+    fontSize: 13,
+  },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 },
+  muted: { color: '#55585f' },
+  list: { padding: 14, paddingBottom: 150 },
+  loadingPad: { paddingTop: 52 },
   card: {
     backgroundColor: '#131519',
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 6,
   },
   pitch: { color: '#cbcdd1', fontSize: 14, lineHeight: 21 },
   price: { color: '#c3cdd6', fontSize: 12.5, fontWeight: '600', marginTop: 8 },
@@ -562,7 +612,7 @@ const styles = StyleSheet.create({
   },
   sendDisabled: { opacity: 0.4 },
   sendPressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
-  sendText: pillText,
+  sendText: { color: '#0b0c0e', fontWeight: '700', fontSize: 15 },
   sendTextTabular: { fontVariant: ['tabular-nums'] },
   // The live percent bar along the bottom edge of the white button.
   sendTrack: {
@@ -574,7 +624,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(11,12,14,0.12)',
   },
   sendFill: { height: 3, backgroundColor: '#0b0c0e' },
-  sectionHead: { ...sectionHead, marginBottom: 8, marginTop: 8 },
+  sectionLabel: {
+    color: '#6d7076',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+    marginTop: 8,
+  },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   kindIcon: {
     width: 38,
@@ -587,4 +644,14 @@ const styles = StyleSheet.create({
   meta: { flex: 1 },
   sender: { color: '#fff', fontWeight: '600', fontSize: 14 },
   sub: { color: '#6d7076', fontSize: 12, marginTop: 1 },
+  openPill: {
+    backgroundColor: '#1e2126',
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  openPillText: { color: '#c3cdd6', fontWeight: '700', fontSize: 13 },
+  retryPill: { alignSelf: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: 18 },
+  pillPressed: { opacity: 0.7 },
+  noteText: { color: '#9a9ba3', fontSize: 13, marginTop: 10, fontStyle: 'italic' },
 });

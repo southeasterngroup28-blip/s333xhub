@@ -44,6 +44,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { AppBackground } from '@/components/app-background';
 import { Avatar } from '@/components/avatar';
 import { EdgeGlass, FadeMask } from '@/components/edge-fade';
+import { EmptyState } from '@/components/empty-state';
 import { useProfileCard } from '@/components/profile-card';
 import { GifPicker } from '@/components/gif-picker';
 import { PickPhotosButton, type PickedImageDraft } from '@/components/media-pickers';
@@ -85,14 +86,7 @@ import { supabase } from '@/lib/supabase';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { useAuth } from '@/providers/auth-provider';
 import { REPORT_FAILED, REPORT_SENT } from '@/constants/copy';
-import {
-  DISPLAY_FONT,
-  confirmDanger,
-  confirmQuestion,
-  confirmWord,
-  eyebrow,
-  sectionHead,
-} from '@/constants/type';
+import { DISPLAY_FONT } from '@/constants/type';
 import {
   CHAT_COMPOSER,
   CHAT_HAIRLINE,
@@ -1128,14 +1122,14 @@ export default function ChannelScreen() {
     return null;
   }, [runs, otherLastReadAt, info?.type]);
 
-  // The eyebrow under the title: the community and its size, or the DM.
-  const eyebrowText = !info
+  // The Anton eyebrow under the title: the room and its size, or the DM.
+  const eyebrow = !info
     ? ''
     : isGroup
       ? info.memberCount
-        ? `COMMUNITY · ${info.memberCount}`
-        : 'COMMUNITY'
-      : 'DIRECT MESSAGE';
+        ? `Community · ${info.memberCount}`
+        : 'Community'
+      : 'Direct message';
 
   /** Can this message share tightened corners with a neighbour in its run? */
   const chainable = (m: Message) => m.kind === 'text' || m.kind === 'gif' || m.kind === 'image';
@@ -1314,7 +1308,7 @@ export default function ChannelScreen() {
                 <Text style={[styles.name, run.artist && styles.nameArtist]} numberOfLines={1}>
                   {displayName(run.sender)}
                 </Text>
-                {run.artist ? <Text style={styles.artistTag}>THE ARTIST</Text> : null}
+                {run.artist ? <Text style={styles.artistTag}>The artist</Text> : null}
               </View>
             ) : null}
             {run.messages.map((m, i) => {
@@ -1394,10 +1388,11 @@ export default function ChannelScreen() {
                     ) : null
                   }
                   ListEmptyComponent={
-                    // One line under the header. The list is inverted, so the
-                    // wrapper un-flips itself and its layout top is the visual top.
-                    <View style={styles.emptyInverted}>
-                      <Text style={styles.emptyLine}>{isGroup ? 'QUIET IN HERE' : 'NO MESSAGES'}</Text>
+                    <View style={styles.centerInverted}>
+                      <EmptyState
+                        icon="chatbubbles-outline"
+                        title={isGroup ? 'Quiet in here' : 'No messages'}
+                      />
                     </View>
                   }
                 />
@@ -1534,7 +1529,7 @@ export default function ChannelScreen() {
             {info?.title ?? titleParam ?? ''}
           </Text>
           <Text style={styles.eyebrow} numberOfLines={1}>
-            {eyebrowText}
+            {eyebrow}
           </Text>
         </View>
         <Pressable onPress={goBack} hitSlop={12} style={styles.back} accessibilityLabel="Back">
@@ -1560,9 +1555,6 @@ export default function ChannelScreen() {
       </View>
 
       {confirmLeave ? (
-        // The inline confirm in its floating form: same question / go word /
-        // Cancel tokens as the chip row elsewhere (constants/type), on the
-        // pill this screen shares with its error bar.
         <View style={[styles.floating, { top: insets.top + 58 }]}>
           <Text style={styles.confirmText}>Leave the community?</Text>
           <Pressable onPress={handleLeave} hitSlop={8}>
@@ -1641,12 +1633,13 @@ const styles = StyleSheet.create({
     fontFamily: DISPLAY_FONT,
     letterSpacing: 1.5,
   },
-  // The sans eyebrow token (Anton never goes below 12px); the fixed height
-  // keeps the block's shape before the channel info lands.
   eyebrow: {
-    ...eyebrow,
+    color: SILVER,
+    fontSize: 9,
     lineHeight: 12,
     height: 12,
+    fontFamily: DISPLAY_FONT,
+    letterSpacing: 2.2,
     marginTop: 3,
   },
   actions: {
@@ -1675,24 +1668,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 9,
   },
-  confirmText: { ...confirmQuestion, flex: 1 },
-  confirmYes: confirmDanger,
-  confirmNo: confirmWord,
+  confirmText: { color: '#e6e8ea', flex: 1, fontSize: 13 },
+  confirmYes: { color: '#f87171', fontWeight: '700', fontSize: 13 },
+  confirmNo: { color: '#8a8a92', fontSize: 13 },
   errorBar: { borderColor: 'rgba(248,113,113,0.45)' },
   error: { color: '#f87171', flex: 1, fontSize: 13, lineHeight: 18 },
   notice: { color: '#4fc07a', paddingHorizontal: 16, paddingVertical: 6, fontSize: 13 },
 
   // ---- thread ----
-  // Un-flipped inside the inverted list; its layout top is the visual top,
-  // directly under the header (the list's paddingBottom clears it).
-  emptyInverted: {
+  centerInverted: {
     flex: 1,
-    alignItems: 'flex-start',
-    justifyContent: 'flex-start',
-    paddingTop: 8,
-    transform: [{ scaleY: -1 }],
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 64,
+    transform: [{ scaleY: -1 }], // un-flip inside the inverted list
   },
-  emptyLine: sectionHead,
   // Inverted list: paddingBottom is the VISUAL top (clears the header).
   list: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 66, flexGrow: 1 },
   // In an inverted list the footer is the VISUAL top — where older pages load.
@@ -1768,7 +1758,14 @@ const styles = StyleSheet.create({
   emblem: { width: 18, height: 14 },
   name: { color: '#8a8a92', fontSize: 12, flexShrink: 1, ...TEXT_SHADOW },
   nameArtist: { color: SILVER, fontWeight: '600' },
-  artistTag: { ...eyebrow, lineHeight: 12, ...TEXT_SHADOW },
+  artistTag: {
+    color: SILVER,
+    fontSize: 9,
+    lineHeight: 12,
+    fontFamily: DISPLAY_FONT,
+    letterSpacing: 2,
+    ...TEXT_SHADOW,
+  },
   bubble: {
     borderWidth: 1,
     borderColor: HAIRLINE,

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { ScalePressable } from '@/components/ui/scale-pressable';
-import { DISPLAY_FONT, eyebrow, sectionHead } from '@/constants/type';
+import { DISPLAY_FONT } from '@/constants/type';
 import { fanCopy } from '@/lib/fan-error';
 import { errorFeedback, pressFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
 import { showDateParts, showRelative, type Show } from '@/lib/shows';
@@ -225,7 +225,14 @@ export function MyTicketsStrip({ tickets }: { tickets: Ticket[] }) {
 
 const styles = StyleSheet.create({
   strip: { marginBottom: 6 },
-  label: { ...sectionHead, marginTop: 10, marginBottom: 10 },
+  label: {
+    color: '#6d7076',
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 1.6,
+    marginTop: 10,
+    marginBottom: 10,
+  },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -247,7 +254,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   meta: { flex: 1 },
-  eyebrow: { ...eyebrow, marginBottom: 2 },
+  eyebrow: { color: '#c3cdd6', fontSize: 9.5, fontWeight: '700', letterSpacing: 1.4, marginBottom: 2 },
   title: { color: '#fff', fontFamily: DISPLAY_FONT, fontSize: 15, lineHeight: 19, letterSpacing: 1 },
   sub: { color: '#8f99a3', fontSize: 11.5, marginTop: 2 },
   chip: { borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 },

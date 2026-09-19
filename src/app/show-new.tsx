@@ -15,10 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/providers/auth-provider';
 
-import { Chip, ChipRow, Field, FieldLabel, FormNote, PrimaryButton } from '@/components/form';
-import { PushedHeader } from '@/components/pushed-header';
-import { TopNotice } from '@/components/top-notice';
-import { chip, confirmDanger, confirmQuestion, confirmWord } from '@/constants/type';
+import { DISPLAY_FONT } from '@/constants/type';
 import { shortDateYear } from '@/lib/dates';
 import { fanCopy } from '@/lib/fan-error';
 import { errorFeedback, pressFeedback, successFeedback, tapFeedback } from '@/lib/haptics';
@@ -499,19 +496,18 @@ export default function ShowFormScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
-      <PushedHeader
-        title={editing ? 'EDIT SHOW' : 'NEW SHOW'}
-        left={
-          <Pressable
-            onPress={goBack}
-            hitSlop={12}
-            style={({ pressed }) => (pressed ? styles.pressedDim : null)}>
-            <Text style={styles.cancel}>Cancel</Text>
-          </Pressable>
-        }
-      />
+      <View style={styles.header}>
+        <Pressable
+          onPress={goBack}
+          hitSlop={12}
+          style={({ pressed }) => (pressed ? styles.pressedDim : null)}>
+          <Text style={styles.cancel}>Cancel</Text>
+        </Pressable>
+        <Text style={styles.headerTitle}>{editing ? 'EDIT SHOW' : 'NEW SHOW'}</Text>
+        <View style={{ width: 48 }} />
+      </View>
 
-      {error ? <TopNotice tone="error" text={error} onDismiss={() => setError(null)} /> : null}
+      {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {loading ? (
         <View style={styles.center}>
@@ -527,25 +523,31 @@ export default function ShowFormScreen() {
           <ScrollView
             contentContainerStyle={styles.body}
             keyboardShouldPersistTaps="handled">
-            <Field
+            <TextInput
+              style={styles.input}
               placeholder="Tour or show name (optional)"
+              placeholderTextColor="#55585f"
               value={title}
               onChangeText={setTitle}
               maxLength={80}
             />
 
-            <FieldLabel>VENUE</FieldLabel>
-            <Field
+            <Text style={styles.label}>VENUE</Text>
+            <TextInput
+              style={styles.input}
               placeholder="The Fillmore"
+              placeholderTextColor="#55585f"
               value={venue}
               onChangeText={setVenue}
               autoCapitalize="words"
               maxLength={80}
             />
 
-            <FieldLabel>CITY</FieldLabel>
-            <Field
+            <Text style={styles.label}>CITY</Text>
+            <TextInput
+              style={styles.input}
               placeholder="Miami, FL"
+              placeholderTextColor="#55585f"
               value={city}
               onChangeText={setCity}
               autoCapitalize="words"
@@ -554,10 +556,12 @@ export default function ShowFormScreen() {
 
             <View style={styles.pairRow}>
               <View style={styles.pairCell}>
-                <FieldLabel>DATE</FieldLabel>
-                <Field
+                <Text style={styles.label}>DATE</Text>
+                <TextInput
                   ref={dateRef}
+                  style={styles.input}
                   placeholder="Sept 15, 2026"
+                  placeholderTextColor="#55585f"
                   value={date}
                   onChangeText={(text) => {
                     setDate(text);
@@ -570,9 +574,11 @@ export default function ShowFormScreen() {
                 />
               </View>
               <View style={styles.pairCell}>
-                <FieldLabel>TIME</FieldLabel>
-                <Field
+                <Text style={styles.label}>TIME</Text>
+                <TextInput
+                  style={styles.input}
                   placeholder="8:00 PM"
+                  placeholderTextColor="#55585f"
                   value={time}
                   onChangeText={setTime}
                   onBlur={tidyTime}
@@ -589,31 +595,46 @@ export default function ShowFormScreen() {
             ) : null}
             {whenHint ? <Text style={styles.hint}>{whenHint}</Text> : null}
 
-            <FieldLabel>TIMEZONE</FieldLabel>
-            <ChipRow>
+            <Text style={styles.label}>TIMEZONE</Text>
+            <View style={styles.zoneRow}>
               {SHOW_TIMEZONES.map((option) => (
-                <Chip
+                <Pressable
                   key={option.value}
-                  label={option.label.toUpperCase()}
-                  on={zoneChoice === option.value}
+                  style={({ pressed }) => [
+                    styles.zoneChip,
+                    zoneChoice === option.value && styles.zoneChipOn,
+                    pressed && styles.pressedDim,
+                  ]}
                   onPress={() => {
                     tapFeedback();
                     setZoneChoice(option.value);
-                  }}
-                />
+                  }}>
+                  <Text
+                    style={[styles.zoneText, zoneChoice === option.value && styles.zoneTextOn]}>
+                    {option.label.toUpperCase()}
+                  </Text>
+                </Pressable>
               ))}
-              <Chip
-                label="OTHER"
-                on={zoneChoice === 'other'}
+              <Pressable
+                style={({ pressed }) => [
+                  styles.zoneChip,
+                  zoneChoice === 'other' && styles.zoneChipOn,
+                  pressed && styles.pressedDim,
+                ]}
                 onPress={() => {
                   tapFeedback();
                   setZoneChoice('other');
-                }}
-              />
-            </ChipRow>
+                }}>
+                <Text style={[styles.zoneText, zoneChoice === 'other' && styles.zoneTextOn]}>
+                  OTHER
+                </Text>
+              </Pressable>
+            </View>
             {zoneChoice === 'other' ? (
-              <Field
+              <TextInput
+                style={styles.input}
                 placeholder="America/Anchorage"
+                placeholderTextColor="#55585f"
                 value={customZone}
                 onChangeText={setCustomZone}
                 onBlur={() => markBlurred('zone')}
@@ -622,36 +643,48 @@ export default function ShowFormScreen() {
               />
             ) : null}
             {zoneHint ? <Text style={styles.hint}>{zoneHint}</Text> : null}
-            <FormNote>
+            <Text style={styles.sub}>
               {startsAt && timezone
                 ? `Fans will see: ${previewLabel(startsAt, timezone)}.${
                     inPast ? ' That date has already passed.' : ''
                   }`
                 : "Use the time printed on the ticket, the venue's local time."}
-            </FormNote>
+            </Text>
 
-            <FieldLabel>TICKETS</FieldLabel>
-            <ChipRow segmented>
+            <Text style={styles.label}>TICKETS</Text>
+            <View style={[styles.statusRow, styles.modeRow]}>
               {SALES_MODES.map((mode) => (
-                <Chip
+                <Pressable
                   key={mode}
-                  segmented
-                  label={SALES_MODE_LABEL[mode].toUpperCase()}
-                  on={salesMode === mode}
+                  style={({ pressed }) => [
+                    styles.statusChip,
+                    salesMode === mode && styles.statusChipOn,
+                    pressed && styles.pressedDim,
+                  ]}
                   onPress={() => {
                     tapFeedback();
                     setSalesMode(mode);
-                  }}
-                />
+                  }}>
+                  <Text
+                    style={[
+                      styles.statusText,
+                      styles.modeText,
+                      salesMode === mode && styles.statusTextOn,
+                    ]}>
+                    {SALES_MODE_LABEL[mode].toUpperCase()}
+                  </Text>
+                </Pressable>
               ))}
-            </ChipRow>
+            </View>
 
             {salesMode === 'in_app' ? (
               <View style={styles.pairRow}>
                 <View style={styles.pairCell}>
-                  <FieldLabel>PRICE ($)</FieldLabel>
-                  <Field
+                  <Text style={styles.label}>PRICE ($)</Text>
+                  <TextInput
+                    style={styles.input}
                     placeholder="45"
+                    placeholderTextColor="#55585f"
                     keyboardType="decimal-pad"
                     value={price}
                     onChangeText={setPrice}
@@ -660,9 +693,11 @@ export default function ShowFormScreen() {
                   />
                 </View>
                 <View style={styles.pairCell}>
-                  <FieldLabel>CAPACITY</FieldLabel>
-                  <Field
+                  <Text style={styles.label}>CAPACITY</Text>
+                  <TextInput
+                    style={styles.input}
                     placeholder="Unlimited"
+                    placeholderTextColor="#55585f"
                     keyboardType="number-pad"
                     value={capacity}
                     onChangeText={setCapacity}
@@ -673,9 +708,11 @@ export default function ShowFormScreen() {
               </View>
             ) : salesMode === 'link' ? (
               <>
-                <FieldLabel>TICKET LINK</FieldLabel>
-                <Field
+                <Text style={styles.label}>TICKET LINK</Text>
+                <TextInput
+                  style={styles.input}
                   placeholder='https://… (blank shows "Tickets soon")'
+                  placeholderTextColor="#55585f"
                   keyboardType="url"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -690,71 +727,81 @@ export default function ShowFormScreen() {
             {blurred.ticket && !ticketOk ? (
               <Text style={styles.hint}>Ticket links need to start with http:// or https://.</Text>
             ) : null}
-            <FormNote>{salesNote}</FormNote>
-            {switchNote ? <FormNote>{switchNote}</FormNote> : null}
+            <Text style={styles.sub}>{salesNote}</Text>
+            {switchNote ? <Text style={styles.sub}>{switchNote}</Text> : null}
 
             {editing ? (
               <>
-                <FieldLabel>STATUS</FieldLabel>
-                <ChipRow segmented>
+                <Text style={styles.label}>STATUS</Text>
+                <View style={styles.statusRow}>
                   {STATUS_ORDER.map((value) => (
-                    <Chip
+                    <Pressable
                       key={value}
-                      segmented
-                      label={SHOW_STATUS_LABEL[value].toUpperCase()}
-                      on={status === value}
+                      style={({ pressed }) => [
+                        styles.statusChip,
+                        status === value && styles.statusChipOn,
+                        pressed && styles.pressedDim,
+                      ]}
                       onPress={() => {
                         tapFeedback();
                         setStatus(value);
-                      }}
-                    />
+                      }}>
+                      <Text style={[styles.statusText, status === value && styles.statusTextOn]}>
+                        {SHOW_STATUS_LABEL[value].toUpperCase()}
+                      </Text>
+                    </Pressable>
                   ))}
-                </ChipRow>
+                </View>
                 {status === 'cancelled' && sold > 0 ? (
                   // Nothing refunds sold tickets on its own. The Terms promise a full
                   // refund without the fan asking, so the artist makes each one in Stripe.
-                  <FormNote>
+                  <Text style={styles.sub}>
                     {`${sold} sold. Refund every ticket in Stripe. Fans were promised a full refund without asking.`}
-                  </FormNote>
+                  </Text>
                 ) : null}
               </>
             ) : null}
 
-            <PrimaryButton
-              label={editing ? 'SAVE CHANGES' : inPast ? 'ADD PAST SHOW' : 'POST SHOW · PUSH EVERY FAN'}
-              disabled={!valid}
-              busy={saving}
-              onPress={handleSubmit}
-            />
-            <FormNote center>
+            <Pressable
+              style={[styles.create, (!valid || saving) && styles.createDisabled]}
+              disabled={!valid || saving}
+              onPress={handleSubmit}>
+              {saving ? (
+                <ActivityIndicator color="#0b0c0e" />
+              ) : (
+                <Text style={styles.createText}>
+                  {editing ? 'SAVE CHANGES' : inPast ? 'ADD PAST SHOW' : 'POST SHOW · PUSH EVERY FAN'}
+                </Text>
+              )}
+            </Pressable>
+            <Text style={styles.subCenter}>
               {editing
                 ? 'Edits are quiet. No push goes out. Fans see the change next time they open the app.'
                 : inPast
                   ? 'Past dates go straight to the archive. No push.'
                   : 'Fans get a push the moment you post this.'}
-            </FormNote>
+            </Text>
 
             {editing && sold > 0 ? (
               // Sold tickets pin the show (the database refuses the delete), so
               // steer the artist to the CANCELLED status above instead.
-              <FormNote center style={styles.deleteNote}>
+              <Text style={[styles.subCenter, styles.deleteNote]}>
                 Fans already bought tickets for this show. Mark it cancelled instead of deleting
                 it.
-              </FormNote>
+              </Text>
             ) : editing ? (
               confirmDelete ? (
-                // The inline confirm: question, go word, Cancel, in chips (post-card's).
                 <View style={styles.confirmRow}>
                   <Text style={styles.confirmText}>Delete this show?</Text>
                   <Pressable
                     onPress={handleDelete}
-                    style={({ pressed }) => [styles.confirmChip, pressed && styles.pressedDim]}>
-                    <Text style={styles.confirmDanger}>Delete</Text>
+                    style={({ pressed }) => (pressed ? styles.pressedDim : null)}>
+                    <Text style={styles.confirmYes}>DELETE</Text>
                   </Pressable>
                   <Pressable
                     onPress={() => setConfirmDelete(false)}
-                    style={({ pressed }) => [styles.confirmChip, pressed && styles.pressedDim]}>
-                    <Text style={styles.confirmGo}>Cancel</Text>
+                    style={({ pressed }) => (pressed ? styles.pressedDim : null)}>
+                    <Text style={styles.confirmNo}>Cancel</Text>
                   </Pressable>
                 </View>
               ) : (
@@ -780,25 +827,92 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#0b0c0e' },
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  headerTitle: { color: '#fff', fontSize: 17, fontFamily: DISPLAY_FONT, letterSpacing: 2 },
   cancel: { color: '#8f99a3', fontSize: 15 },
+  error: { color: '#f87171', paddingHorizontal: 16, paddingBottom: 6, fontSize: 13 },
   // Deep enough that the price/capacity row and the button scroll above the keyboard.
   body: { padding: 16, paddingBottom: 160 },
+  input: {
+    backgroundColor: '#131519',
+    color: '#fff',
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 15,
+    marginBottom: 12,
+  },
   pairRow: { flexDirection: 'row', gap: 10 },
   pairCell: { flex: 1 },
+  label: {
+    color: '#6d7076',
+    fontSize: 10.5,
+    fontWeight: '700',
+    letterSpacing: 1.6,
+    marginBottom: 7,
+    marginTop: 6,
+  },
   hint: { color: '#f87171', fontSize: 11.5, lineHeight: 16, marginTop: -4, marginBottom: 10 },
   // Same seat as a hint, but calm: we read the date fine, just say how.
   readAs: { color: '#c3cdd6', fontSize: 11.5, lineHeight: 16, marginTop: -4, marginBottom: 10 },
+  zoneRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginBottom: 12 },
+  zoneChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#1a1d22',
+  },
+  zoneChipOn: { backgroundColor: '#c3cdd6' },
+  zoneText: { color: '#8f99a3', fontWeight: '700', fontSize: 10.5, letterSpacing: 1 },
+  zoneTextOn: { color: '#0b0c0e' },
+  sub: { color: '#55585f', fontSize: 12, lineHeight: 17, marginBottom: 8 },
+  statusRow: { flexDirection: 'row', gap: 8, marginBottom: 6 },
+  statusChip: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: '#1a1d22',
+    alignItems: 'center',
+  },
+  statusChipOn: { backgroundColor: '#ffffff' },
+  statusText: { color: '#8f99a3', fontWeight: '800', fontSize: 11, letterSpacing: 1.5 },
+  statusTextOn: { color: '#0b0c0e' },
+  modeRow: { marginBottom: 12 },
+  // Three labels across a phone — a touch tighter than the two-word status chips.
+  modeText: { fontSize: 10, letterSpacing: 1 },
+  create: {
+    backgroundColor: '#ffffff',
+    borderRadius: 999,
+    padding: 15,
+    alignItems: 'center',
+    marginTop: 18,
+  },
+  createDisabled: { opacity: 0.4 },
+  createText: { color: '#0b0c0e', fontWeight: '800', fontSize: 14, letterSpacing: 0.5 },
+  subCenter: {
+    color: '#55585f',
+    fontSize: 11.5,
+    lineHeight: 16,
+    textAlign: 'center',
+    marginTop: 10,
+  },
   confirmRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
+    gap: 14,
+    backgroundColor: '#131519',
+    borderRadius: 12,
+    padding: 13,
     marginTop: 22,
   },
-  confirmText: { ...confirmQuestion, flexShrink: 1 },
-  confirmChip: chip,
-  confirmGo: confirmWord,
-  confirmDanger,
+  confirmText: { color: '#ccc', flex: 1, fontSize: 13 },
+  confirmYes: { color: '#f87171', fontWeight: '800', fontSize: 12, letterSpacing: 1 },
+  confirmNo: { color: '#8f99a3', fontSize: 13 },
   deleteRow: { alignItems: 'center', marginTop: 22 },
   deleteText: { color: '#f87171', fontSize: 13, fontWeight: '600' },
   deleteNote: { marginTop: 22 },
