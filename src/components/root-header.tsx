@@ -4,12 +4,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { DISPLAY_FONT } from '@/constants/type';
 
-// The letterhead: every tab root's title, left-aligned in 28px Anton and
-// floating over the list. Chat drew it first; the
-// others inherit it here so the five roots stop drifting apart.
+// Every tab root's title: centered Anton floating over the list, with the
+// screen's actions at the right edge. One component so the roots never
+// drift apart.
 
 const PAD_TOP = 4;
-const LINE = 34;
+const LINE = 30;
 const PAD_BOTTOM = 10;
 
 /** The block's height below the safe-area inset. */
@@ -55,12 +55,14 @@ const styles = StyleSheet.create({
   },
   title: {
     color: '#f4f5f6',
-    fontSize: 28,
+    fontSize: 22,
     lineHeight: LINE,
     fontFamily: DISPLAY_FONT,
     letterSpacing: 2,
-    // Leave the title's own line clear of the actions cluster.
-    paddingRight: 120,
+    textAlign: 'center',
+    // Symmetric padding keeps the title centered on the screen, clear of
+    // the actions cluster at the right.
+    paddingHorizontal: 96,
   },
   actions: {
     position: 'absolute',
