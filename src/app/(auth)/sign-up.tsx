@@ -31,6 +31,7 @@ export default function SignUpScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [acceptedTerms, setAcceptedTerms] = useState(false);
+  const [confirmedAge, setConfirmedAge] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [needsEmailConfirm, setNeedsEmailConfirm] = useState(false);
@@ -67,7 +68,8 @@ export default function SignUpScreen() {
     !placeholderName &&
     email.trim().length > 3 &&
     password.length >= 8 &&
-    acceptedTerms;
+    acceptedTerms &&
+    confirmedAge;
 
   async function handleSignUp() {
     if (submitting || !canSubmit) return;
@@ -81,7 +83,7 @@ export default function SignUpScreen() {
       password,
       options: {
         // Saved onto the auth user; the database trigger copies it into profiles.
-        data: { display_name: trimmedName },
+        data: { display_name: trimmedName, age_confirmed: true },
         emailRedirectTo: CONFIRM_EMAIL_URL,
       },
     });
@@ -192,6 +194,20 @@ export default function SignUpScreen() {
                 value={password}
                 onChangeText={setPassword}
               />
+
+              <Pressable
+                style={({ pressed }) => [styles.termsRow, pressed && styles.linkPressed]}
+                onPress={() => {
+                  tapFeedback();
+                  setConfirmedAge(!confirmedAge);
+                }}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: confirmedAge }}>
+                <View style={[styles.checkbox, confirmedAge && styles.checkboxChecked]}>
+                  {confirmedAge ? <Ionicons name="checkmark" size={14} color="#c3cdd6" /> : null}
+                </View>
+                <Text style={styles.termsText}>I am 17 or older</Text>
+              </Pressable>
 
               <Pressable
                 style={({ pressed }) => [styles.termsRow, pressed && styles.linkPressed]}

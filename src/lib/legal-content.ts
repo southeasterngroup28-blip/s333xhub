@@ -18,7 +18,7 @@ export const TERMS_SECTIONS: LegalSection[] = [
   },
   {
     heading: 'Who can use it',
-    body: `You must be at least 17 years old to use ${APP_NAME}. By signing up you confirm you meet this requirement. Accounts are personal. Don't share your login or use someone else's.`,
+    body: `You must be at least 17 years old to use ${APP_NAME}. You confirm this when you sign up. Accounts are personal. Don't share your login or use someone else's.`,
   },
   {
     heading: 'Using the app',
