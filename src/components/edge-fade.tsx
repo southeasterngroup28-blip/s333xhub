@@ -98,16 +98,9 @@ export function EdgeGlass({ top = true, bottom = true }: { top?: boolean; bottom
   }
   return (
     <>
-      {top ? (
-        <MaskedView
-          pointerEvents="none"
-          style={[styles.top, { height: insets.top + 104 }]}
-          maskElement={
-            <LinearGradient colors={EASED_MASK_REVERSED} locations={EASED_STOPS} style={styles.flex} />
-          }>
-          <BlurView intensity={38} tint="dark" style={styles.flex} />
-        </MaskedView>
-      ) : null}
+      {/* No blur under the top bar: a blur smears any bright highlight in
+          the photo into a soft streak that then sits still while the list
+          scrolls under it. The scrim below does the work on its own. */}
       {bottom ? (
         <MaskedView
           pointerEvents="none"
