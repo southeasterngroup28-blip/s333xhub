@@ -3,16 +3,18 @@
 // in the Supabase dashboard. Never interferes with the app.
 import { Platform } from 'react-native';
 
-import { supabase } from '@/lib/supabase';
+import { currentUserId, supabase } from '@/lib/supabase';
 
 let installed = false;
 
 async function report(error: unknown, fatal: boolean): Promise<void> {
   try {
     const err = error instanceof Error ? error : new Error(String(error));
-    const { data } = await supabase.auth.getUser();
+    // Local session read: a crash report must never wait on a network
+    // auth call of its own.
+    const userId = await currentUserId();
     await supabase.from('client_errors').insert({
-      user_id: data.user?.id ?? null,
+      user_id: userId,
       message: err.message.slice(0, 1000),
       stack: (err.stack ?? '').slice(0, 8000),
       fatal,

@@ -1,9 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import {
   FlatList,
+  Keyboard,
   Platform,
   Pressable,
   RefreshControl,
@@ -84,6 +85,232 @@ function byThreadOrder(a: Row, b: Row): number {
   return Number(b.pinned) - Number(a.pinned) || a.created_at.localeCompare(b.created_at);
 }
 
+// Layout-animation builders live at module scope so their identity is
+// stable: reanimated short-circuits re-registration when the config object
+// is the same one it saw last render, so a re-render registers nothing.
+// Sharing an instance across rows is safe — build() returns a fresh worklet
+// per call and nothing chains further on these.
+const ROW_EXIT = FadeOut.duration(160);
+const ROW_LAYOUT = LinearTransition.duration(160);
+const ROW_IN_PENDING = FadeInDown.duration(200);
+const ROW_IN_LIVE = FadeInDown.duration(220);
+const STRIP_IN = FadeInUp.duration(140);
+const STRIP_OUT = FadeOut.duration(100);
+const TOOLBAR_LAYOUT = LinearTransition.duration(140);
+const REASON_IN = FadeIn.duration(100);
+const LIST_LAYOUT = LinearTransition.duration(250);
+const LIST_LAYOUT_HELD = LinearTransition.duration(160);
+const FAILED_IN = FadeInDown.duration(220);
+
+/**
+ * The pill composer. Its draft is its own state so a keystroke re-renders
+ * this small component alone — never the thread or its rows.
+ */
+function Composer({
+  onSend,
+  onFocus,
+}: {
+  onSend: (body: string) => Promise<boolean>;
+  onFocus: () => void;
+}) {
+  const [draft, setDraft] = useState('');
+  const canSend = !!draft.trim();
+  function submit() {
+    const body = draft.trim();
+    if (!body) return;
+    setDraft('');
+    onSend(body).then((ok) => {
+      // Give the words back — unless they already started typing again.
+      if (!ok) setDraft((d) => (d.trim() ? d : body));
+    });
+  }
+  return (
+    <View style={styles.pill}>
+      <TextInput
+        style={styles.input}
+        placeholder="Add a comment…"
+        placeholderTextColor="#55585f"
+        value={draft}
+        onChangeText={setDraft}
+        onFocus={() => {
+          // A beat after focus, so the list has taken its keyboard inset
+          // and scrollToEnd measures the real height.
+          setTimeout(onFocus, 50);
+        }}
+        maxLength={500}
+        multiline
+      />
+      <Pressable
+        style={[styles.send, !canSend && styles.sendDisabled]}
+        onPress={submit}
+        disabled={!canSend}>
+        <Ionicons name="arrow-up" size={18} color="#0b0c0e" />
+      </Pressable>
+    </View>
+  );
+}
+
+type CommentRowProps = {
+  item: Row;
+  loadedAt: number;
+  held: boolean;
+  reporting: boolean;
+  mine: boolean;
+  isArtist: boolean;
+  reduceMotion: boolean;
+  animateIn: boolean;
+  tint: { fill: string; line: string };
+  emblem: number;
+  onShowProfile: (userId: string) => void;
+  onHold: (row: Row) => void;
+  onRelease: () => void;
+  onPin: (row: Row) => void;
+  onDelete: (row: Row) => void;
+  onStartReport: () => void;
+  onReport: (row: Row, reason: string) => void;
+};
+
+/**
+ * One thread row. Memoised on shallow props so a hold, pin or live arrival
+ * re-renders the rows it touches and none of the others.
+ */
+const CommentRow = memo(function CommentRow({
+  item,
+  loadedAt,
+  held,
+  reporting,
+  mine,
+  isArtist,
+  reduceMotion,
+  animateIn,
+  tint,
+  emblem,
+  onShowProfile,
+  onHold,
+  onRelease,
+  onPin,
+  onDelete,
+  onStartReport,
+  onReport,
+}: CommentRowProps) {
+  const isArtistComment = item.author?.role === 'artist';
+  const name = displayName(item.author);
+  const when = timeAgo(item.created_at, loadedAt);
+  const canReport = !mine;
+
+  return (
+    <Animated.View
+      style={held ? styles.heldWrap : undefined}
+      entering={animateIn ? (item.pending ? ROW_IN_PENDING : ROW_IN_LIVE) : undefined}
+      exiting={reduceMotion ? undefined : ROW_EXIT}>
+      {held ? (
+        <Animated.View
+          style={styles.toolbarStrip}
+          entering={reduceMotion ? undefined : STRIP_IN}
+          exiting={reduceMotion ? undefined : STRIP_OUT}>
+          {/* The small floating toolbar raised over the held comment. */}
+          <Animated.View
+            style={[styles.toolbar, reporting && styles.toolbarMenu]}
+            layout={reduceMotion ? undefined : TOOLBAR_LAYOUT}>
+            {reporting ? (
+              REPORT_REASONS.map((reason, index) => (
+                <Animated.View key={reason} entering={reduceMotion ? undefined : REASON_IN}>
+                  <Pressable
+                    style={[styles.toolItem, index > 0 && styles.toolItemRuleTop]}
+                    onPress={() => onReport(item, reason)}>
+                    <Text style={styles.toolText}>{reason}</Text>
+                  </Pressable>
+                </Animated.View>
+              ))
+            ) : (
+              <>
+                {isArtist ? (
+                  <>
+                    <Pressable style={styles.toolItem} onPress={() => onPin(item)}>
+                      <Text style={styles.toolText}>{item.pinned ? 'Unpin' : 'Pin'}</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.toolItem, styles.toolItemRule]}
+                      onPress={() => onDelete(item)}>
+                      <Text style={[styles.toolText, styles.toolDanger]}>Delete</Text>
+                    </Pressable>
+                  </>
+                ) : null}
+                {canReport ? (
+                  <Pressable
+                    style={[styles.toolItem, isArtist && styles.toolItemRule]}
+                    onPress={onStartReport}>
+                    <Text style={styles.toolText}>Report</Text>
+                  </Pressable>
+                ) : null}
+              </>
+            )}
+            <View style={styles.toolbarArrow} />
+          </Animated.View>
+        </Animated.View>
+      ) : null}
+      {/* itemLayoutAnimation only moves item positions — this inner
+          layout transition animates the held row's own content as the
+          toolbar strip blooms above it. */}
+      <Animated.View layout={reduceMotion ? undefined : ROW_LAYOUT}>
+        <Pressable
+          style={({ pressed }) => [
+            held ? (isArtistComment ? styles.heldBandStage : styles.heldBandFan) : undefined,
+            item.pending && styles.pendingRow,
+            pressed && styles.rowPressed,
+          ]}
+          onPress={onRelease}
+          onLongPress={() => {
+            // A pending row has no server id yet — actions would 404.
+            if (item.pending) return;
+            if (!mine || isArtist) onHold(item);
+          }}
+          delayLongPress={300}>
+          {isArtistComment ? (
+            <View style={[styles.stage, { backgroundColor: tint.fill, borderColor: tint.line }]}>
+              <View style={styles.stageTop}>
+                <Pressable onPress={() => onShowProfile(item.user_id)} hitSlop={6}>
+                  <Image source={emblem} style={styles.stageEmblem} contentFit="contain" />
+                </Pressable>
+                <Text style={styles.stageName} numberOfLines={1}>
+                  {name}
+                </Text>
+                {item.pinned ? <Text style={styles.pinned}>PINNED</Text> : null}
+                <Text style={styles.stageTime}>{when}</Text>
+              </View>
+              <Text style={styles.stageBody}>{item.body}</Text>
+            </View>
+          ) : (
+            <View style={styles.fan}>
+              <Pressable
+                onPress={() => onShowProfile(item.user_id)}
+                hitSlop={6}
+                style={styles.fanAvatar}>
+                <Avatar
+                  path={item.author?.avatar_path}
+                  focus={item.author?.avatar_focus}
+                  name={item.author?.display_name}
+                  size={26}
+                />
+              </Pressable>
+              <View style={styles.fanBody}>
+                <View style={styles.fanMeta}>
+                  <Text style={styles.fanName} numberOfLines={1}>
+                    {name}
+                  </Text>
+                  {item.pinned ? <Text style={styles.pinned}>PINNED</Text> : null}
+                  <Text style={styles.fanTime}>{when}</Text>
+                </View>
+                <Text style={styles.fanText}>{item.body}</Text>
+              </View>
+            </View>
+          )}
+        </Pressable>
+      </Animated.View>
+    </Animated.View>
+  );
+});
+
 /**
  * The comments thread for one post. The post itself lives in the feed —
  * this screen is the conversation alone: a floating header, the thread,
@@ -117,7 +344,6 @@ export default function CommentsScreen() {
    */
   const [loadFailed, setLoadFailed] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [draft, setDraft] = useState('');
   const [actionTarget, setActionTarget] = useState<Row | null>(null);
   const [reporting, setReporting] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -154,11 +380,29 @@ export default function CommentsScreen() {
   /** Full reloads in flight — paging pauses so its cursor stays coherent. */
   const loadsInFlightRef = useRef(0);
 
-  // The composer rides the keyboard frame for frame; the spacer in the
-  // list footer grows by the same amount so the thread's end stays
-  // reachable above the pill.
+  // The composer rides the keyboard frame for frame. On iOS the list takes
+  // UIKit's own keyboard inset (automaticallyAdjustKeyboardInsets: zero
+  // per-frame commits of the 40-row list while the keyboard slides); Android
+  // has no such prop, so there the footer spacer still grows by the same
+  // amount to keep the thread's end reachable above the pill.
   const keyboard = useAnimatedKeyboard();
   const insetsBottom = insets.bottom;
+  // While the keyboard is up on iOS, UIKit adds the full keyboard frame as
+  // the list's bottom inset, so the home-indicator inset must come off the
+  // padding or the thread ends 34 pt above the pill. One re-render per
+  // keyboard event, nothing per frame.
+  const [keyboardUp, setKeyboardUp] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    const up = Keyboard.addListener('keyboardWillShow', () => setKeyboardUp(true));
+    const down = Keyboard.addListener('keyboardWillHide', () => setKeyboardUp(false));
+    return () => {
+      up.remove();
+      down.remove();
+    };
+  }, []);
+  // Bumped on every load so each row's "3m ago" label recomputes.
+  const [loadedAt, setLoadedAt] = useState(() => Date.now());
   const composerLift = useAnimatedStyle(
     () => ({
       transform: [{ translateY: -Math.max(keyboard.height.value - insetsBottom, 0) }],
@@ -166,7 +410,10 @@ export default function CommentsScreen() {
     [insetsBottom]
   );
   const keyboardSpacer = useAnimatedStyle(
-    () => ({ height: Math.max(keyboard.height.value - insetsBottom, 0) }),
+    () => ({
+      // The iOS branch never reads keyboard.height, so this never re-runs there.
+      height: Platform.OS === 'ios' ? 0 : Math.max(keyboard.height.value - insetsBottom, 0),
+    }),
     [insetsBottom]
   );
 
@@ -198,6 +445,7 @@ export default function CommentsScreen() {
   const load = useCallback(async () => {
     if (!id) return;
     setLoadFailed(false);
+    setLoadedAt(Date.now());
     const seq = ++fetchSeq.current;
     loadsInFlightRef.current += 1;
     try {
@@ -338,25 +586,35 @@ export default function CommentsScreen() {
     },
     []
   );
-  function flash(text: string) {
+  const flash = useCallback((text: string) => {
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
     setNotice(text);
     noticeTimer.current = setTimeout(() => setNotice(null), 2500);
-  }
+  }, []);
 
   function goBack() {
     if (router.canGoBack()) router.back();
     else router.replace('/');
   }
 
-  function closeActions() {
+  // Row callbacks are stable by hand (this screen does not compile under
+  // the React Compiler), so a memoised CommentRow only re-renders when its
+  // own props change.
+  const closeActions = useCallback(() => {
     setActionTarget(null);
     setReporting(false);
-  }
+  }, []);
 
-  function scrollToLatest() {
+  const onHold = useCallback((row: Row) => {
+    tapFeedback();
+    setActionTarget(row);
+  }, []);
+
+  const onStartReport = useCallback(() => setReporting(true), []);
+
+  const scrollToLatest = useCallback(() => {
     listRef.current?.scrollToEnd({ animated: !reduceMotion });
-  }
+  }, [reduceMotion]);
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -368,9 +626,9 @@ export default function CommentsScreen() {
     }
   }
 
-  function handleSend() {
-    const body = cleanMessage(draft.trim());
-    if (!body || !id || !myUserId) return;
+  function handleSend(raw: string): Promise<boolean> {
+    const body = cleanMessage(raw);
+    if (!body || !id || !myUserId) return Promise.resolve(false);
     pressFeedback();
     const tempId = `temp-${Date.now()}`;
     // Stamp the temp no earlier than the newest loaded comment: a device
@@ -404,11 +662,10 @@ export default function CommentsScreen() {
     const wasEndReached = endReached;
     setComments((prev) => [...prev, temp]);
     setCommentCount((count) => (count === null ? count : count + 1));
-    setDraft('');
     // Same-tick scrollToEnd measures stale content height — wait a frame.
     requestAnimationFrame(() => scrollToLatest());
     inFlightRef.current += 1;
-    addComment(id, body)
+    return addComment(id, body)
       .then((server) => {
         setComments((prev) => {
           if (prev.some((c) => c.id === server.id)) {
@@ -425,14 +682,15 @@ export default function CommentsScreen() {
           // into its true place without jumping or doubling.
           loadNewer();
         }
+        return true;
       })
       .catch(() => {
         setComments((prev) => prev.filter((c) => c.id !== tempId));
         setCommentCount((count) => (count === null ? count : Math.max(0, count - 1)));
         errorFeedback();
         setError('Could not post the comment.');
-        // Give the words back — unless they already started typing again.
-        setDraft((d) => (d.trim() ? d : body));
+        // The Composer gives the words back on a false result.
+        return false;
       })
       .finally(() => {
         inFlightRef.current = Math.max(0, inFlightRef.current - 1);
@@ -444,63 +702,66 @@ export default function CommentsScreen() {
       });
   }
 
-  function handlePin() {
-    if (!actionTarget) return;
-    const target = actionTarget;
-    closeActions();
-    const next = !target.pinned;
-    // Optimistic, with the map clearing every other pin to match
-    // setPinned's exclusive one-per-post semantics.
-    setComments((prev) =>
-      prev
-        .map((c) => ({ ...c, pinned: c.id === target.id ? next : false }))
-        .sort(byThreadOrder)
-    );
-    successFeedback();
-    flash(next ? 'Pinned to the top.' : 'Unpinned.');
-    setPinned(target, next).catch(async () => {
-      errorFeedback();
-      setError(next ? 'Could not pin the comment.' : 'Could not unpin the comment.');
-      // Resync rather than snapshot-revert — a concurrent send would be
-      // dropped by a snapshot.
-      await load();
-    });
-  }
-
-  function handleDelete() {
-    if (!actionTarget) return;
-    const target = actionTarget;
-    closeActions();
-    setComments((prev) => prev.filter((c) => c.id !== target.id));
-    setCommentCount((count) => (count === null ? count : Math.max(0, count - 1)));
-    successFeedback();
-    flash('Comment deleted.');
-    deleteComment(target.id).catch(() => {
-      // Re-insert just the deleted row, back in order — a snapshot rewind
-      // would drop anything that arrived while the delete was in flight.
+  const handlePin = useCallback(
+    (target: Row) => {
+      closeActions();
+      const next = !target.pinned;
+      // Optimistic, with the map clearing every other pin to match
+      // setPinned's exclusive one-per-post semantics.
       setComments((prev) =>
-        prev.some((c) => c.id === target.id) ? prev : [...prev, target].sort(byThreadOrder)
+        prev
+          .map((c) => ({ ...c, pinned: c.id === target.id ? next : false }))
+          .sort(byThreadOrder)
       );
-      setCommentCount((count) => (count === null ? count : count + 1));
-      errorFeedback();
-      setError('Could not delete the comment.');
-    });
-  }
-
-  async function handleReport(reason: string) {
-    if (!actionTarget) return;
-    const target = actionTarget;
-    closeActions();
-    try {
-      await fileReport('comment', target.id, reason);
       successFeedback();
-      flash(REPORT_SENT);
-    } catch (e) {
-      console.warn('[comments] report failed', e);
-      errorFeedback();
-      setError(REPORT_FAILED);
-    }
-  }
+      flash(next ? 'Pinned to the top.' : 'Unpinned.');
+      setPinned(target, next).catch(async () => {
+        errorFeedback();
+        setError(next ? 'Could not pin the comment.' : 'Could not unpin the comment.');
+        // Resync rather than snapshot-revert — a concurrent send would be
+        // dropped by a snapshot.
+        await load();
+      });
+    },
+    [closeActions, flash, load]
+  );
+
+  const handleDelete = useCallback(
+    (target: Row) => {
+      closeActions();
+      setComments((prev) => prev.filter((c) => c.id !== target.id));
+      setCommentCount((count) => (count === null ? count : Math.max(0, count - 1)));
+      successFeedback();
+      flash('Comment deleted.');
+      deleteComment(target.id).catch(() => {
+        // Re-insert just the deleted row, back in order — a snapshot rewind
+        // would drop anything that arrived while the delete was in flight.
+        setComments((prev) =>
+          prev.some((c) => c.id === target.id) ? prev : [...prev, target].sort(byThreadOrder)
+        );
+        setCommentCount((count) => (count === null ? count : count + 1));
+        errorFeedback();
+        setError('Could not delete the comment.');
+      });
+    },
+    [closeActions, flash]
+  );
+
+  const handleReport = useCallback(
+    async (target: Row, reason: string) => {
+      closeActions();
+      try {
+        await fileReport('comment', target.id, reason);
+        successFeedback();
+        flash(REPORT_SENT);
+      } catch (e) {
+        console.warn('[comments] report failed', e);
+        errorFeedback();
+        setError(REPORT_FAILED);
+      }
+    },
+    [closeActions, flash]
+  );
 
   function retryLoad() {
     tapFeedback();
@@ -513,140 +774,34 @@ export default function CommentsScreen() {
   const tint = STAGE_TINT[project];
   const emblem = EMBLEMS[project];
   const listTop = insets.top + HEADER_HEIGHT + 12;
-  const canSend = !!draft.trim();
-
-  /** The small floating toolbar raised over the held comment. */
-  function renderToolbar(target: Row) {
-    const canReport = target.user_id !== myUserId;
-    return (
-      <Animated.View
-        style={[styles.toolbar, reporting && styles.toolbarMenu]}
-        layout={reduceMotion ? undefined : LinearTransition.duration(140)}>
-        {reporting ? (
-          REPORT_REASONS.map((reason, index) => (
-            <Animated.View
-              key={reason}
-              entering={reduceMotion ? undefined : FadeIn.duration(100)}>
-              <Pressable
-                style={[styles.toolItem, index > 0 && styles.toolItemRuleTop]}
-                onPress={() => handleReport(reason)}>
-                <Text style={styles.toolText}>{reason}</Text>
-              </Pressable>
-            </Animated.View>
-          ))
-        ) : (
-          <>
-            {isArtist ? (
-              <>
-                <Pressable style={styles.toolItem} onPress={handlePin}>
-                  <Text style={styles.toolText}>{target.pinned ? 'Unpin' : 'Pin'}</Text>
-                </Pressable>
-                <Pressable style={[styles.toolItem, styles.toolItemRule]} onPress={handleDelete}>
-                  <Text style={[styles.toolText, styles.toolDanger]}>Delete</Text>
-                </Pressable>
-              </>
-            ) : null}
-            {canReport ? (
-              <Pressable
-                style={[styles.toolItem, isArtist && styles.toolItemRule]}
-                onPress={() => setReporting(true)}>
-                <Text style={styles.toolText}>Report</Text>
-              </Pressable>
-            ) : null}
-          </>
-        )}
-        <View style={styles.toolbarArrow} />
-      </Animated.View>
-    );
-  }
 
   function renderComment({ item }: { item: Row }) {
-    const mine = item.user_id === myUserId;
-    const isArtistComment = item.author?.role === 'artist';
     const held = actionTarget?.id === item.id;
-    const name = displayName(item.author);
-    const when = timeAgo(item.created_at);
     // Entrances belong to genuinely new rows only: my own pending sends
     // and live arrivals — never a page load, a refetch, or a scroll-back.
-    const animateIn = !reduceMotion && (item.pending || liveIds.current.has(item.id));
-
+    // (entering is mount-only, so a later flip costs one memo miss and
+    // nothing visible.)
+    const animateIn = !reduceMotion && (!!item.pending || liveIds.current.has(item.id));
     return (
-      <Animated.View
-        style={held ? styles.heldWrap : undefined}
-        entering={animateIn ? FadeInDown.duration(item.pending ? 200 : 220) : undefined}
-        exiting={reduceMotion ? undefined : FadeOut.duration(160)}>
-        {held ? (
-          <Animated.View
-            style={styles.toolbarStrip}
-            entering={reduceMotion ? undefined : FadeInUp.duration(140)}
-            exiting={reduceMotion ? undefined : FadeOut.duration(100)}>
-            {renderToolbar(item)}
-          </Animated.View>
-        ) : null}
-        {/* itemLayoutAnimation only moves item positions — this inner
-            layout transition animates the held row's own content as the
-            toolbar strip blooms above it. */}
-        <Animated.View layout={reduceMotion ? undefined : LinearTransition.duration(160)}>
-          <Pressable
-            style={({ pressed }) => [
-              held ? (isArtistComment ? styles.heldBandStage : styles.heldBandFan) : undefined,
-              item.pending && styles.pendingRow,
-              pressed && styles.rowPressed,
-            ]}
-            onPress={() => {
-              if (actionTarget) closeActions();
-            }}
-            onLongPress={() => {
-              // A pending row has no server id yet — actions would 404.
-              if (item.pending) return;
-              if (!mine || isArtist) {
-                tapFeedback();
-                setActionTarget(item);
-              }
-            }}
-            delayLongPress={300}>
-            {isArtistComment ? (
-              <View style={[styles.stage, { backgroundColor: tint.fill, borderColor: tint.line }]}>
-                <View style={styles.stageTop}>
-                  <Pressable onPress={() => showProfile(item.user_id)} hitSlop={6}>
-                    <Image source={emblem} style={styles.stageEmblem} contentFit="contain" />
-                  </Pressable>
-                  <Text style={styles.stageName} numberOfLines={1}>
-                    {name}
-                  </Text>
-                  {item.pinned ? <Text style={styles.pinned}>PINNED</Text> : null}
-                  <Text style={styles.stageTime}>{when}</Text>
-                </View>
-                <Text style={styles.stageBody}>{item.body}</Text>
-              </View>
-            ) : (
-              <View style={styles.fan}>
-                <Pressable
-                  onPress={() => showProfile(item.user_id)}
-                  hitSlop={6}
-                  style={styles.fanAvatar}>
-                  <Avatar
-                    path={item.author?.avatar_path}
-                    focus={item.author?.avatar_focus}
-                    name={item.author?.display_name}
-                    size={26}
-                  />
-                </Pressable>
-                <View style={styles.fanBody}>
-                  <View style={styles.fanMeta}>
-                    <Text style={styles.fanName} numberOfLines={1}>
-                      {name}
-                    </Text>
-                    {item.pinned ? <Text style={styles.pinned}>PINNED</Text> : null}
-                    <Text style={styles.fanTime}>{when}</Text>
-                  </View>
-                  <Text style={styles.fanText}>{item.body}</Text>
-                </View>
-              </View>
-            )}
-          </Pressable>
-        </Animated.View>
-      </Animated.View>
+      <CommentRow
+        item={item}
+        loadedAt={loadedAt}
+        held={held}
+        reporting={held ? reporting : false}
+        mine={item.user_id === myUserId}
+        isArtist={isArtist}
+        reduceMotion={reduceMotion}
+        animateIn={animateIn}
+        tint={tint}
+        emblem={emblem}
+        onShowProfile={showProfile}
+        onHold={onHold}
+        onRelease={closeActions}
+        onPin={handlePin}
+        onDelete={handleDelete}
+        onStartReport={onStartReport}
+        onReport={handleReport}
+      />
     );
   }
 
@@ -697,14 +852,14 @@ export default function CommentsScreen() {
               data={comments}
               keyExtractor={(item: Row) => item.clientKey ?? item.id}
               renderItem={renderComment}
-              extraData={[actionTarget, reporting, project]}
               itemLayoutAnimation={
-                reduceMotion ? undefined : LinearTransition.duration(actionTarget ? 160 : 250)
+                reduceMotion ? undefined : actionTarget ? LIST_LAYOUT_HELD : LIST_LAYOUT
               }
               contentContainerStyle={[
                 styles.list,
-                { paddingTop: listTop, paddingBottom: insets.bottom + 130 },
+                { paddingTop: listTop, paddingBottom: (keyboardUp ? 0 : insets.bottom) + 130 },
               ]}
+              automaticallyAdjustKeyboardInsets
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
               onEndReached={loadNewer}
@@ -725,9 +880,7 @@ export default function CommentsScreen() {
               }
               ListEmptyComponent={
                 loadFailed ? (
-                  <Animated.View
-                    style={styles.failedCard}
-                    entering={reduceMotion ? undefined : FadeInDown.duration(220)}>
+                  <Animated.View style={styles.failedCard} entering={reduceMotion ? undefined : FAILED_IN}>
                     <Text style={styles.emptyTitle}>{"COULDN'T LOAD COMMENTS"}</Text>
                     <Text style={styles.emptySub}>{OFFLINE_SUB}</Text>
                     <Pressable
@@ -754,9 +907,9 @@ export default function CommentsScreen() {
                       <CommentSkeleton />
                     </View>
                   ) : null}
-                  {/* Grows with the keyboard so the thread's end stays
-                      reachable above the lifted composer. */}
-                  <Animated.View style={keyboardSpacer} />
+                  {/* Android only: grows with the keyboard so the thread's end
+                      stays reachable above the lifted composer. */}
+                  {Platform.OS === 'ios' ? null : <Animated.View style={keyboardSpacer} />}
                 </>
               }
             />
@@ -794,28 +947,7 @@ export default function CommentsScreen() {
         {post && !postGone ? (
           <Animated.View
             style={[styles.composerWrap, { bottom: insets.bottom + 14 }, composerLift]}>
-            <View style={styles.pill}>
-              <TextInput
-                style={styles.input}
-                placeholder="Add a comment…"
-                placeholderTextColor="#55585f"
-                value={draft}
-                onChangeText={setDraft}
-                onFocus={() => {
-                  // A beat after focus, so the footer spacer has grown and
-                  // scrollToEnd measures the real height.
-                  setTimeout(() => scrollToLatest(), 50);
-                }}
-                maxLength={500}
-                multiline
-              />
-              <Pressable
-                style={[styles.send, !canSend && styles.sendDisabled]}
-                onPress={handleSend}
-                disabled={!canSend}>
-                <Ionicons name="arrow-up" size={18} color="#0b0c0e" />
-              </Pressable>
-            </View>
+            <Composer onSend={handleSend} onFocus={scrollToLatest} />
           </Animated.View>
         ) : null}
       </View>
@@ -1078,7 +1210,11 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     gap: 6,
     minHeight: 50,
-    backgroundColor: 'rgba(21, 24, 29, 0.97)',
+    // Opaque on purpose: rgba(21, 24, 29, 0.97) over the #0b0c0e ground is
+    // this exact colour, and an alpha under 1 makes Fabric skip the
+    // shadowPath fast path, so the 18 pt shadow re-rasterised on every
+    // keystroke and caret blink.
+    backgroundColor: '#15181d',
     borderWidth: 1,
     borderColor: '#2a2e34',
     borderRadius: 999,

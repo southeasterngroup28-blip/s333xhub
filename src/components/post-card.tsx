@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useEffectEvent, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -66,6 +66,8 @@ type Props = {
   commentCount?: number;
   /** Poll options + votes when this is a poll post. */
   poll?: PollState;
+  /** When the feed last loaded; the "3m ago" label recomputes against it. */
+  loadedAt?: number;
   /** Called after the artist deletes this post, so the feed can drop the row. */
   onDeleted?: (postId: string) => void;
   /**
@@ -101,9 +103,8 @@ function ReactionChip({
         style={[styles.react, mine && styles.reactOn]}
         onPress={() => {
           // Quick snap — springs settle too lazily for a tap this small.
-          scale.value = withSequence(
-            withTiming(1.28, { duration: 90 }),
-            withTiming(1, { duration: 130 })
+          scale.set(
+            withSequence(withTiming(1.28, { duration: 90 }), withTiming(1, { duration: 130 }))
           );
           tapFeedback();
           onPress();
@@ -148,20 +149,20 @@ function UnlockPill({
   useEffect(() => {
     if (phase === 'recording' || phase === 'pending') {
       if (reduceMotion) {
-        pulse.value = 0.7;
+        pulse.set(0.7);
         return () => {
-          pulse.value = 1;
+          pulse.set(1);
         };
       }
-      pulse.value = 0.55;
-      pulse.value = withRepeat(withTiming(1, { duration: 700 }), -1, true);
+      pulse.set(0.55);
+      pulse.set(withRepeat(withTiming(1, { duration: 700 }), -1, true));
       return () => {
         cancelAnimation(pulse);
-        pulse.value = 1;
+        pulse.set(1);
       };
     }
     cancelAnimation(pulse);
-    pulse.value = 1;
+    pulse.set(1);
   }, [phase, reduceMotion, pulse]);
 
   const animated = useAnimatedStyle(() => ({
@@ -192,10 +193,10 @@ function UnlockPill({
         disabled={busy}
         hitSlop={8}
         onPressIn={() => {
-          if (!reduceMotion) scale.value = withTiming(0.96, { duration: 80 });
+          if (!reduceMotion) scale.set(withTiming(0.96, { duration: 80 }));
         }}
         onPressOut={() => {
-          scale.value = withTiming(1, { duration: 140 });
+          scale.set(withTiming(1, { duration: 140 }));
         }}
         onPress={onPress}>
         {phase === 'buying' || phase === 'recording' ? (
@@ -227,7 +228,7 @@ function PollBar({
   const w = useSharedValue(pct);
   useEffect(() => {
     // Reduce Motion snaps the fill to its share instead of gliding.
-    w.value = reduceMotion ? pct : withTiming(pct, { duration: 350 });
+    w.set(reduceMotion ? pct : withTiming(pct, { duration: 350 }));
   }, [pct, w, reduceMotion]);
   const fill = useAnimatedStyle(() => ({ width: `${w.value}%` as `${number}%` }));
 
@@ -262,7 +263,7 @@ function RevealOverlay({
   const fade = useSharedValue(1);
 
   useEffect(() => {
-    fade.value = reduceMotion ? 0 : withTiming(0, { duration: 480 });
+    fade.set(reduceMotion ? 0 : withTiming(0, { duration: 480 }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -308,6 +309,18 @@ function formatEndsIn(endsAt: string | null): string {
 
 type MenuState = 'closed' | 'confirm-delete' | 'protected' | 'report' | 'reported';
 
+// Layout-animation builders at module scope: a stable identity lets
+// reanimated skip re-registering the config on every card re-render.
+// Builders are immutable after construction, but `.delay()` mutates, so
+// the staggered entrances are a precomputed array, never a shared
+// constant chained further.
+const CARD_EXIT = FadeOut.duration(180);
+const CARD_LAYOUT = LinearTransition.duration(250);
+const CARD_ENTER = [0, 1, 2, 3, 4].map((i) => FadeInDown.duration(280).delay(i * 50));
+const ROW_ENTER = FadeInDown.duration(160);
+const NOTICE_ENTER = FadeIn.duration(150);
+const TAG_ENTER = FadeInDown.duration(220);
+
 export const PostCard = memo(function PostCard({
   post,
   mediaUrls,
@@ -316,6 +329,7 @@ export const PostCard = memo(function PostCard({
   reactions,
   commentCount,
   poll,
+  loadedAt,
   onDeleted,
   onUnlocked,
   animateIn,
@@ -340,7 +354,7 @@ export const PostCard = memo(function PostCard({
   const [justUnlocked, setJustUnlocked] = useState(false);
   const [deleting, setDeleting] = useState(false);
   /** True from the in-session reveal on — gates the tag's entrance. */
-  const revealedRef = useRef(false);
+  const [revealed, setRevealed] = useState(false);
 
   const dim = useSharedValue(1);
   const dimStyle = useAnimatedStyle(() => ({ opacity: dim.value }));
@@ -367,10 +381,12 @@ export const PostCard = memo(function PostCard({
 
   /** The purchase is recorded: resolve media, then celebrate and reveal. */
   async function finishUnlock() {
-    revealedRef.current = true;
+    setRevealed(true);
     pendingUnlockIds.delete(post.id);
     try {
-      await onUnlocked?.(post);
+      // A plain if, not ?.(): optional calls inside a try body are value
+      // blocks the React Compiler refuses.
+      if (onUnlocked) await onUnlocked(post);
     } catch {
       // A signing blip degrades to a late pop — never a failure message.
     }
@@ -403,12 +419,16 @@ export const PostCard = memo(function PostCard({
 
   // A card remounting mid-pending (virtualization) resumes the webhook
   // watch; if the unlock landed by other means while it was gone (a feed
-  // refresh refetched purchasedIds), just retire the session note.
-  useEffect(() => {
+  // refresh refetched purchasedIds), just retire the session note. An
+  // effect event (not a dep-suppressed effect, which would turn the React
+  // Compiler off for the whole card) reads the mount-time props once.
+  const resumePendingWatch = useEffectEvent(() => {
     if (!pendingUnlockIds.has(post.id)) return;
     if (post.is_locked && !viewerIsArtist && !unlocked) startPendingPoll();
     else pendingUnlockIds.delete(post.id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
+  useEffect(() => {
+    resumePendingWatch();
   }, []);
 
   async function handleUnlock() {
@@ -450,8 +470,12 @@ export const PostCard = memo(function PostCard({
   const [pollState, setPollState] = useState<PollState | undefined>(undefined);
 
   // Ref mirror so rapid double-taps read fresh state, not a stale closure.
+  // Written from an effect (a tap's passive effects flush synchronously
+  // with its commit), never during render, which the compiler refuses.
   const myReactionsRef = useRef(myReactions);
-  myReactionsRef.current = myReactions;
+  useEffect(() => {
+    myReactionsRef.current = myReactions;
+  }, [myReactions]);
 
   useEffect(() => {
     setMyReactions(new Set(reactions?.mine ?? []));
@@ -545,12 +569,12 @@ export const PostCard = memo(function PostCard({
     pressFeedback();
     setDeleting(true);
     // The card dims immediately — the tap landed; the server is catching up.
-    dim.value = withTiming(0.5, { duration: 120 });
+    dim.set(withTiming(0.5, { duration: 120 }));
     try {
       await deletePost(post.id);
-      onDeleted?.(post.id);
+      if (onDeleted) onDeleted(post.id);
     } catch (e) {
-      dim.value = withTiming(1, { duration: 120 });
+      dim.set(withTiming(1, { duration: 120 }));
       setDeleting(false);
       setMenu('closed');
       setActionError(fanCopy(e, 'Could not delete the post.'));
@@ -573,369 +597,373 @@ export const PostCard = memo(function PostCard({
     <UnlockPill phase={phase} priceCents={post.price_cents ?? 0} onPress={handleUnlock} />
   );
 
-  const rowEnter = reduceMotion ? undefined : FadeInDown.duration(160);
-  const noticeEnter = reduceMotion ? undefined : FadeIn.duration(150);
+  const rowEnter = reduceMotion ? undefined : ROW_ENTER;
+  const noticeEnter = reduceMotion ? undefined : NOTICE_ENTER;
 
   return (
+    // Two views on purpose: the one carrying entering/exiting has no
+    // opacity in its style, so reanimated's layout animation and the
+    // delete dim never fight over the same property (the '[Reanimated]
+    // Property opacity' warning, and a bright flash before a delete fade).
+    // Exiting is registered only for a delete — `deleting` flips before
+    // deletePost runs — so rows the list recycles off-screen unmount
+    // instantly instead of being held 180 ms.
     <Animated.View
-      entering={
-        animateIn && !reduceMotion
-          ? FadeInDown.duration(280).delay(Math.min(index ?? 0, 4) * 50)
-          : undefined
-      }
-      exiting={reduceMotion ? undefined : FadeOut.duration(180)}
-      layout={reduceMotion ? undefined : LinearTransition.duration(250)}
-      style={[
-        styles.card,
-        post.project === 's333xgod' ? styles.cardGod : styles.cardMazze,
-        dimStyle,
-      ]}>
-      <View style={styles.header}>
-        <Pressable onPress={() => showProfile(post.author_id)} hitSlop={6}>
-          {/* The raw name seeds the initial; a gone author gets the '?' placeholder, never a 'D'. */}
-          <Avatar
-            path={post.author?.avatar_path}
-            focus={post.author?.avatar_focus}
-            name={post.author?.display_name}
-            size={34}
-          />
-        </Pressable>
-        <View style={styles.who}>
-          <View style={styles.nameRow}>
-            <Text style={styles.author}>{authorName}</Text>
-            {/* Project emblems: S333XGOD = blue star, Mazze = green skull. */}
-            <Image
-              source={
-                post.project === 's333xgod'
-                  ? require('../../assets/images/emblem-s333xgod.png')
-                  : require('../../assets/images/emblem-mazze.png')
-              }
-              style={styles.emblem}
-              contentFit="contain"
+      entering={animateIn && !reduceMotion ? CARD_ENTER[Math.min(index ?? 0, 4)] : undefined}
+      exiting={deleting && !reduceMotion ? CARD_EXIT : undefined}
+      style={styles.cardSlot}>
+      <Animated.View
+        layout={reduceMotion ? undefined : CARD_LAYOUT}
+        style={[
+          styles.card,
+          post.project === 's333xgod' ? styles.cardGod : styles.cardMazze,
+          dimStyle,
+        ]}>
+        <View style={styles.header}>
+          <Pressable onPress={() => showProfile(post.author_id)} hitSlop={6}>
+            {/* The raw name seeds the initial; a gone author gets the '?' placeholder, never a 'D'. */}
+            <Avatar
+              path={post.author?.avatar_path}
+              focus={post.author?.avatar_focus}
+              name={post.author?.display_name}
+              size={34}
             />
-          </View>
-          <Text style={styles.sub}>{timeAgo(post.created_at)}</Text>
-        </View>
-        <Pressable
-          hitSlop={10}
-          onPress={() => {
-            if (menu !== 'closed') setMenu('closed');
-            else if (viewerIsArtist) openDeleteConfirm();
-            else setMenu('report');
-          }}>
-          <Ionicons
-            name={viewerIsArtist ? 'trash-outline' : 'flag-outline'}
-            size={15}
-            color="#4a4d53"
-          />
-        </Pressable>
-      </View>
-
-      {menu === 'confirm-delete' ? (
-        <Animated.View entering={rowEnter} style={styles.menuRow}>
-          <Text style={styles.menuLabel}>
-            {deleting ? 'Deleting…' : 'Delete this post for everyone?'}
-          </Text>
-          {deleting ? null : (
-            <>
-              <Pressable style={styles.menuChip} onPress={handleDelete}>
-                <Text style={styles.menuDanger}>Delete</Text>
-              </Pressable>
-              <Pressable style={styles.menuChip} onPress={() => setMenu('closed')}>
-                <Text style={styles.menuText}>Cancel</Text>
-              </Pressable>
-            </>
-          )}
-        </Animated.View>
-      ) : null}
-
-      {menu === 'protected' ? (
-        <Animated.View entering={rowEnter} style={styles.menuRow}>
-          <Text style={styles.menuLabel}>{paidPostBlockedMessage(buyerCount)}</Text>
-          <Pressable style={styles.menuChip} onPress={() => setMenu('closed')}>
-            <Text style={styles.menuText}>OK</Text>
           </Pressable>
-        </Animated.View>
-      ) : null}
-
-      {menu === 'report' ? (
-        <Animated.View entering={rowEnter} style={styles.menuRow}>
-          {REPORT_REASONS.map((reason) => (
-            <Pressable key={reason} style={styles.menuChip} onPress={() => handleReport(reason)}>
-              <Text style={styles.menuText}>{reason}</Text>
-            </Pressable>
-          ))}
-        </Animated.View>
-      ) : null}
-
-      {menu === 'reported' ? (
-        <Animated.View entering={rowEnter}>
-          <Text style={styles.reportedNote}>{REPORT_SENT}</Text>
-        </Animated.View>
-      ) : null}
-
-      {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
-
-      {post.is_locked && (viewerIsArtist || unlocked) ? (
-        <Animated.Text
-          // The slide-fade belongs to the in-session reveal moment (and to
-          // genuine feed arrivals) — a virtualization remount on scroll-back
-          // renders the tag still, like the rest of the card.
-          entering={
-            !reduceMotion && (revealedRef.current || animateIn)
-              ? FadeInDown.duration(220)
-              : undefined
-          }
-          style={styles.unlockedTag}>
-          {viewerIsArtist ? `Locked post · ${priceLabel(post.price_cents ?? 0)}` : 'Unlocked'}
-        </Animated.Text>
-      ) : null}
-
-      {post.body && !locked ? <Text style={styles.body}>{post.body}</Text> : null}
-
-      {post.kind === 'poll' && pollState && !locked ? (
-        <View style={styles.poll}>
-          {pollState.options.map((option) => {
-            const pct =
-              pollState.totalVotes > 0 ? Math.round((option.votes / pollState.totalVotes) * 100) : 0;
-            const isMine = pollState.myOptionId === option.id;
-            return (
-              <PollBar
-                key={option.id}
-                pct={pct}
-                label={option.label}
-                mine={isMine}
-                onPress={() => handleVote(option.id)}
+          <View style={styles.who}>
+            <View style={styles.nameRow}>
+              <Text style={styles.author}>{authorName}</Text>
+              {/* Project emblems: S333XGOD = blue star, Mazze = green skull. */}
+              <Image
+                source={
+                  post.project === 's333xgod'
+                    ? require('../../assets/images/emblem-s333xgod.png')
+                    : require('../../assets/images/emblem-mazze.png')
+                }
+                style={styles.emblem}
+                contentFit="contain"
               />
-            );
-          })}
-          <Text style={styles.pollMeta}>
-            {pollState.totalVotes} vote{pollState.totalVotes === 1 ? '' : 's'}
-            {pollState.ends_at ? ` · ${formatEndsIn(pollState.ends_at)}` : ''}
-          </Text>
-        </View>
-      ) : null}
-
-      {locked && post.kind === 'audio' ? (
-        // A locked track keeps the player's shape: the same cover block,
-        // blurred, with the unlock pill sitting where play would be.
-        <>
-          <AudioCover
-            project={post.project}
-            eyebrow={`LOCKED · ${projectLabel(post.project)}`}
-            title={post.title ?? ''}
-            coverUrl={post.cover_path ? mediaUrls[post.cover_path] : undefined}
-            coverFocus={post.cover_focus ?? 0.5}
-            locked>
-            <View style={styles.lockRow}>
-              <View style={styles.lockSeat}>
-                <Ionicons name="lock-closed" size={18} color="#e8e9eb" />
-              </View>
-              {unlockPill}
             </View>
-          </AudioCover>
-          {/* Reserved slot: the notice appears without re-laying-out the card. */}
-          <View style={[styles.noticeSlot, styles.noticeSlotAudio]}>
-            {unlockNotice ? (
-              <Animated.Text entering={noticeEnter} style={styles.unlockNotice}>
-                {unlockNotice}
-              </Animated.Text>
-            ) : null}
+            <Text style={styles.sub}>{timeAgo(post.created_at, loadedAt)}</Text>
           </View>
-        </>
-      ) : locked ? (
-        <View style={styles.teaseWrap}>
-          {post.cover_path && mediaUrls[post.cover_path] ? (
-            // The real cover art, heavily blurred — a tease of what's inside.
-            <Image
-              source={{ uri: mediaUrls[post.cover_path] }}
-              style={StyleSheet.absoluteFill}
-              contentFit="cover"
-              blurRadius={22}
-              transition={200}
+          <Pressable
+            hitSlop={10}
+            onPress={() => {
+              if (menu !== 'closed') setMenu('closed');
+              else if (viewerIsArtist) openDeleteConfirm();
+              else setMenu('report');
+            }}>
+            <Ionicons
+              name={viewerIsArtist ? 'trash-outline' : 'flag-outline'}
+              size={15}
+              color="#4a4d53"
             />
-          ) : (
-            <Image
-              source={
-                post.project === 's333xgod'
-                  ? require('../../assets/images/emblem-s333xgod.png')
-                  : require('../../assets/images/emblem-mazze.png')
-              }
-              style={styles.teaseEmblem}
-              contentFit="contain"
-              blurRadius={3}
-            />
-          )}
-          <View style={styles.teaseScrim} />
-          <View style={styles.teaseContent}>
-            <Ionicons name="lock-closed" size={20} color="#e8e9eb" />
-            <Text style={styles.teaseTitle} numberOfLines={1}>
-              {post.title ?? `LOCKED · ${projectLabel(post.project)}`}
+          </Pressable>
+        </View>
+
+        {menu === 'confirm-delete' ? (
+          <Animated.View entering={rowEnter} style={styles.menuRow}>
+            <Text style={styles.menuLabel}>
+              {deleting ? 'Deleting…' : 'Delete this post for everyone?'}
             </Text>
-            {unlockPill}
-            {/* Reserved slot: the notice appears without shoving the tease. */}
-            <View style={styles.noticeSlot}>
+            {deleting ? null : (
+              <>
+                <Pressable style={styles.menuChip} onPress={handleDelete}>
+                  <Text style={styles.menuDanger}>Delete</Text>
+                </Pressable>
+                <Pressable style={styles.menuChip} onPress={() => setMenu('closed')}>
+                  <Text style={styles.menuText}>Cancel</Text>
+                </Pressable>
+              </>
+            )}
+          </Animated.View>
+        ) : null}
+
+        {menu === 'protected' ? (
+          <Animated.View entering={rowEnter} style={styles.menuRow}>
+            <Text style={styles.menuLabel}>{paidPostBlockedMessage(buyerCount)}</Text>
+            <Pressable style={styles.menuChip} onPress={() => setMenu('closed')}>
+              <Text style={styles.menuText}>OK</Text>
+            </Pressable>
+          </Animated.View>
+        ) : null}
+
+        {menu === 'report' ? (
+          <Animated.View entering={rowEnter} style={styles.menuRow}>
+            {REPORT_REASONS.map((reason) => (
+              <Pressable key={reason} style={styles.menuChip} onPress={() => handleReport(reason)}>
+                <Text style={styles.menuText}>{reason}</Text>
+              </Pressable>
+            ))}
+          </Animated.View>
+        ) : null}
+
+        {menu === 'reported' ? (
+          <Animated.View entering={rowEnter}>
+            <Text style={styles.reportedNote}>{REPORT_SENT}</Text>
+          </Animated.View>
+        ) : null}
+
+        {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
+
+        {post.is_locked && (viewerIsArtist || unlocked) ? (
+          <Animated.Text
+            // The slide-fade belongs to the in-session reveal moment (and to
+            // genuine feed arrivals) — a virtualization remount on scroll-back
+            // renders the tag still, like the rest of the card.
+            entering={!reduceMotion && (revealed || animateIn) ? TAG_ENTER : undefined}
+            style={styles.unlockedTag}>
+            {viewerIsArtist ? `Locked post · ${priceLabel(post.price_cents ?? 0)}` : 'Unlocked'}
+          </Animated.Text>
+        ) : null}
+
+        {post.body && !locked ? <Text style={styles.body}>{post.body}</Text> : null}
+
+        {post.kind === 'poll' && pollState && !locked ? (
+          <View style={styles.poll}>
+            {pollState.options.map((option) => {
+              const pct =
+                pollState.totalVotes > 0 ? Math.round((option.votes / pollState.totalVotes) * 100) : 0;
+              const isMine = pollState.myOptionId === option.id;
+              return (
+                <PollBar
+                  key={option.id}
+                  pct={pct}
+                  label={option.label}
+                  mine={isMine}
+                  onPress={() => handleVote(option.id)}
+                />
+              );
+            })}
+            <Text style={styles.pollMeta}>
+              {pollState.totalVotes} vote{pollState.totalVotes === 1 ? '' : 's'}
+              {pollState.ends_at ? ` · ${formatEndsIn(pollState.ends_at)}` : ''}
+            </Text>
+          </View>
+        ) : null}
+
+        {locked && post.kind === 'audio' ? (
+          // A locked track keeps the player's shape: the same cover block,
+          // blurred, with the unlock pill sitting where play would be.
+          <>
+            <AudioCover
+              project={post.project}
+              eyebrow={`LOCKED · ${projectLabel(post.project)}`}
+              title={post.title ?? ''}
+              coverUrl={post.cover_path ? mediaUrls[post.cover_path] : undefined}
+              coverFocus={post.cover_focus ?? 0.5}
+              locked>
+              <View style={styles.lockRow}>
+                <View style={styles.lockSeat}>
+                  <Ionicons name="lock-closed" size={18} color="#e8e9eb" />
+                </View>
+                {unlockPill}
+              </View>
+            </AudioCover>
+            {/* Reserved slot: the notice appears without re-laying-out the card. */}
+            <View style={[styles.noticeSlot, styles.noticeSlotAudio]}>
               {unlockNotice ? (
-                <Animated.Text entering={noticeEnter} style={styles.teaseSub}>
+                <Animated.Text entering={noticeEnter} style={styles.unlockNotice}>
                   {unlockNotice}
                 </Animated.Text>
               ) : null}
             </View>
+          </>
+        ) : locked ? (
+          <View style={styles.teaseWrap}>
+            {post.cover_path && mediaUrls[post.cover_path] ? (
+              // The real cover art, heavily blurred — a tease of what's inside.
+              <Image
+                source={{ uri: mediaUrls[post.cover_path] }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                blurRadius={22}
+                transition={200}
+              />
+            ) : (
+              <Image
+                source={
+                  post.project === 's333xgod'
+                    ? require('../../assets/images/emblem-s333xgod.png')
+                    : require('../../assets/images/emblem-mazze.png')
+                }
+                style={styles.teaseEmblem}
+                contentFit="contain"
+                blurRadius={3}
+              />
+            )}
+            <View style={styles.teaseScrim} />
+            <View style={styles.teaseContent}>
+              <Ionicons name="lock-closed" size={20} color="#e8e9eb" />
+              <Text style={styles.teaseTitle} numberOfLines={1}>
+                {post.title ?? `LOCKED · ${projectLabel(post.project)}`}
+              </Text>
+              {unlockPill}
+              {/* Reserved slot: the notice appears without shoving the tease. */}
+              <View style={styles.noticeSlot}>
+                {unlockNotice ? (
+                  <Animated.Text entering={noticeEnter} style={styles.teaseSub}>
+                    {unlockNotice}
+                  </Animated.Text>
+                ) : null}
+              </View>
+            </View>
           </View>
-        </View>
-      ) : null}
+        ) : null}
 
-      <View>
-        {locked
-          ? null
-          : post.kind === 'audio'
+        <View>
+          {locked
+            ? null
+            : post.kind === 'audio'
+              ? media.map((item) => {
+                  const url = mediaUrls[item.storage_path];
+                  if (!url) {
+                    // Reserve the player's final shape while the link signs.
+                    return (
+                      <AudioCover
+                        key={item.id}
+                        project={post.project}
+                        eyebrow={projectLabel(post.project)}
+                        title={post.title ?? projectLabel(post.project)}
+                        coverUrl={post.cover_path ? mediaUrls[post.cover_path] : undefined}
+                        coverFocus={post.cover_focus ?? 0.5}>
+                        <View style={styles.pendingControls}>
+                          <View style={styles.pendingDisc}>
+                            <ActivityIndicator size="small" color="#0b0c0e" />
+                          </View>
+                        </View>
+                      </AudioCover>
+                    );
+                  }
+                  return (
+                    <AudioPlayerCard
+                      key={item.id}
+                      postId={post.id}
+                      title={post.title ?? projectLabel(post.project)}
+                      url={url}
+                      project={post.project}
+                      coverUrl={post.cover_path ? mediaUrls[post.cover_path] : undefined}
+                      coverFocus={post.cover_focus ?? 0.5}
+                    />
+                  );
+                })
+              : null}
+
+          {post.kind === 'video' && !locked
             ? media.map((item) => {
                 const url = mediaUrls[item.storage_path];
+                const aspect = item.width && item.height ? item.width / item.height : 16 / 9;
                 if (!url) {
-                  // Reserve the player's final shape while the link signs.
+                  // Poster-sized ghost so the row never reflows when the link lands.
                   return (
-                    <AudioCover
+                    <View
                       key={item.id}
-                      project={post.project}
-                      eyebrow={projectLabel(post.project)}
-                      title={post.title ?? projectLabel(post.project)}
-                      coverUrl={post.cover_path ? mediaUrls[post.cover_path] : undefined}
-                      coverFocus={post.cover_focus ?? 0.5}>
-                      <View style={styles.pendingControls}>
-                        <View style={styles.pendingDisc}>
-                          <ActivityIndicator size="small" color="#0b0c0e" />
-                        </View>
+                      style={[
+                        styles.pendingPoster,
+                        { width: imageWidth, height: imageWidth / aspect },
+                      ]}>
+                      <View style={styles.pendingBadge}>
+                        <Ionicons name="play" size={22} color="#0b0c0e" style={styles.pendingNudge} />
                       </View>
-                    </AudioCover>
+                    </View>
                   );
                 }
                 return (
-                  <AudioPlayerCard
+                  <VideoPlayerCard
                     key={item.id}
-                    postId={post.id}
-                    title={post.title ?? projectLabel(post.project)}
                     url={url}
-                    project={post.project}
-                    coverUrl={post.cover_path ? mediaUrls[post.cover_path] : undefined}
-                    coverFocus={post.cover_focus ?? 0.5}
+                    width={imageWidth}
+                    sourceWidth={item.width}
+                    sourceHeight={item.height}
                   />
                 );
               })
             : null}
 
-        {post.kind === 'video' && !locked
-          ? media.map((item) => {
-              const url = mediaUrls[item.storage_path];
-              const aspect = item.width && item.height ? item.width / item.height : 16 / 9;
-              if (!url) {
-                // Poster-sized ghost so the row never reflows when the link lands.
+          {locked || post.kind === 'audio' || post.kind === 'video'
+            ? null
+            : media.map((item) => {
+                const url = mediaUrls[item.storage_path];
+                const aspect = item.width && item.height ? item.width / item.height : 1;
+                if (!url) {
+                  // Final-size shimmer — the photo fades in exactly where it will live.
+                  return (
+                    <Skeleton
+                      key={item.id}
+                      height={imageWidth / aspect}
+                      radius={12}
+                      style={styles.mediaGap}
+                    />
+                  );
+                }
                 return (
-                  <View
+                  <Image
                     key={item.id}
-                    style={[
-                      styles.pendingPoster,
-                      { width: imageWidth, height: imageWidth / aspect },
-                    ]}>
-                    <View style={styles.pendingBadge}>
-                      <Ionicons name="play" size={22} color="#0b0c0e" style={styles.pendingNudge} />
-                    </View>
-                  </View>
-                );
-              }
-              return (
-                <VideoPlayerCard
-                  key={item.id}
-                  url={url}
-                  width={imageWidth}
-                  sourceWidth={item.width}
-                  sourceHeight={item.height}
-                />
-              );
-            })
-          : null}
-
-        {locked || post.kind === 'audio' || post.kind === 'video'
-          ? null
-          : media.map((item) => {
-              const url = mediaUrls[item.storage_path];
-              const aspect = item.width && item.height ? item.width / item.height : 1;
-              if (!url) {
-                // Final-size shimmer — the photo fades in exactly where it will live.
-                return (
-                  <Skeleton
-                    key={item.id}
-                    height={imageWidth / aspect}
-                    radius={12}
-                    style={styles.mediaGap}
+                    source={{ uri: url }}
+                    style={[styles.image, { width: imageWidth, height: imageWidth / aspect }]}
+                    contentFit="cover"
+                    transition={150}
                   />
                 );
-              }
-              return (
-                <Image
-                  key={item.id}
-                  source={{ uri: url }}
-                  style={[styles.image, { width: imageWidth, height: imageWidth / aspect }]}
-                  contentFit="cover"
-                  transition={150}
-                />
-              );
-            })}
+              })}
 
-        {justUnlocked && !locked ? (
-          <RevealOverlay
-            coverUrl={post.cover_path ? mediaUrls[post.cover_path] : undefined}
-            project={post.project}
-            bleed={post.kind === 'audio'}
-          />
-        ) : null}
-      </View>
+          {justUnlocked && !locked ? (
+            <RevealOverlay
+              coverUrl={post.cover_path ? mediaUrls[post.cover_path] : undefined}
+              project={post.project}
+              bleed={post.kind === 'audio'}
+            />
+          ) : null}
+        </View>
 
-      {viewerIsArtist && post.kind !== 'text' && post.kind !== 'poll' && media.length === 0 ? (
-        // Only the artist sees this: the post row exists but its file never
-        // landed (an upload that died mid-way), so fans get a bare text card.
-        <Text style={styles.missingMedia}>
-          {post.kind === 'audio'
-            ? 'No audio attached'
-            : post.kind === 'video'
-              ? 'No video attached'
-              : 'No photos attached'}
-          {post.is_locked
-            ? ". The upload didn't finish. Fans see a paywall with nothing behind it; delete this post before anyone buys it and post it again."
-            : ". The upload didn't finish. Fans only see the text; delete this post and post it again."}
-        </Text>
-      ) : null}
-
-      <View style={styles.socialRow}>
-        {REACTION_EMOJIS.map((emoji) => (
-          <ReactionChip
-            key={emoji}
-            emoji={emoji}
-            count={reactionCounts[emoji] ?? 0}
-            mine={myReactions.has(emoji)}
-            onPress={() => handleReaction(emoji)}
-          />
-        ))}
-        <Pressable
-          style={styles.commentsChip}
-          onPress={() => router.push(`/post/${post.id}` as never)}
-          hitSlop={4}>
-          <Ionicons name="chatbubble-outline" size={13} color="#9a9ba3" />
-          <Text style={styles.commentsText}>
-            {commentCount && commentCount > 0 ? commentCount : 'Comment'}
+        {viewerIsArtist && post.kind !== 'text' && post.kind !== 'poll' && media.length === 0 ? (
+          // Only the artist sees this: the post row exists but its file never
+          // landed (an upload that died mid-way), so fans get a bare text card.
+          <Text style={styles.missingMedia}>
+            {post.kind === 'audio'
+              ? 'No audio attached'
+              : post.kind === 'video'
+                ? 'No video attached'
+                : 'No photos attached'}
+            {post.is_locked
+              ? ". The upload didn't finish. Fans see a paywall with nothing behind it; delete this post before anyone buys it and post it again."
+              : ". The upload didn't finish. Fans only see the text; delete this post and post it again."}
           </Text>
-        </Pressable>
-      </View>
+        ) : null}
+
+        <View style={styles.socialRow}>
+          {REACTION_EMOJIS.map((emoji) => (
+            <ReactionChip
+              key={emoji}
+              emoji={emoji}
+              count={reactionCounts[emoji] ?? 0}
+              mine={myReactions.has(emoji)}
+              onPress={() => handleReaction(emoji)}
+            />
+          ))}
+          <Pressable
+            style={styles.commentsChip}
+            onPress={() => router.push(`/post/${post.id}` as never)}
+            hitSlop={4}>
+            <Ionicons name="chatbubble-outline" size={13} color="#9a9ba3" />
+            <Text style={styles.commentsText}>
+              {commentCount && commentCount > 0 ? commentCount : 'Comment'}
+            </Text>
+          </Pressable>
+        </View>
+      </Animated.View>
     </Animated.View>
   );
 });
 
 const styles = StyleSheet.create({
+  // The slot owns the geometry (margins), the card owns the surface:
+  // same layout as one view carrying both, split so the entrance/exit
+  // view has no opacity of its own.
+  cardSlot: { marginHorizontal: 14, marginBottom: 14 },
   card: {
     backgroundColor: '#101216',
     borderRadius: 16,
     padding: 16,
-    marginHorizontal: 14,
-    marginBottom: 14,
     shadowColor: '#000',
     shadowOpacity: 0.45,
     shadowRadius: 16,

@@ -86,9 +86,10 @@ export function AuthProvider({ children }: PropsWithChildren) {
     }
     let cancelled = false;
 
-    // On native, a query fired in the same instant as sign-in can hang
-    // forever (auth client lock). Race each attempt against a timeout and
-    // retry — a later attempt always lands.
+    // On native, a query fired in the same instant as sign-in has been seen
+    // to hang (the storage adapter and token refresh settling behind it).
+    // Race each attempt against a timeout and retry — a later attempt
+    // always lands.
     const load = async (attempt: number) => {
       try {
         const result = await Promise.race([

@@ -62,6 +62,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "lint": "expo lint",
+    "compiler:scan": "node scripts/compiler-scan.mjs",
     "lint:copy": "node scripts/lint-copy.mjs",
     "lint:copy:sites": "node scripts/lint-copy.mjs src supabase/functions ../s333xgod ../ronso"
   },

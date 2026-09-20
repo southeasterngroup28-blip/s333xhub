@@ -62,6 +62,13 @@ const KIND_ICON: Record<FanMailKind, keyof typeof Ionicons.glyphMap> = {
   audio: 'musical-notes',
 };
 
+// Layout-animation builders at module scope: a stable identity lets
+// reanimated skip re-registering the config on every re-render.
+const CARD_LAYOUT = LinearTransition.duration(250);
+const ROW_ENTER = FadeIn.duration(220);
+const ROW_EXIT = FadeOut.duration(150);
+const SENT_ENTER = FadeInDown.duration(280);
+
 export default function FanMailScreen() {
   const { profile } = useAuth();
   const isArtist = profile?.role === 'artist';
@@ -84,7 +91,10 @@ export default function FanMailScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [note, setNote] = useState('');
+  // The note is only read at send time and the form unmounts on success,
+  // so it stays in the native field: a keystroke never re-renders the tab.
+  const noteRef = useRef('');
+  const noteInputRef = useRef<TextInput>(null);
   const [sending, setSending] = useState(false);
   /** 0..1 mirror of the upload for the button label; 1 = record being written. */
   const [sentFraction, setSentFraction] = useState(0);
@@ -153,9 +163,8 @@ export default function FanMailScreen() {
       } else {
         setLoadError(message);
       }
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   }, [isArtist, flashError]);
 
   useFocusEffect(
@@ -171,7 +180,7 @@ export default function FanMailScreen() {
     setCancelling(false);
     setSending(false);
     setSentFraction(0);
-    progress.value = 0;
+    progress.set(0);
   }
 
   async function handleSubmit() {
@@ -181,15 +190,15 @@ export default function FanMailScreen() {
     setCancelling(false);
     setSending(true);
     setSentFraction(0);
-    progress.value = 0;
+    progress.set(0);
     setError(null);
     const sent = draft;
     try {
-      const item = await submitFanMail(sent.kind, sent, note, {
+      const item = await submitFanMail(sent.kind, sent, noteRef.current, {
         onProgress: (fraction) => {
           // The bar rides every byte event on the UI thread; the label
           // (a React render) only moves when its percent does.
-          progress.value = withTiming(fraction, { duration: 200 });
+          progress.set(withTiming(fraction, { duration: 200 }));
           setSentFraction((prev) =>
             fraction < 1 && Math.round(prev * 100) === Math.round(fraction * 100) ? prev : fraction
           );
@@ -210,7 +219,10 @@ export default function FanMailScreen() {
       // showing the attach buttons (briefly tappable) while the list reloads.
       setItems((prev) => [item, ...prev.filter((i) => i.id !== item.id)]);
       setDraft(null);
-      setNote('');
+      noteRef.current = '';
+      // A plain if, not ?.: optional chaining inside a try body is a value
+      // block the React Compiler refuses, and it would skip this screen.
+      if (noteInputRef.current) noteInputRef.current.clear();
       flashNotice('Sent to the artist.');
       // Reconcile quietly: what is on screen is already right, so a blip
       // here is not worth a red line over the success notice.
@@ -226,9 +238,8 @@ export default function FanMailScreen() {
         errorFeedback();
         flashError(fanCopy(e, 'Could not send that.'));
       }
-    } finally {
-      resetSending();
     }
+    resetSending();
   }
 
   /**
@@ -255,9 +266,9 @@ export default function FanMailScreen() {
     load();
   }
 
-  const layout = reduceMotion ? undefined : LinearTransition.duration(250);
-  const rowEnter = reduceMotion ? undefined : FadeIn.duration(220);
-  const rowExit = reduceMotion ? undefined : FadeOut.duration(150);
+  const layout = reduceMotion ? undefined : CARD_LAYOUT;
+  const rowEnter = reduceMotion ? undefined : ROW_ENTER;
+  const rowExit = reduceMotion ? undefined : ROW_EXIT;
 
   const sendLabel = cancelling
     ? 'Cancelling…'
@@ -424,11 +435,13 @@ export default function FanMailScreen() {
               {!nextAt ? (
                 <Animated.View key="form" entering={rowEnter} exiting={rowExit}>
                   <TextInput
+                    ref={noteInputRef}
                     style={styles.noteInput}
                     placeholder="Say something about it…"
                     placeholderTextColor="#55585f"
-                    value={note}
-                    onChangeText={setNote}
+                    onChangeText={(t) => {
+                      noteRef.current = t;
+                    }}
                     maxLength={500}
                     multiline
                   />
@@ -464,7 +477,7 @@ export default function FanMailScreen() {
                 <Animated.View
                   key={item.id}
                   style={styles.card}
-                  entering={reduceMotion ? undefined : FadeInDown.duration(280)}>
+                  entering={reduceMotion ? undefined : SENT_ENTER}>
                   <View style={styles.row}>
                     <View style={styles.kindIcon}>
                       <Ionicons name={KIND_ICON[item.kind]} size={17} color="#c3cdd6" />

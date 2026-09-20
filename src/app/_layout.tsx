@@ -6,6 +6,7 @@ import { DarkTheme, ThemeProvider, Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, type ReactNode } from 'react';
 import { Platform } from 'react-native';
+import { enableFreeze } from 'react-native-screens';
 
 import { AccountSuspended } from '@/components/account-suspended';
 import { ProfileCardProvider } from '@/components/profile-card';
@@ -15,6 +16,10 @@ import { PlayerProvider, usePlayerControls } from '@/providers/player-provider';
 
 SplashScreen.preventAutoHideAsync();
 installCrashReporting();
+// Blurred sibling tabs stop rendering on every context update (the 2 Hz
+// player status, auth, profile card). Only tabs freeze: the screen under a
+// pushed route and iOS modals never do.
+enableFreeze(true);
 
 // The app is dark everywhere, whatever the phone's setting says — a fan on
 // light mode must never get a white navigation flash between screens.

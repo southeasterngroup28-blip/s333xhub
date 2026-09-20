@@ -38,10 +38,20 @@ if (hasWindow) {
   });
 }
 
+// Both helpers read the LOCAL session: getUser() is a GET /auth/v1/user
+// round trip every call, and every optimistic write was paying it before
+// its own request. The id is already in the stored session.
+
 /** The signed-in user's id, or a fan-facing sentence, never a TypeError. */
 export async function requireUserId(): Promise<string> {
-  const { data } = await supabase.auth.getUser();
-  const id = data.user?.id;
+  const { data } = await supabase.auth.getSession(); // local read, no network
+  const id = data.session?.user.id;
   if (!id) throw new FanError(SESSION_COPY);
   return id;
+}
+
+/** The signed-in user's id, or null for a signed-out viewer (read paths). */
+export async function currentUserId(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user.id ?? null;
 }

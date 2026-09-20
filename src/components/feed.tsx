@@ -38,6 +38,12 @@ import { usePlayerControls } from '@/providers/player-provider';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { DISPLAY_FONT } from '@/constants/type';
 
+// Layout-animation builders at module scope: a stable identity lets
+// reanimated skip re-registering the config on every Feed state change.
+const ITEM_LAYOUT = LinearTransition.duration(220);
+const FOOTER_IN = FadeIn.duration(180);
+
+const keyExtractor = (item: Post) => item.id;
 
 export function Feed() {
   const { profile, profileError } = useAuth();
@@ -62,6 +68,8 @@ export function Feed() {
   /** Bumps on every fresh load; stale loadMore results get discarded. */
   const fetchSeq = useRef(0);
   const lastLoadAt = useRef(0);
+  // Bumped on every fresh load so the cards' "3m ago" labels recompute.
+  const [loadedAt, setLoadedAt] = useState(() => Date.now());
   const listRef = useRef<FlatList<Post>>(null);
   /** Whether this tab is the one on screen (focus effects only fire on navigation). */
   const focused = useRef(false);
@@ -93,7 +101,12 @@ export function Feed() {
       }
       if (paths.length === 0) return;
       const urls = await signedUrlsFor(paths);
-      setMediaUrls((prev) => ({ ...prev, ...urls }));
+      // Identical links (a refresh re-signing what is already held) keep the
+      // same map, so no mounted card re-renders for nothing.
+      setMediaUrls((prev) => {
+        for (const k in urls) if (prev[k] !== urls[k]) return { ...prev, ...urls };
+        return prev;
+      });
     },
     [isArtist]
   );
@@ -101,18 +114,21 @@ export function Feed() {
   const loadFresh = useCallback(async () => {
     const seq = ++fetchSeq.current;
     lastLoadAt.current = Date.now();
+    setLoadedAt(lastLoadAt.current);
     loadedAsArtist.current = isArtist;
     setPaging('idle');
     try {
       const purchased = isArtist
         ? new Set<string>()
         : await fetchMyPurchasedPostIds().catch(() => new Set<string>());
-      setPurchasedIds(purchased);
       const fresh = await fetchPosts('all');
       if (seq !== fetchSeq.current) return;
       // Rows committed inside this window are genuine arrivals — they
       // animate. Later renders (scroll-back remounts, pagination) don't.
       animateUntil.current = Date.now() + 600;
+      // purchasedIds lands in the same batch as the posts: one pass over
+      // the mounted cards, not two (resolveMedia uses the local set).
+      setPurchasedIds(purchased);
       setPosts(fresh);
       setFeedError(null);
       setEndReached(fresh.length < PAGE_SIZE);
@@ -291,6 +307,11 @@ export function Feed() {
     setPosts((prev) => prev.filter((p) => p.id !== postId));
   }, []);
 
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    loadFresh();
+  }, [loadFresh]);
+
   const renderItem = useCallback(
     ({ item, index }: { item: Post; index: number }) => (
       <PostCard
@@ -301,13 +322,14 @@ export function Feed() {
         reactions={social.reactions[item.id]}
         commentCount={social.commentCounts[item.id]}
         poll={polls[item.id]}
+        loadedAt={loadedAt}
         onDeleted={handleDeleted}
         onUnlocked={handleUnlocked}
         animateIn={Date.now() < animateUntil.current}
         index={index}
       />
     ),
-    [mediaUrls, isArtist, purchasedIds, social, polls, handleDeleted, handleUnlocked]
+    [mediaUrls, isArtist, purchasedIds, social, polls, loadedAt, handleDeleted, handleUnlocked]
   );
 
   return (
@@ -325,19 +347,12 @@ export function Feed() {
           <Animated.FlatList
             ref={listRef as never}
             data={posts}
-            keyExtractor={(item) => item.id}
+            keyExtractor={keyExtractor}
             renderItem={renderItem}
-            itemLayoutAnimation={reduceMotion ? undefined : LinearTransition.duration(220)}
+            itemLayoutAnimation={reduceMotion ? undefined : ITEM_LAYOUT}
             contentContainerStyle={styles.list}
             refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={() => {
-                  setRefreshing(true);
-                  loadFresh();
-                }}
-                tintColor="#fff"
-              />
+              <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#fff" />
             }
             onEndReached={loadMore}
             onEndReachedThreshold={0.5}
@@ -349,13 +364,11 @@ export function Feed() {
             ListFooterComponent={
               endReached || posts.length === 0 || paging === 'idle' ? null : paging ===
                 'loading' ? (
-                <Animated.View entering={reduceMotion ? undefined : FadeIn.duration(180)}>
+                <Animated.View entering={reduceMotion ? undefined : FOOTER_IN}>
                   <PostSkeleton />
                 </Animated.View>
               ) : (
-                <Animated.View
-                  entering={reduceMotion ? undefined : FadeIn.duration(180)}
-                  style={styles.footerWrap}>
+                <Animated.View entering={reduceMotion ? undefined : FOOTER_IN} style={styles.footerWrap}>
                   <Pressable
                     style={({ pressed }) => [
                       styles.footerRetry,
@@ -375,7 +388,7 @@ export function Feed() {
             }
             ListEmptyComponent={
               feedError ? (
-                <Animated.View entering={reduceMotion ? undefined : FadeIn.duration(180)}>
+                <Animated.View entering={reduceMotion ? undefined : FOOTER_IN}>
                   <EmptyState
                     icon="cloud-offline-outline"
                     title="Couldn't load the feed"

@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 
-import { supabase } from '@/lib/supabase';
+import { currentUserId, requireUserId, supabase } from '@/lib/supabase';
 
 export type NotificationPrefs = {
   new_posts: boolean;
@@ -32,7 +32,7 @@ export async function setNotificationPref(
   value: boolean,
   current: NotificationPrefs
 ): Promise<void> {
-  const me = (await supabase.auth.getUser()).data.user!.id;
+  const me = await requireUserId();
   const { error } = await supabase
     .from('notification_prefs')
     .upsert({ user_id: me, ...current, [key]: value, updated_at: new Date().toISOString() });
@@ -61,7 +61,7 @@ export async function registerPushToken(): Promise<void> {
     if (status !== 'granted') return; // Denied is fine — the app works without it.
 
     const token = (await Notifications.getExpoPushTokenAsync()).data;
-    const me = (await supabase.auth.getUser()).data.user?.id;
+    const me = await currentUserId();
     if (!me || !token) return;
 
     // The RPC evicts this token from any OTHER account first — a phone
@@ -86,7 +86,7 @@ export async function unregisterPushToken(): Promise<void> {
     if (!Device.isDevice) return;
     const Notifications = await import('expo-notifications');
     const token = (await Notifications.getExpoPushTokenAsync()).data;
-    const me = (await supabase.auth.getUser()).data.user?.id;
+    const me = await currentUserId();
     if (!me || !token) return;
     await supabase.from('push_tokens').delete().eq('user_id', me).eq('token', token);
   } catch {

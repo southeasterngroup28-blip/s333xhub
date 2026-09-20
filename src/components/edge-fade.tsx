@@ -10,6 +10,16 @@ import type { PropsWithChildren } from 'react';
 // web we skip masking entirely and rely on the scrims for the edge look.
 const IS_WEB = Platform.OS === 'web';
 
+/**
+ * A/B switch for the on-device comparison: `true` keeps the approved look
+ * (every list wrapped in a full-screen CALayer mask, which is an offscreen
+ * render of the cards, shadows and images on every scroll frame and every
+ * in-list animation); `false` drops the mask and leaves the edge look to
+ * the scrims alone, which already sit at 0.52-0.92 alpha in the 68/90 pt
+ * bands. Flip it, rebuild, compare; nothing else reads it.
+ */
+const LIST_MASK = true;
+
 // Smoothstep alpha ramp shared by every edge treatment in the app —
 // eases in and out so no fade ever shows a visible start or end line.
 export const EASED_STOPS = [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1] as const;
@@ -43,7 +53,7 @@ export function FadeMask({
   bottom = 90,
   style,
 }: PropsWithChildren<{ top?: number; bottom?: number; style?: ViewStyle }>) {
-  if (IS_WEB) {
+  if (IS_WEB || !LIST_MASK) {
     return <View style={[styles.flex, style]}>{children}</View>;
   }
   return (

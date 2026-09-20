@@ -27,12 +27,28 @@ import {
 } from '@/lib/shop';
 import { useAuth } from '@/providers/auth-provider';
 
+/**
+ * The "DROPS IN" clock. Owns the 1 s tick so it re-renders this one Text,
+ * not the whole tab; reports once when the moment passes so the parent
+ * re-derives the drop's status (upcoming -> live) exactly as it used to.
+ */
+function Countdown({ to, onElapsed }: { to: string; onElapsed: () => void }) {
+  const now = useNow();
+  const text = countdownTo(to, now + (serverNowMs() - Date.now()));
+  useEffect(() => {
+    if (!text) onElapsed();
+  }, [text, onElapsed]);
+  return <Text style={styles.count}>{text}</Text>;
+}
+
 export default function ShopScreen() {
   const { profile } = useAuth();
   const router = useRouter();
   const navigation = useNavigation();
   const isArtist = profile?.role === 'artist';
-  const now = useNow();
+  // Bumped by a Countdown reaching zero, so the card flips to live.
+  const [, setEpoch] = useState(0);
+  const onElapsed = useCallback(() => setEpoch((n) => n + 1), []);
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollView>(null);
 
@@ -182,7 +198,7 @@ export default function ShopScreen() {
                     {status === 'upcoming' ? (
                       <>
                         <Text style={styles.footLabel}>DROPS IN</Text>
-                        <Text style={styles.count}>{countdownTo(drop.drops_at, now + (serverNowMs() - Date.now()))}</Text>
+                        <Countdown to={drop.drops_at} onElapsed={onElapsed} />
                       </>
                     ) : status === 'live' ? (
                       <>

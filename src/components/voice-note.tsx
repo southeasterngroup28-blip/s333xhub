@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   cancelAnimation,
-  Easing,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -178,17 +177,17 @@ function Loaded({ url, durationSeconds, mine, artist, pending }: Props & { url: 
     if (intent !== null && playing === intent) setIntent(null);
   }, [intent, playing]);
 
-  // Smooth fill: on every status tick, glide to where playback will be at
-  // the NEXT tick, so the sweep never visibly steps.
+  // Fill: on every status tick, step to where playback will be at the NEXT
+  // tick. The line is 1 px bars on a 3 px pitch, so a step and a glide
+  // light the same bars — and a glide keeps a per-frame commit loop alive
+  // for the whole note.
   useEffect(() => {
     if (playing && total > 0) {
       const next = Math.min(1, (status.currentTime + 0.25) / total);
-      progress.value = reduceMotion
-        ? Math.min(1, status.currentTime / total)
-        : withTiming(next, { duration: 250, easing: Easing.linear });
+      progress.set(reduceMotion ? Math.min(1, status.currentTime / total) : next);
     } else {
       cancelAnimation(progress);
-      progress.value = reduceMotion ? 0 : withTiming(0, { duration: 150 });
+      progress.set(reduceMotion ? 0 : withTiming(0, { duration: 150 }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, status.currentTime, total, reduceMotion]);

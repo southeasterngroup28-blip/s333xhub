@@ -25,6 +25,10 @@ function FramerStage({
   uri: string;
   onFocusChange: (focus: number) => void;
 }) {
+  // Deliberate compiler bailout: the window is placed with a setState
+  // during render (the rules-of-hooks suppression below). Mounts only
+  // while the avatar is being framed.
+  'use no memo';
   const [layoutWidth, setLayoutWidth] = useState(0);
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
   const [offset, setOffset] = useState<number | null>(null);

@@ -9,7 +9,7 @@ import {
 } from 'expo-audio';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   AppState,
@@ -173,6 +173,10 @@ const ENTER_MINE = FadeInUp.duration(180).withInitialValues({
 });
 /** Incoming messages just fade in, quietly. */
 const ENTER_THEIRS = FadeIn.duration(180);
+/** The composer's mic-to-send swap. Module scope: a stable identity lets
+ * reanimated skip re-registering the exiting config on every keystroke. */
+const SWAP_IN = FadeIn.duration(120);
+const SWAP_OUT = FadeOut.duration(120);
 
 /** A separator chip opens like a drawer: height and opacity, no jump. */
 const chipEnter = (values: EntryAnimationsValues) => {
@@ -436,8 +440,8 @@ function Composer({
             <Animated.View
               key="send"
               style={styles.swapFill}
-              entering={reduceMotion ? undefined : FadeIn.duration(120)}
-              exiting={reduceMotion ? undefined : FadeOut.duration(120)}>
+              entering={reduceMotion ? undefined : SWAP_IN}
+              exiting={reduceMotion ? undefined : SWAP_OUT}>
               <Pressable style={styles.send} onPress={submit} accessibilityLabel="Send">
                 <Ionicons name="arrow-up" size={18} color="#000" />
               </Pressable>
@@ -446,8 +450,8 @@ function Composer({
             <Animated.View
               key="mic"
               style={styles.swapFill}
-              entering={reduceMotion ? undefined : FadeIn.duration(120)}
-              exiting={reduceMotion ? undefined : FadeOut.duration(120)}>
+              entering={reduceMotion ? undefined : SWAP_IN}
+              exiting={reduceMotion ? undefined : SWAP_OUT}>
               <Pressable
                 onPress={onStartRecording}
                 hitSlop={8}
@@ -462,6 +466,273 @@ function Composer({
     </View>
   );
 }
+
+/** Can this message share tightened corners with a neighbour in its run? */
+const chainable = (m: Message) => m.kind === 'text' || m.kind === 'gif' || m.kind === 'image';
+
+type RunRowProps = {
+  run: Run;
+  isArtist: boolean;
+  reduceMotion: boolean;
+  /** expandedId when it names a message in THIS run, else null. */
+  expandedKey: string | null;
+  /** The Seen/Sent message id when it sits in this run, else null. */
+  receiptId: string | null;
+  receiptSeen: boolean;
+  /** Comma-joined stable keys of this run's messages that arrived this session. */
+  freshKeys: string;
+  /** storage path -> signed URL. runRowPropsEqual compares only this run's paths. */
+  mediaUrls: Record<string, string>;
+  onToggleTime: (key: string) => void;
+  onLongPress: (m: Message) => void;
+  onRetry: (m: Message) => void;
+  onOpenProfile: (userId: string) => void;
+  onLinkError: () => void;
+};
+
+/**
+ * Shallow props, except mediaUrls: a URL landing for one photo must not
+ * re-render every text-only run on screen, so the map is compared by the
+ * paths this run actually shows.
+ */
+function runRowPropsEqual(prev: RunRowProps, next: RunRowProps): boolean {
+  for (const key of Object.keys(next) as (keyof RunRowProps)[]) {
+    if (key === 'mediaUrls') continue;
+    if (prev[key] !== next[key]) return false;
+  }
+  if (prev.mediaUrls !== next.mediaUrls) {
+    for (const m of next.run.messages) {
+      if (m.media_path && prev.mediaUrls[m.media_path] !== next.mediaUrls[m.media_path]) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * One run of the thread. Memoised so a tap for a time, a receipt refresh,
+ * a media URL landing or an optimistic send re-renders the run it touches
+ * and none of the other ~50 on screen. Reads no refs during render, so the
+ * React Compiler takes it too; `memo` is still what skips the call.
+ */
+const RunRow = memo(function RunRow({
+  run,
+  isArtist,
+  reduceMotion,
+  expandedKey,
+  receiptId,
+  receiptSeen,
+  freshKeys,
+  mediaUrls,
+  onToggleTime,
+  onLongPress,
+  onRetry,
+  onOpenProfile,
+  onLinkError,
+}: RunRowProps) {
+  // Only messages that genuinely arrived this session animate in — never
+  // recycled history rows, never a refetch. Checked by the stable render
+  // key, which is what freshIds holds for my own sends.
+  const fresh = new Set(freshKeys ? freshKeys.split(',') : []);
+  const runFresh = fresh.has(run.key);
+  // The silver hairline marks the artist to everyone ELSE — their own
+  // messages read as "mine" (filled, no visible border) like anyone's.
+  const marked = run.artist && !run.mine;
+  const lastKey = stableKey(run.messages[run.messages.length - 1]);
+
+  /** One message inside a run: bubble, pill, or hairline tile. */
+  function renderMessage(item: Message, index: number) {
+    const longPress = () => {
+      // Fans get actions on other people's messages; the artist also gets
+      // delete on anything; a failed bubble of mine offers local delete.
+      if (item.pending) return;
+      if (item.failed || !run.mine || isArtist) onLongPress(item);
+    };
+    // Expansion tracks the stable render key, so an open time label stays
+    // open through a send's temp-to-real id swap.
+    const itemKey = stableKey(item);
+    // A failed bubble's tap retries; everyone else's tap shows the time.
+    const press = item.failed ? () => onRetry(item) : () => onToggleTime(itemKey);
+    // iMessage grouping. run.messages is oldest first and each row renders
+    // un-flipped, so index 0 is the bubble the fan sees at the TOP of the
+    // run: it tightens its bottom corner, the last tightens its top, and
+    // the middles tighten both — on the left for theirs, right for mine.
+    const prev = run.messages[index - 1];
+    const next = run.messages[index + 1];
+    const joinTop = !!prev && chainable(prev) && chainable(item);
+    const joinBottom = !!next && chainable(next) && chainable(item);
+    const joined = run.mine
+      ? [joinTop && styles.joinTopR, joinBottom && styles.joinBottomR]
+      : [joinTop && styles.joinTopL, joinBottom && styles.joinBottomL];
+    if (item.kind === 'gif' && item.media_url) {
+      return (
+        <Pressable
+          onPress={press}
+          onLongPress={longPress}
+          delayLongPress={300}
+          style={item.failed ? styles.dimmed : undefined}>
+          <View style={[styles.tile, marked && styles.tileArtist, ...joined]}>
+            <Image source={{ uri: item.media_url }} style={styles.gif} contentFit="cover" />
+            {item.pending ? <UploadShimmer radius={0} /> : null}
+          </View>
+        </Pressable>
+      );
+    }
+    if (item.kind === 'image') {
+      const url = item.local_uri ?? (item.media_path ? mediaUrls[item.media_path] : undefined);
+      return (
+        <Pressable
+          onPress={press}
+          onLongPress={longPress}
+          delayLongPress={300}
+          style={item.failed ? styles.dimmed : undefined}>
+          <View style={[styles.tile, marked && styles.tileArtist, ...joined]}>
+            {url ? (
+              <Image source={{ uri: url }} style={styles.photo} contentFit="cover" />
+            ) : (
+              <View style={[styles.photo, styles.mediaLoading]}>
+                <ActivityIndicator color="#8a8a92" size="small" />
+              </View>
+            )}
+            {item.pending ? <UploadShimmer radius={0} /> : null}
+          </View>
+        </Pressable>
+      );
+    }
+    if (item.kind === 'voice') {
+      return (
+        <Pressable
+          onPress={press}
+          onLongPress={longPress}
+          delayLongPress={300}
+          style={item.failed ? styles.dimmed : undefined}>
+          <VoiceNoteBubble
+            url={item.local_uri ?? (item.media_path ? mediaUrls[item.media_path] : undefined)}
+            durationSeconds={item.duration_seconds}
+            mine={run.mine}
+            artist={marked}
+            pending={item.pending}
+          />
+        </Pressable>
+      );
+    }
+    const segments = segmentBody(item.body);
+    const hasLinks = segments.some((s) => s.href);
+    return (
+      <Pressable
+        style={[
+          styles.bubble,
+          run.mine && styles.bubbleMine,
+          marked && styles.bubbleArtist,
+          ...joined,
+          item.failed && styles.dimmed,
+        ]}
+        onPress={press}
+        onLongPress={longPress}
+        delayLongPress={300}>
+        <Text style={[styles.bubbleText, run.mine && styles.bubbleTextMine]}>
+          {hasLinks
+            ? segments.map((seg, i) =>
+                seg.href ? (
+                  <Text
+                    key={i}
+                    style={styles.link}
+                    accessibilityRole="link"
+                    onPress={() => {
+                      Linking.openURL(seg.href!).catch(() => onLinkError());
+                    }}
+                    onLongPress={longPress}>
+                    {seg.text}
+                  </Text>
+                ) : (
+                  <Text key={i}>{seg.text}</Text>
+                )
+              )
+            : item.body}
+        </Text>
+      </Pressable>
+    );
+  }
+
+  return (
+    <View>
+      {/* Each row is un-flipped inside the inverted list, so the chip
+          wrapper's paddingTop is the space the fan reads ABOVE it and
+          paddingBottom the space below, straight reading order. */}
+      {run.separator ? (
+        <Animated.View
+          entering={runFresh && !reduceMotion ? chipEnter : undefined}
+          exiting={reduceMotion ? undefined : chipExit}
+          style={styles.sepWrap}>
+          <View style={styles.sepChip}>
+            <Text style={styles.sepText}>{run.separator}</Text>
+          </View>
+        </Animated.View>
+      ) : null}
+      <Animated.View
+        entering={runFresh && !reduceMotion ? (run.mine ? ENTER_MINE : ENTER_THEIRS) : undefined}
+        style={[styles.run, !run.separator && styles.runGap, run.mine && styles.runMine]}>
+        {/* alignItems flex-end on the row seats the avatar beside the run's
+            visually-bottom bubble; every bubble shares the column's left
+            edge, indented past the avatar by its width + the 8 gap. */}
+        {!run.mine ? (
+          // A tapped-open time under the bottom bubble grows the column;
+          // the avatar rides the label's own 160ms slide up its 16px
+          // instead of snapping there in one frame.
+          <AvatarLift lifted={expandedKey === lastKey}>
+            <Pressable onPress={() => onOpenProfile(run.senderId)} hitSlop={6}>
+              <Avatar
+                path={run.sender?.avatar_path}
+                focus={run.sender?.avatar_focus}
+                name={run.sender?.display_name}
+                size={26}
+              />
+            </Pressable>
+          </AvatarLift>
+        ) : null}
+        <View style={[styles.col, run.mine && styles.colMine]}>
+          {!run.mine ? (
+            <View style={styles.who}>
+              {run.artist ? (
+                <Image source={ARTIST_EMBLEM} style={styles.emblem} contentFit="contain" />
+              ) : null}
+              <Text style={[styles.name, run.artist && styles.nameArtist]} numberOfLines={1}>
+                {displayName(run.sender)}
+              </Text>
+              {run.artist ? <Text style={styles.artistTag}>The artist</Text> : null}
+            </View>
+          ) : null}
+          {run.messages.map((m, i) => {
+            const key = stableKey(m);
+            // The run's first message animates with its container; any
+            // message joining a still-fresh run later animates on its own
+            // key, so rapid bursts don't pop in flat.
+            const msgFresh = key !== run.key && fresh.has(key) && !reduceMotion;
+            return (
+              <Animated.View
+                key={key}
+                entering={msgFresh ? (run.mine ? ENTER_MINE : ENTER_THEIRS) : undefined}
+                style={run.mine ? styles.msgWrapMine : styles.msgWrap}>
+                {renderMessage(m, i)}
+                {m.failed ? (
+                  <Pressable onPress={() => onRetry(m)} hitSlop={4}>
+                    <Text style={styles.failedLine}>Not sent. Tap to retry.</Text>
+                  </Pressable>
+                ) : (
+                  <TimeLabel open={expandedKey === key} iso={m.created_at} />
+                )}
+                {receiptId === m.id ? (
+                  <Text style={styles.receipt}>{receiptSeen ? 'Seen' : 'Sent'}</Text>
+                ) : null}
+              </Animated.View>
+            );
+          })}
+        </View>
+      </Animated.View>
+    </View>
+  );
+}, runRowPropsEqual);
 
 export default function ChannelScreen() {
   // `title` is seeded by the list screen so the header never flashes a
@@ -866,6 +1137,25 @@ export default function ChannelScreen() {
     runSend(item.id, make);
   }
 
+  // Row callbacks are stable by hand (this screen does not compile under
+  // the React Compiler), so a memoised RunRow only re-renders when its
+  // own props change. setExpandedId/setActionTarget/setError are stable
+  // already; retrySend is a plain inner function, so it goes through a ref.
+  const retrySendRef = useRef(retrySend);
+  useEffect(() => {
+    retrySendRef.current = retrySend;
+  });
+  const onRetry = useCallback((m: Message) => retrySendRef.current(m), []);
+  const onToggleTime = useCallback(
+    (key: string) => setExpandedId((cur) => (cur === key ? null : key)),
+    []
+  );
+  const onLongPressMessage = useCallback((m: Message) => {
+    pressFeedback();
+    setActionTarget(m);
+  }, []);
+  const onLinkError = useCallback(() => setError('Could not open that link.'), []);
+
   function handleSendText(body: string) {
     if (!id || !myUserId) return;
     // Mask profanity locally too, so the bubble never changes wording when
@@ -1092,16 +1382,39 @@ export default function ChannelScreen() {
   // Seeded from the route param (like the title) so the loading ghost can
   // already wear the room's shape before the channel info lands.
   const isGroup = info ? info.type === 'group' : typeParam === 'group';
-  const runs = useMemo(
-    () =>
-      buildRuns(
-        messages.filter((m) => !blockedIds.has(m.sender_id)),
-        myUserId
-      ),
+  /** The last build, by run key, so an untouched run keeps its object. */
+  const prevRunsRef = useRef(new Map<string, Run>());
+  const runs = useMemo(() => {
+    const built = buildRuns(
+      messages.filter((m) => !blockedIds.has(m.sender_id)),
+      myUserId
+    );
+    // buildRuns allocates fresh Run objects; without this, a send's three
+    // setMessages would still re-render every memoised row. A run whose
+    // separator, sender flags and every message reference are unchanged
+    // reuses its previous object, so its RunRow's memo holds. O(n).
+    const prev = prevRunsRef.current;
+    const nextMap = new Map<string, Run>();
+    const out = built.map((run) => {
+      const old = prev.get(run.key);
+      const same =
+        old !== undefined &&
+        old.separator === run.separator &&
+        old.mine === run.mine &&
+        old.artist === run.artist &&
+        old.senderId === run.senderId &&
+        old.sender === run.sender &&
+        old.messages.length === run.messages.length &&
+        old.messages.every((m, i) => m === run.messages[i]);
+      const keep = same ? old : run;
+      nextMap.set(run.key, keep);
+      return keep;
+    });
+    prevRunsRef.current = nextMap;
+    return out;
     // todayKey re-runs the relative chip labels after a night in the background.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [messages, blockedIds, myUserId, todayKey]
-  );
+  }, [messages, blockedIds, myUserId, todayKey]);
 
   // Seen/Sent lives under my newest delivered message — DM only. A pending
   // or failed newest message shows its own state instead, so the word
@@ -1131,214 +1444,36 @@ export default function ChannelScreen() {
         : 'Community'
       : 'Direct message';
 
-  /** Can this message share tightened corners with a neighbour in its run? */
-  const chainable = (m: Message) => m.kind === 'text' || m.kind === 'gif' || m.kind === 'image';
-
-  /** One message inside a run: bubble, pill, or hairline tile. */
-  function renderMessage(item: Message, run: Run, index: number) {
-    // The silver hairline marks the artist to everyone ELSE — their own
-    // messages read as "mine" (filled, no visible border) like anyone's.
-    const marked = run.artist && !run.mine;
-    const longPress = () => {
-      // Fans get actions on other people's messages; the artist also gets
-      // delete on anything; a failed bubble of mine offers local delete.
-      if (item.pending) return;
-      if (item.failed || !run.mine || isArtist) {
-        pressFeedback();
-        setActionTarget(item);
-      }
-    };
-    // Expansion tracks the stable render key, so an open time label stays
-    // open through a send's temp-to-real id swap.
-    const itemKey = stableKey(item);
-    const toggleTime = () => setExpandedId((cur) => (cur === itemKey ? null : itemKey));
-    // A failed bubble's tap retries; everyone else's tap shows the time.
-    const press = item.failed ? () => retrySend(item) : toggleTime;
-    // iMessage grouping. run.messages is oldest first and each row renders
-    // un-flipped, so index 0 is the bubble the fan sees at the TOP of the
-    // run: it tightens its bottom corner, the last tightens its top, and
-    // the middles tighten both — on the left for theirs, right for mine.
-    const prev = run.messages[index - 1];
-    const next = run.messages[index + 1];
-    const joinTop = !!prev && chainable(prev) && chainable(item);
-    const joinBottom = !!next && chainable(next) && chainable(item);
-    const joined = run.mine
-      ? [joinTop && styles.joinTopR, joinBottom && styles.joinBottomR]
-      : [joinTop && styles.joinTopL, joinBottom && styles.joinBottomL];
-    if (item.kind === 'gif' && item.media_url) {
-      return (
-        <Pressable
-          onPress={press}
-          onLongPress={longPress}
-          delayLongPress={300}
-          style={item.failed ? styles.dimmed : undefined}>
-          <View style={[styles.tile, marked && styles.tileArtist, ...joined]}>
-            <Image source={{ uri: item.media_url }} style={styles.gif} contentFit="cover" />
-            {item.pending ? <UploadShimmer radius={0} /> : null}
-          </View>
-        </Pressable>
-      );
-    }
-    if (item.kind === 'image') {
-      const url = item.local_uri ?? (item.media_path ? mediaUrls[item.media_path] : undefined);
-      return (
-        <Pressable
-          onPress={press}
-          onLongPress={longPress}
-          delayLongPress={300}
-          style={item.failed ? styles.dimmed : undefined}>
-          <View style={[styles.tile, marked && styles.tileArtist, ...joined]}>
-            {url ? (
-              <Image source={{ uri: url }} style={styles.photo} contentFit="cover" />
-            ) : (
-              <View style={[styles.photo, styles.mediaLoading]}>
-                <ActivityIndicator color="#8a8a92" size="small" />
-              </View>
-            )}
-            {item.pending ? <UploadShimmer radius={0} /> : null}
-          </View>
-        </Pressable>
-      );
-    }
-    if (item.kind === 'voice') {
-      return (
-        <Pressable
-          onPress={press}
-          onLongPress={longPress}
-          delayLongPress={300}
-          style={item.failed ? styles.dimmed : undefined}>
-          <VoiceNoteBubble
-            url={item.local_uri ?? (item.media_path ? mediaUrls[item.media_path] : undefined)}
-            durationSeconds={item.duration_seconds}
-            mine={run.mine}
-            artist={marked}
-            pending={item.pending}
-          />
-        </Pressable>
-      );
-    }
-    const segments = segmentBody(item.body);
-    const hasLinks = segments.some((s) => s.href);
-    return (
-      <Pressable
-        style={[
-          styles.bubble,
-          run.mine && styles.bubbleMine,
-          marked && styles.bubbleArtist,
-          ...joined,
-          item.failed && styles.dimmed,
-        ]}
-        onPress={press}
-        onLongPress={longPress}
-        delayLongPress={300}>
-        <Text style={[styles.bubbleText, run.mine && styles.bubbleTextMine]}>
-          {hasLinks
-            ? segments.map((seg, i) =>
-                seg.href ? (
-                  <Text
-                    key={i}
-                    style={styles.link}
-                    accessibilityRole="link"
-                    onPress={() => {
-                      Linking.openURL(seg.href!).catch(() =>
-                        setError('Could not open that link.')
-                      );
-                    }}
-                    onLongPress={longPress}>
-                    {seg.text}
-                  </Text>
-                ) : (
-                  <Text key={i}>{seg.text}</Text>
-                )
-              )
-            : item.body}
-        </Text>
-      </Pressable>
-    );
-  }
-
   function renderRun({ item: run }: { item: Run }) {
-    // Only messages that genuinely arrived this session animate in — never
-    // recycled history rows, never a refetch. Checked by the stable render
-    // key, which is what freshIds holds for my own sends.
-    const runFresh = freshIds.current.has(run.key);
+    // Per-run, shallow-comparable props: a tap for a time or a receipt
+    // refresh changes the props of the run it lands in and no other.
+    const expandedKey =
+      expandedId !== null && run.messages.some((m) => stableKey(m) === expandedId)
+        ? expandedId
+        : null;
+    const receiptHere = receipt !== null && run.messages.some((m) => m.id === receipt.id);
+    // Computed here so RunRow never reads a ref during render; entering is
+    // mount-only, so a later change to this string is harmless.
+    const freshKeys = run.messages
+      .filter((m) => freshIds.current.has(stableKey(m)))
+      .map(stableKey)
+      .join(',');
     return (
-      <View>
-        {/* Each row is un-flipped inside the inverted list, so the chip
-            wrapper's paddingTop is the space the fan reads ABOVE it and
-            paddingBottom the space below, straight reading order. */}
-        {run.separator ? (
-          <Animated.View
-            entering={runFresh && !reduceMotion ? chipEnter : undefined}
-            exiting={reduceMotion ? undefined : chipExit}
-            style={styles.sepWrap}>
-            <View style={styles.sepChip}>
-              <Text style={styles.sepText}>{run.separator}</Text>
-            </View>
-          </Animated.View>
-        ) : null}
-        <Animated.View
-          entering={runFresh && !reduceMotion ? (run.mine ? ENTER_MINE : ENTER_THEIRS) : undefined}
-          style={[styles.run, !run.separator && styles.runGap, run.mine && styles.runMine]}>
-          {/* alignItems flex-end on the row seats the avatar beside the run's
-              visually-bottom bubble; every bubble shares the column's left
-              edge, indented past the avatar by its width + the 8 gap. */}
-          {!run.mine ? (
-            // A tapped-open time under the bottom bubble grows the column;
-            // the avatar rides the label's own 160ms slide up its 16px
-            // instead of snapping there in one frame.
-            <AvatarLift
-              lifted={expandedId === stableKey(run.messages[run.messages.length - 1])}>
-              <Pressable onPress={() => showProfile(run.senderId)} hitSlop={6}>
-                <Avatar
-                  path={run.sender?.avatar_path}
-                  focus={run.sender?.avatar_focus}
-                  name={run.sender?.display_name}
-                  size={26}
-                />
-              </Pressable>
-            </AvatarLift>
-          ) : null}
-          <View style={[styles.col, run.mine && styles.colMine]}>
-            {!run.mine ? (
-              <View style={styles.who}>
-                {run.artist ? (
-                  <Image source={ARTIST_EMBLEM} style={styles.emblem} contentFit="contain" />
-                ) : null}
-                <Text style={[styles.name, run.artist && styles.nameArtist]} numberOfLines={1}>
-                  {displayName(run.sender)}
-                </Text>
-                {run.artist ? <Text style={styles.artistTag}>The artist</Text> : null}
-              </View>
-            ) : null}
-            {run.messages.map((m, i) => {
-              const key = stableKey(m);
-              // The run's first message animates with its container; any
-              // message joining a still-fresh run later animates on its own
-              // key, so rapid bursts don't pop in flat.
-              const msgFresh = key !== run.key && freshIds.current.has(key) && !reduceMotion;
-              return (
-                <Animated.View
-                  key={key}
-                  entering={msgFresh ? (run.mine ? ENTER_MINE : ENTER_THEIRS) : undefined}
-                  style={run.mine ? styles.msgWrapMine : styles.msgWrap}>
-                  {renderMessage(m, run, i)}
-                  {m.failed ? (
-                    <Pressable onPress={() => retrySend(m)} hitSlop={4}>
-                      <Text style={styles.failedLine}>Not sent. Tap to retry.</Text>
-                    </Pressable>
-                  ) : (
-                    <TimeLabel open={expandedId === key} iso={m.created_at} />
-                  )}
-                  {receipt && receipt.id === m.id ? (
-                    <Text style={styles.receipt}>{receipt.seen ? 'Seen' : 'Sent'}</Text>
-                  ) : null}
-                </Animated.View>
-              );
-            })}
-          </View>
-        </Animated.View>
-      </View>
+      <RunRow
+        run={run}
+        isArtist={isArtist}
+        reduceMotion={reduceMotion}
+        expandedKey={expandedKey}
+        receiptId={receiptHere ? receipt.id : null}
+        receiptSeen={receiptHere ? receipt.seen : false}
+        freshKeys={freshKeys}
+        mediaUrls={mediaUrls}
+        onToggleTime={onToggleTime}
+        onLongPress={onLongPressMessage}
+        onRetry={onRetry}
+        onOpenProfile={showProfile}
+        onLinkError={onLinkError}
+      />
     );
   }
 
@@ -1365,7 +1500,6 @@ export default function ChannelScreen() {
                   ref={listRef}
                   inverted
                   data={runs}
-                  extraData={[expandedId, otherLastReadAt, actionTarget, reporting, mediaUrls]}
                   keyExtractor={(run) => run.key}
                   renderItem={renderRun}
                   contentContainerStyle={styles.list}

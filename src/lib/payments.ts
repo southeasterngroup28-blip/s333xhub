@@ -4,7 +4,7 @@
 // payment sheet → RevenueCat's webhook verifies with Apple and writes
 // the purchases row server-side → the app sees the unlock appear.
 // The client NEVER writes its own unlock — the vault seal stays sealed.
-import { LogBox, Platform } from 'react-native';
+import { Platform } from 'react-native';
 
 import { FanError } from '@/lib/fan-error';
 import { fetchMyPurchasedPostIds } from '@/lib/purchases';
@@ -33,14 +33,25 @@ async function rc() {
 /** Idempotent setup — call whenever a session exists. */
 export async function configurePayments(userId: string): Promise<void> {
   if (Platform.OS !== 'ios' || !RC_KEY.startsWith('appl_')) return;
-  // Dev builds only: RevenueCat logs an 'Error fetching offerings' console.error
-  // on every launch until Apple serves the products, and Expo's LogBox turns
-  // that into a red toast. We never use offerings (we fetch products directly),
-  // so keep the toast off the test screen. LogBox does not exist in release.
-  if (__DEV__) LogBox.ignoreLogs([/\[RevenueCat\].*offerings/i]);
   try {
     const Purchases = await rc();
     if (configuredFor === null) {
+      if (__DEV__) {
+        // Debug builds default the native SDK to DEBUG and ship every line
+        // over the bridge, to Metro over Wi-Fi and through LogBox's parse
+        // pipeline; the old ignoreLogs regex only hid the toast afterwards.
+        // Filter at the source. We never use offerings (products are
+        // fetched directly), so the 'Error fetching offerings' line that
+        // Apple emits until it serves the products is dropped outright.
+        // Both must run before configure().
+        void Purchases.setLogLevel(Purchases.LOG_LEVEL.ERROR);
+        Purchases.setLogHandler((level, message) => {
+          if (/offerings/i.test(message)) return;
+          // console.warn keeps errors visible without console.error's
+          // SyntheticError + stack-parse pipeline.
+          console.warn(`[RevenueCat] ${level}: ${message}`);
+        });
+      }
       Purchases.configure({ apiKey: RC_KEY, appUserID: userId });
     } else if (configuredFor !== userId) {
       await Purchases.logIn(userId);

@@ -1,6 +1,6 @@
 import type { RealtimeChannel } from '@supabase/supabase-js';
 
-import { supabase } from '@/lib/supabase';
+import { currentUserId, requireUserId, supabase } from '@/lib/supabase';
 
 export const REACTION_EMOJIS = ['†', '🔥', '💀', '😭'] as const;
 export type ReactionEmoji = (typeof REACTION_EMOJIS)[number];
@@ -20,7 +20,7 @@ export type SocialSummary = {
 export async function fetchSocialSummary(postIds: string[]): Promise<SocialSummary> {
   const empty: SocialSummary = { reactions: {}, commentCounts: {} };
   if (postIds.length === 0) return empty;
-  const me = (await supabase.auth.getUser()).data.user?.id;
+  const me = await currentUserId();
 
   const [reactionsRes, countsRes] = await Promise.all([
     supabase.from('post_reactions').select('post_id, user_id, emoji').in('post_id', postIds),
@@ -46,7 +46,7 @@ export async function fetchSocialSummary(postIds: string[]): Promise<SocialSumma
 
 /** Toggle my reaction; returns true if it's now on. */
 export async function toggleReaction(postId: string, emoji: ReactionEmoji, isOn: boolean): Promise<boolean> {
-  const me = (await supabase.auth.getUser()).data.user!.id;
+  const me = await requireUserId();
   if (isOn) {
     const { error } = await supabase
       .from('post_reactions')
@@ -176,7 +176,7 @@ export function subscribeToComments(
 }
 
 export async function addComment(postId: string, body: string): Promise<Comment> {
-  const me = (await supabase.auth.getUser()).data.user!.id;
+  const me = await requireUserId();
   const { data, error } = await supabase
     .from('post_comments')
     .insert({ post_id: postId, user_id: me, body: body.trim() })
@@ -276,7 +276,7 @@ export type PollState = {
 
 export async function fetchPolls(postIds: string[]): Promise<Record<string, PollState>> {
   if (postIds.length === 0) return {};
-  const me = (await supabase.auth.getUser()).data.user?.id;
+  const me = await currentUserId();
 
   const [pollsRes, optionsRes, votesRes] = await Promise.all([
     supabase.from('polls').select('post_id, ends_at').in('post_id', postIds),
@@ -315,7 +315,7 @@ export async function fetchPolls(postIds: string[]): Promise<Record<string, Poll
 }
 
 export async function votePoll(postId: string, optionId: string): Promise<void> {
-  const me = (await supabase.auth.getUser()).data.user!.id;
+  const me = await requireUserId();
   const { error } = await supabase
     .from('poll_votes')
     .upsert({ post_id: postId, option_id: optionId, user_id: me });

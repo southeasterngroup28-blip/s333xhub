@@ -45,16 +45,25 @@ import {
   markFeedStale,
   titleFromFileName,
   UploadCancelledError,
+  type CreatePostOptions,
+  type NewPost,
   type PickedAudio,
   type PickedVideo,
   type Project,
   type UploadHandle,
+  type UploadProgress,
 } from '@/lib/posts';
 import { priceLabel } from '@/lib/shop';
 import { useReduceMotion } from '@/lib/use-reduce-motion';
 import { useAuth } from '@/providers/auth-provider';
 
 const MAX_IMAGES = 4;
+
+// Layout-animation builders at module scope: a stable identity lets
+// reanimated skip re-registering the config on every re-render.
+const ROW_IN = FadeInDown.duration(180);
+const ROW_OUT = FadeOut.duration(120);
+const ROW_LAYOUT = LinearTransition.duration(180);
 
 // Apple in-app purchases only allow preset price points, so the artist
 // picks from these instead of typing a number. Extend the list as needed —
@@ -80,6 +89,10 @@ function CoverFramer({
   initialFocus: number;
   onCommit: (focus: number) => void;
 }) {
+  // Deliberate compiler bailout: the window is placed with a setState
+  // during render (the rules-of-hooks suppression below). It only mounts
+  // inside the framing Modal, and its element is memoised by its parent.
+  'use no memo';
   const [layoutWidth, setLayoutWidth] = useState(0);
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(
     imageWidth && imageHeight ? { w: imageWidth, h: imageHeight } : null
@@ -282,20 +295,19 @@ export default function ComposeScreen() {
 
   // Once prevention has dropped (the render with leaving=true is committed),
   // replay the action the fan asked for - or, after a successful post, head
-  // back to the feed.
+  // back to the feed. useRouter() is the module singleton and the screen's
+  // navigation object is stable, so this still fires only when `leaving`
+  // flips; the one-shot guard keeps it safe even if an identity ever changes.
+  const left = useRef(false);
   useEffect(() => {
-    if (!leaving) return;
+    if (!leaving || left.current) return;
+    left.current = true;
     const action = pendingAction.current;
     pendingAction.current = null;
-    if (action) {
-      navigation.dispatch(action);
-    } else if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace('/');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leaving]);
+    if (action) navigation.dispatch(action);
+    else if (router.canGoBack()) router.back();
+    else router.replace('/');
+  }, [leaving, navigation, router]);
 
   // A refused dismissal is worth a buzz: the fan tried to leave and could not.
   useEffect(() => {
@@ -368,7 +380,7 @@ export default function ComposeScreen() {
     pressFeedback();
     postingRef.current = true;
     setPosting(true);
-    progress.value = 0;
+    progress.set(0);
     captionKey.current = '';
     // The bar and its caption show from the first frame, with the real
     // file count - createPost refines the byte totals as each one streams.
@@ -379,53 +391,49 @@ export default function ComposeScreen() {
       setUpload({ fileIndex: 0, fileCount, fraction: 0 });
       startStallWatch();
     }
+    // Everything is built before the `try` and the try is one line: the
+    // React Compiler refuses any ternary / ?? / ?. inside a try body, and
+    // that would leave this whole screen uncompiled.
+    const filledOptions = pollOptions.map((o) => o.trim()).filter(Boolean);
+    const input: NewPost = {
+      project,
+      body,
+      images: pollMode ? [] : images,
+      audio: pollMode ? null : audio,
+      video: pollMode ? null : video,
+      cover: pollMode ? null : cover,
+      coverFocus,
+      title: trackTitle,
+      priceCents: locked ? priceCents : null,
+      pollOptions: pollMode ? filledOptions : null,
+      pollEndsAt: pollMode && pollHours ? new Date(Date.now() + pollHours * 3600000) : null,
+    };
+    const onProgress: UploadProgress = (bytesSent, totalBytes, fileIndex, fileCount) => {
+      lastByteAt.current = Date.now();
+      const fraction = totalBytes > 0 ? Math.min(bytesSent / totalBytes, 1) : 0;
+      // The bar rides every byte event on the UI thread; the caption
+      // (a React render) only moves when its number does.
+      progress.set(withTiming(fraction, { duration: 200 }));
+      const key = `${fileIndex}/${fileCount}/${Math.round(fraction * 100)}`;
+      if (key === captionKey.current) return;
+      captionKey.current = key;
+      setUpload({ fileIndex, fileCount, fraction });
+    };
+    const options: CreatePostOptions = {
+      onUpload: (handle) => {
+        uploadRef.current = handle;
+        setCancellable(true);
+      },
+    };
+    let post: Awaited<ReturnType<typeof createPost>> = null;
     try {
-      const filledOptions = pollOptions.map((o) => o.trim()).filter(Boolean);
-      const post = await createPost(
-        {
-          project,
-          body,
-          images: pollMode ? [] : images,
-          audio: pollMode ? null : audio,
-          video: pollMode ? null : video,
-          cover: pollMode ? null : cover,
-          coverFocus,
-          title: trackTitle,
-          priceCents: locked ? priceCents : null,
-          pollOptions: pollMode ? filledOptions : null,
-          pollEndsAt: pollMode && pollHours ? new Date(Date.now() + pollHours * 3600000) : null,
-        },
-        (bytesSent, totalBytes, fileIndex, fileCount) => {
-          lastByteAt.current = Date.now();
-          const fraction = totalBytes > 0 ? Math.min(bytesSent / totalBytes, 1) : 0;
-          // The bar rides every byte event on the UI thread; the caption
-          // (a React render) only moves when its number does.
-          progress.value = withTiming(fraction, { duration: 200 });
-          const key = `${fileIndex}/${fileCount}/${Math.round(fraction * 100)}`;
-          if (key === captionKey.current) return;
-          captionKey.current = key;
-          setUpload({ fileIndex, fileCount, fraction });
-        },
-        {
-          onUpload: (handle) => {
-            uploadRef.current = handle;
-            setCancellable(true);
-          },
-        }
-      );
-      stopStallWatch();
-      successFeedback();
-      markFeedStale({ scrollToTop: true, post: post ?? undefined });
-      // Drop the guard first; the effect above does the actual leaving once
-      // that render has landed (a same-tick back() would still be prevented).
-      pendingAction.current = null;
-      setLeaving(true);
+      post = await createPost(input, onProgress, options);
     } catch (e) {
       stopStallWatch();
       uploadRef.current = null;
       setCancellable(false);
       setUpload(null);
-      progress.value = 0;
+      progress.set(0);
       setPosting(false);
       postingRef.current = false;
       if (e instanceof UploadCancelledError) {
@@ -435,7 +443,15 @@ export default function ComposeScreen() {
       }
       errorFeedback();
       setError(fanCopy(e, "Couldn't post. Try again."));
+      return;
     }
+    stopStallWatch();
+    successFeedback();
+    markFeedStale({ scrollToTop: true, post: post ?? undefined });
+    // Drop the guard first; the effect above does the actual leaving once
+    // that render has landed (a same-tick back() would still be prevented).
+    pendingAction.current = null;
+    setLeaving(true);
   }
 
   const canPost =
@@ -755,8 +771,8 @@ export default function ComposeScreen() {
           {locked ? (
             <Animated.View
               style={styles.priceRow}
-              entering={reduceMotion ? undefined : FadeInDown.duration(180)}
-              exiting={reduceMotion ? undefined : FadeOut.duration(120)}>
+              entering={reduceMotion ? undefined : ROW_IN}
+              exiting={reduceMotion ? undefined : ROW_OUT}>
               {PRICE_OPTIONS.map((cents) => (
                 <Pressable
                   key={cents}
@@ -782,9 +798,7 @@ export default function ComposeScreen() {
         </View>
 
         {upload ? (
-          <Animated.View
-            style={styles.uploadingRow}
-            layout={reduceMotion ? undefined : LinearTransition.duration(180)}>
+          <Animated.View style={styles.uploadingRow} layout={reduceMotion ? undefined : ROW_LAYOUT}>
             <Text style={styles.uploadingNote}>
               {stalled
                 ? 'Connection lost. Waiting to resume.'
@@ -806,8 +820,8 @@ export default function ComposeScreen() {
       {confirmDiscard ? (
         <Animated.View
           style={styles.floating}
-          entering={reduceMotion ? undefined : FadeInDown.duration(180)}
-          exiting={reduceMotion ? undefined : FadeOut.duration(120)}>
+          entering={reduceMotion ? undefined : ROW_IN}
+          exiting={reduceMotion ? undefined : ROW_OUT}>
           {posting && stalled && cancellable ? (
             <>
               <Text style={styles.confirmText}>Connection lost. Waiting to resume.</Text>

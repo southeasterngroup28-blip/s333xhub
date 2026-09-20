@@ -1,6 +1,7 @@
 import {
   createAudioPlayer,
   setAudioModeAsync,
+  setIsAudioActiveAsync,
   useAudioPlayerStatus,
   type AudioStatus,
 } from 'expo-audio';
@@ -185,41 +186,70 @@ export function PlayerProvider({ children }: PropsWithChildren) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [current?.postId, status?.playing]);
 
+  // Activating the audio session (AVAudioSession.setActive) is the 50-300 ms
+  // part of play(): done here, off the tap path, so the glyph-flip state
+  // commits first and play()'s own synchronous activation is a no-op. A
+  // play still waiting on activation is remembered so a second tap in that
+  // window pauses instead of queueing another play; the newest call is
+  // the one that decides, so play A then play B lands on B.
+  const pendingPlayRef = useRef(false);
+  const playSeqRef = useRef(0);
+  const activateThen = useCallback(
+    (fn: () => void) => {
+      const seq = ++playSeqRef.current;
+      pendingPlayRef.current = true;
+      setIsAudioActiveAsync(true)
+        .catch(() => {})
+        .then(() => {
+          // Runs in call order: a superseded replace() still lands first.
+          fn();
+          if (seq !== playSeqRef.current) return;
+          const wanted = pendingPlayRef.current;
+          pendingPlayRef.current = false;
+          if (wanted) player.play();
+        });
+    },
+    [player]
+  );
+
   const playTrack = useCallback(
     (track: Track) => {
       setCurrent(track);
       setStarting(true);
       clearFailed();
-      player.replace({ uri: track.url });
-      player.play();
+      activateThen(() => player.replace({ uri: track.url }));
     },
-    [player, clearFailed]
+    [player, clearFailed, activateThen]
   );
 
   const toggle = useCallback(() => {
     if (!current) return;
     if (failedRef.current) {
       // Retry: reload the same track from scratch.
-      player.replace({ uri: current.url });
-      player.play();
       setStarting(true);
       clearFailed();
+      activateThen(() => player.replace({ uri: current.url }));
       return;
     }
     // Reads the player synchronously so this callback never depends on the
     // status stream — the controls context stays still while the clock runs.
-    if (player.playing) {
+    if (player.playing || pendingPlayRef.current) {
+      // pause() does not block; leave it synchronous. A play still waiting
+      // on activation is called off (its replace() still lands, paused).
+      pendingPlayRef.current = false;
       player.pause();
+      setStarting(false);
       return;
     }
-    // A finished track replays from the top - without this, play after
-    // the end is a dead button (the playhead never rewinds itself).
-    const dur = player.duration ?? 0;
-    if (didJustFinishRef.current || (dur > 0 && (player.currentTime ?? 0) >= dur - 0.3)) {
-      player.seekTo(0);
-    }
-    player.play();
-  }, [current, player, clearFailed]);
+    activateThen(() => {
+      // A finished track replays from the top - without this, play after
+      // the end is a dead button (the playhead never rewinds itself).
+      const dur = player.duration ?? 0;
+      if (didJustFinishRef.current || (dur > 0 && (player.currentTime ?? 0) >= dur - 0.3)) {
+        player.seekTo(0);
+      }
+    });
+  }, [current, player, clearFailed, activateThen]);
 
   const seekTo = useCallback(
     (seconds: number) => {
@@ -229,12 +259,17 @@ export function PlayerProvider({ children }: PropsWithChildren) {
   );
 
   const pause = useCallback(() => {
+    // Also calls off a play still waiting on activation (a voice note that
+    // borrows the speakers must not be overridden by a late play()).
+    if (pendingPlayRef.current) setStarting(false);
+    pendingPlayRef.current = false;
     try {
       player.pause();
     } catch {}
   }, [player]);
 
   const stop = useCallback(() => {
+    pendingPlayRef.current = false;
     try {
       player.pause();
     } catch {}

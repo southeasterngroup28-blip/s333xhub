@@ -570,9 +570,13 @@ export async function createPost(
   return fetchPostById(post.id).catch(() => null);
 }
 
-/** "3m ago" style timestamps for the feed. */
-export function timeAgo(iso: string): string {
-  const seconds = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+/**
+ * "3m ago" style timestamps for the feed. `asOf` is the moment the screen
+ * last loaded: pass it from state so a compiled caller recomputes the label
+ * on every refresh instead of caching it against created_at alone.
+ */
+export function timeAgo(iso: string, asOf: number = Date.now()): string {
+  const seconds = Math.max(0, Math.floor((asOf - new Date(iso).getTime()) / 1000));
   if (seconds < 60) return 'just now';
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;

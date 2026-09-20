@@ -34,13 +34,13 @@ export function ScalePressable({ style, onPressIn, onPressOut, ...rest }: Props)
       {...rest}
       style={[style, animated]}
       onPressIn={(e) => {
-        if (reduceMotion) dim.value = withTiming(0.7, { duration: 90 });
-        else scale.value = withTiming(0.97, { duration: 90 });
+        if (reduceMotion) dim.set(withTiming(0.7, { duration: 90 }));
+        else scale.set(withTiming(0.97, { duration: 90 }));
         onPressIn?.(e);
       }}
       onPressOut={(e) => {
-        scale.value = withTiming(1, { duration: 180 });
-        dim.value = withTiming(1, { duration: 180 });
+        scale.set(withTiming(1, { duration: 180 }));
+        dim.set(withTiming(1, { duration: 180 }));
         onPressOut?.(e);
       }}
     />

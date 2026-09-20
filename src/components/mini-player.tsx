@@ -2,7 +2,14 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import Animated, {
   Easing,
   FadeInUp,
@@ -26,27 +33,30 @@ export function MiniPlayer() {
 
   const currentTime = status?.currentTime ?? 0;
   const duration = status?.duration ?? 0;
+  const { width: windowWidth } = useWindowDimensions();
+  // The hairline's width: the window minus the wrap's 14 pt sides and the
+  // track's 11 pt insets (styles below).
+  const hairWidth = windowWidth - 50;
 
-  // Position hairline: glides between the 500ms status ticks on the UI
-  // thread, so the line sweeps instead of stepping.
+  // Position hairline, moved on each 500ms status tick on the UI thread.
   const prog = useSharedValue(0);
+  const trackId = current?.postId;
   useEffect(() => {
     // A new track starts the line over — jump, never glide backwards.
-    prog.value = 0;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current?.postId]);
+    prog.set(0);
+  }, [trackId, prog]);
   useEffect(() => {
     if (duration > 0 && !starting) {
-      // Reduce Motion steps straight to the spot; otherwise glide there.
-      prog.value = reduceMotion
-        ? currentTime / duration
-        : withTiming(currentTime / duration, {
-            duration: 500,
-            easing: Easing.linear,
-          });
+      const fraction = currentTime / duration;
+      // A tick advances ~1 px on a 3-minute track: step, don't glide (a
+      // glide keeps a shadow-tree commit running every frame for the whole
+      // track). Only a jump a fan could see (> 2 px: a seek, or a very
+      // short track) still sweeps; Reduce Motion always steps.
+      const jumpPx = Math.abs(fraction - prog.get()) * hairWidth;
+      if (reduceMotion || jumpPx <= 2) prog.set(fraction);
+      else prog.set(withTiming(fraction, { duration: 500, easing: Easing.linear }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTime, duration, starting, reduceMotion]);
+  }, [currentTime, duration, starting, reduceMotion, prog, hairWidth]);
   const hairline = useAnimatedStyle(() => ({ width: `${prog.value * 100}%` as `${number}%` }));
 
   if (!current) return null;

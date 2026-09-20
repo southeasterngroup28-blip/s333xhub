@@ -149,6 +149,10 @@ function SeekBar({
   position: number;
   seekTo: (seconds: number) => void;
 }) {
+  // Deliberate compiler bailout: the drag path mirrors props into refs
+  // during render for the PanResponder, and the tick effect's deps are
+  // suppressed on purpose. Re-renders here are the status tick only.
+  'use no memo';
   const [barWidth, setBarWidth] = useState(0);
   /** The dragged spot's whole second — feeds the left timestamp only. */
   const [dragSeconds, setDragSeconds] = useState<number | null>(null);
@@ -185,16 +189,20 @@ function SeekBar({
     }
   }
 
-  // At rest, each 500ms status tick glides the fill to the new spot so
-  // progress sweeps instead of stepping. Drags own the value while down.
+  // At rest, each 500ms status tick moves the fill to the new spot. Drags
+  // own the value while down.
   useEffect(() => {
     if (draggingRef.current) return;
     const fraction = duration > 0 ? Math.min(1, shownPosition / duration) : 0;
-    if (reduceMotion || pendingSeekRef.current != null || fraction === 0) {
-      // Reduce Motion steps to each tick instead of gliding between them.
-      progressSV.value = fraction;
+    // A tick advances < 1 px on a 3-minute track: step, don't glide. A
+    // glide keeps a shadow-tree commit running every frame for the whole
+    // track. Only a seek/skip (> 2 px) still sweeps; Reduce Motion always
+    // steps.
+    const jumpPx = Math.abs(fraction - progressSV.get()) * widthRef.current;
+    if (reduceMotion || pendingSeekRef.current != null || fraction === 0 || jumpPx <= 2) {
+      progressSV.set(fraction);
     } else {
-      progressSV.value = withTiming(fraction, { duration: 500, easing: Easing.linear });
+      progressSV.set(withTiming(fraction, { duration: 500, easing: Easing.linear }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shownPosition, duration, reduceMotion]);
@@ -303,18 +311,59 @@ function SeekBar({
   );
 }
 
-export function AudioPlayerCard({ postId, title, url, project, coverUrl, coverFocus = 0.5 }: Props) {
-  const { current, playTrack, toggle, seekTo } = usePlayerControls();
-  const { status, starting, startingSlow } = usePlayerStatus();
+type ControlsProps = { onPress: () => void; seekTo: (seconds: number) => void };
 
-  const isCurrent = current?.postId === postId;
+/**
+ * The controls of the card whose track is loaded: the one subscriber to
+ * the 500ms status stream, so the tick re-renders this row alone.
+ */
+function LiveControls({ onPress, seekTo }: ControlsProps) {
+  const { status, starting, startingSlow } = usePlayerStatus();
   // `starting` keeps the button honest during the load gap after a tap —
   // and hides the PREVIOUS track's leftover clock while the new one loads.
-  const isPlaying = isCurrent && (!!status?.playing || starting);
-  const duration = isCurrent && !starting ? status?.duration ?? 0 : 0;
-  const position = isCurrent && !starting ? status?.currentTime ?? 0 : 0;
+  const isPlaying = !!status?.playing || starting;
+  const duration = !starting ? (status?.duration ?? 0) : 0;
+  const position = !starting ? (status?.currentTime ?? 0) : 0;
   // First 600ms keeps the instant glyph flip; past that, an honest spinner.
-  const spinner = isCurrent && starting && startingSlow;
+  const spinner = starting && startingSlow;
+
+  return (
+    <View style={styles.controls}>
+      <Pressable style={styles.play} onPress={onPress} hitSlop={8}>
+        {spinner ? (
+          <ActivityIndicator size="small" color="#0b0c0e" />
+        ) : (
+          <Ionicons
+            name={isPlaying ? 'pause' : 'play'}
+            size={20}
+            color="#0b0c0e"
+            style={!isPlaying && styles.playNudge}
+          />
+        )}
+      </Pressable>
+
+      <SeekBar isCurrent duration={duration} position={position} seekTo={seekTo} />
+    </View>
+  );
+}
+
+/** Every other card's controls: the play glyph and a resting bar, no status subscription. */
+function IdleControls({ onPress, seekTo }: ControlsProps) {
+  return (
+    <View style={styles.controls}>
+      <Pressable style={styles.play} onPress={onPress} hitSlop={8}>
+        <Ionicons name="play" size={20} color="#0b0c0e" style={styles.playNudge} />
+      </Pressable>
+
+      <SeekBar isCurrent={false} duration={0} position={0} seekTo={seekTo} />
+    </View>
+  );
+}
+
+export function AudioPlayerCard({ postId, title, url, project, coverUrl, coverFocus = 0.5 }: Props) {
+  const { current, playTrack, toggle, seekTo } = usePlayerControls();
+
+  const isCurrent = current?.postId === postId;
 
   function handlePress() {
     pressFeedback();
@@ -340,23 +389,13 @@ export function AudioPlayerCard({ postId, title, url, project, coverUrl, coverFo
       title={title}
       coverUrl={coverUrl}
       coverFocus={coverFocus}>
-      {/* Controls on the art's bottom edge: play, then the seek bar beside it. */}
-      <View style={styles.controls}>
-        <Pressable style={styles.play} onPress={handlePress} hitSlop={8}>
-          {spinner ? (
-            <ActivityIndicator size="small" color="#0b0c0e" />
-          ) : (
-            <Ionicons
-              name={isPlaying ? 'pause' : 'play'}
-              size={20}
-              color="#0b0c0e"
-              style={!isPlaying && styles.playNudge}
-            />
-          )}
-        </Pressable>
-
-        <SeekBar isCurrent={isCurrent} duration={duration} position={position} seekTo={seekTo} />
-      </View>
+      {/* Controls on the art's bottom edge: play, then the seek bar beside it.
+          Only the current track's card subscribes to the status stream. */}
+      {isCurrent ? (
+        <LiveControls onPress={handlePress} seekTo={seekTo} />
+      ) : (
+        <IdleControls onPress={handlePress} seekTo={seekTo} />
+      )}
     </AudioCover>
   );
 }

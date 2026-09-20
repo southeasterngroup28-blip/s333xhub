@@ -78,12 +78,12 @@ function TabButton({
       onPressIn={() => {
         // Acknowledge the touch the moment the finger lands.
         tapFeedback();
-        if (reduceMotion) dimSV.value = withTiming(0.7, { duration: 90 });
-        else scale.value = withTiming(0.9, { duration: 90 });
+        if (reduceMotion) dimSV.set(withTiming(0.7, { duration: 90 }));
+        else scale.set(withTiming(0.9, { duration: 90 }));
       }}
       onPressOut={() => {
-        scale.value = withTiming(1, { duration: 130 });
-        dimSV.value = withTiming(1, { duration: 130 });
+        scale.set(withTiming(1, { duration: 130 }));
+        dimSV.set(withTiming(1, { duration: 130 }));
       }}
       onPress={onPress}>
       <Animated.View
@@ -222,7 +222,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    backgroundColor: 'rgba(21, 24, 29, 0.97)',
+    // Opaque on purpose: rgba(21, 24, 29, 0.97) over the #0b0c0e ground is
+    // this exact colour, and an alpha under 1 makes Fabric skip the
+    // shadowPath fast path, so the 18 pt shadow re-rasterised every frame.
+    backgroundColor: '#15181d',
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#2a2e34',
@@ -246,7 +249,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     gap: 3,
     borderRadius: 27,
-    backgroundColor: 'rgba(21, 24, 29, 0.97)',
+    // Opaque for the same reason as the pill above: same colour, cheap shadow.
+    backgroundColor: '#15181d',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#2a2e34',
     alignItems: 'center',
